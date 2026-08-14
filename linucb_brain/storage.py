@@ -40,15 +40,6 @@ def save_brain(brain, filepath: str):
                 'b': arm['b'].tolist()
             } for id, arm in brain.model.arms.items()
         }
-    elif brain.model_type == "ts":
-        state['lints_arms'] = {
-            id: {
-                'B': arm['B'].tolist(),
-                'B_inv': arm['B_inv'].tolist(),
-                'f': arm['f'].tolist(),
-                'mu_hat': arm['mu_hat'].tolist()
-            } for id, arm in brain.model.arms.items()
-        }
     elif brain.model_type == "hybrid":
         state['A0'] = brain.model.A0.tolist()
         state['A0_inv'] = brain.model.A0_inv.tolist()
@@ -100,14 +91,6 @@ def load_brain(filepath: str, brain_cls):
                 'A': np.array(arm_data['A']),
                 'A_inv': np.array(arm_data['A_inv']),
                 'b': np.array(arm_data['b'])
-            }
-    elif brain.model_type == "ts":
-        for id, arm_data in state['lints_arms'].items():
-            brain.model.arms[id] = {
-                'B': np.array(arm_data['B']),
-                'B_inv': np.array(arm_data['B_inv']),
-                'f': np.array(arm_data['f']),
-                'mu_hat': np.array(arm_data['mu_hat'])
             }
     elif brain.model_type == "hybrid":
         brain.model.A0 = np.array(state['A0'])

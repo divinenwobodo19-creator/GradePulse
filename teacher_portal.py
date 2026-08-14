@@ -91,6 +91,15 @@ brain = get_brain()
 # Seed session state
 if "term_subjects" not in st.session_state:
     st.session_state.term_subjects = class_config.get("term_subjects", [])
+
+# Programmatic selection changes are deferred via pending_* keys set by
+# button handlers. They are applied HERE, before any widget with these keys
+# is instantiated (Streamlit forbids writing to widget state after creation).
+if "pending_school_id" in st.session_state:
+    st.session_state.selected_school_id = st.session_state.pop("pending_school_id")
+if "pending_class_id" in st.session_state:
+    st.session_state.selected_class_id = st.session_state.pop("pending_class_id")
+
 if "selected_school_id" not in st.session_state:
     schools = get_schools(class_config)
     st.session_state.selected_school_id = schools[0]["school_id"] if schools else ""
@@ -173,8 +182,8 @@ with st.sidebar:
             name = new_school.strip().upper()
             if name:
                 school = ensure_school(class_config, name)
-                st.session_state.selected_school_id = school["school_id"]
-                st.session_state.selected_class_id = ""
+                st.session_state.pending_school_id = school["school_id"]
+                st.session_state.pending_class_id = ""
                 persist_registry()
                 st.rerun()
 
@@ -187,7 +196,7 @@ with st.sidebar:
             if label and selected_school_id:
                 cls = add_class(class_config, selected_school_id, label)
                 if cls:
-                    st.session_state.selected_class_id = cls["class_id"]
+                    st.session_state.pending_class_id = cls["class_id"]
                     persist_registry()
                     st.rerun()
                 else:
@@ -203,7 +212,7 @@ with st.sidebar:
             if class_to_del and st.button("Delete Class", type="primary"):
                 remove_class(class_config, selected_school_id, class_to_del)
                 if st.session_state.selected_class_id == class_to_del:
-                    st.session_state.selected_class_id = ""
+                    st.session_state.pending_class_id = ""
                 persist_registry()
                 st.rerun()
 
@@ -270,8 +279,8 @@ if total_students == 0 and not get_schools(class_config):
                               school_id=school["school_id"], class_id=cls["class_id"])
         brain.save("brain_state.json")
         persist_registry()
-        st.session_state.selected_school_id = school["school_id"]
-        st.session_state.selected_class_id = cls["class_id"]
+        st.session_state.pending_school_id = school["school_id"]
+        st.session_state.pending_class_id = cls["class_id"]
         st.rerun()
 
 # ── Add Student form (always visible when data is low) ─────────────────────

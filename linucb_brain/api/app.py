@@ -163,11 +163,6 @@ def get_summary():
         "last_neural_score": score.get("neural_score") if score else 0.0
     }
 
-@app.post("/tune")
-def tune_parameters():
-    new_params = brain_instance.tune_parameters()
-    return {"status": "optimized", "params": new_params}
-
 @app.post("/save")
 def save_brain_state():
     brain_instance.save(BRAIN_STATE_PATH)

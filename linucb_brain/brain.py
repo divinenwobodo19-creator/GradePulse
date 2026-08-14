@@ -8,7 +8,6 @@ from .models.content import Content
 from .models.session import Session
 from .core.linucb import LinUCBDisjoint
 from .core.linucb_hybrid import LinUCBHybrid
-from .core.lints import LinTSDisjoint
 from .core.context import build_context, build_context_split, get_context_dimension, get_hybrid_dimensions
 from .core.clustering import ClusteringEngine
 from .diagnostics.neural_score import run_neural_diagnostics
@@ -21,15 +20,15 @@ class Brain:
     The single public interface for the LinUCB Brain model.
     Now supports Clustering (COBART) and Multi-Objective Rewards.
     """
-    def __init__(self, alpha: float = 1.0, auto_diagnose_every: int = 50, alpha_decay: float = 0.999, model_type: str = "disjoint", gamma: float = 1.0, n_clusters: int = 5, algorithm: Optional[str] = None, track_sessions: bool = True, max_sessions: int = 100000):
+    def __init__(self, alpha: float = 1.0, auto_diagnose_every: int = 0, alpha_decay: float = 1.0, model_type: str = "disjoint", gamma: float = 1.0, n_clusters: int = 5, algorithm: Optional[str] = None, track_sessions: bool = True, max_sessions: int = 100000):
         """
         Initialize the Brain instance.
         
         Args:
-            alpha (float): Exploration-exploitation tradeoff.
-            auto_diagnose_every (int): Frequency of automatic diagnostics.
-            alpha_decay (float): Multiplicative decay for alpha.
-            model_type (str): "disjoint", "hybrid", or "ts".
+            alpha (float): Exploration-exploitation tradeoff (fixed — no auto-tuning).
+            auto_diagnose_every (int): 0 = diagnostics disabled; >0 = run every N updates.
+            alpha_decay (float): Kept for API compat; default 1.0 means no decay.
+            model_type (str): "disjoint" or "hybrid".
             gamma (float): Discount factor.
             n_clusters (int): Number of student clusters for COBART.
             algorithm (str): Alias for model_type.
@@ -68,8 +67,6 @@ class Brain:
         elif self.model_type == "hybrid":
             k, d_h = get_hybrid_dimensions()
             self.model = LinUCBHybrid(k_shared=k, d_arm=d_h, n_clusters=n_clusters, alpha=alpha, l2_lambda=1.0)
-        elif self.model_type == "ts":
-            self.model = LinTSDisjoint(n_features=d, v=alpha, l2_lambda=1.0)
         else:
             raise ValueError(f"Unknown model_type: {self.model_type}")
             
@@ -179,17 +176,6 @@ class Brain:
                             x = ctx.reshape(-1, 1)
                             p = theta.T @ x + self.alpha * np.sqrt(max(0, (x.T @ A_inv @ x).item()))
                             ucbs.append(p.item())
-                    elif self.model_type == "ts":
-                        for cid in remaining_ids:
-                            self.model._init_arm(cid)
-                            arm = self.model.arms[cid]
-                            try:
-                                theta_a = np.random.multivariate_normal(arm['mu_hat'].flatten(), (self.alpha ** 2) * arm['B_inv']).reshape(-1, 1)
-                            except:
-                                theta_a = arm['mu_hat']
-                            ctx = build_context(student, self.contents[cid])
-                            p = (theta_a.T @ ctx.reshape(-1, 1)).item()
-                            ucbs.append(p)
                     elif self.model_type == "hybrid":
                         sample_ctx = build_context(student, self.contents[remaining_ids[0]])
                         cluster_id = self.clustering.get_cluster(student_id, sample_ctx)
@@ -260,7 +246,7 @@ class Brain:
             student = self.students[s_id]
             content = self.contents[c_id]
 
-            if self.model_type == "disjoint" or self.model_type == "ts":
+            if self.model_type == "disjoint":
                 context = build_context(student, content)
                 self.model.update(c_id, context, reward)
                 context_vector = context.tolist()
@@ -309,10 +295,7 @@ class Brain:
 
             self.update_count += 1
 
-            self.alpha = max(0.01, self.alpha * self.alpha_decay)
-            self.model.alpha = self.alpha
-
-            if self.update_count % self.auto_diagnose_every == 0:
+            if self.auto_diagnose_every and self.update_count % self.auto_diagnose_every == 0:
                 self.neural_score(verbose=False)
 
     def predict_grade(self, student_id: str, subject: str) -> float:
@@ -511,28 +494,6 @@ class Brain:
                 },
                 "scope": "assessed_only",
             }
-        """
-        Meta-Learner: Automatically adjust alpha and gamma based on neural score.
-        """
-        with self._lock:
-            if not self.last_neural_score:
-                return {'alpha': self.alpha, 'gamma': self.gamma}
-
-            scores = self.last_neural_score
-
-            if scores['convergence_score'] < 5.0:
-                self.gamma = min(1.0, self.gamma + 0.01)
-            if scores['exploration_score'] < 7.0:
-                self.alpha = min(2.0, self.alpha + 0.1)
-            elif scores['precision_score'] > 7.0 and scores['convergence_score'] < 6.0:
-                self.alpha = max(0.1, self.alpha - 0.05)
-
-            if hasattr(self.model, 'alpha'):
-                self.model.alpha = self.alpha
-            if hasattr(self.model, 'gamma'):
-                self.model.gamma = self.gamma
-
-            return {'alpha': self.alpha, 'gamma': self.gamma}
 
     def warm_start(self, sessions_data: List[Dict]) -> None:
         """
