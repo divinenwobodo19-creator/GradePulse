@@ -1,6 +1,12 @@
-# Contextual Bandit Brain
+# GradePulse
 
-A self-learning personalization engine for education, powered by Contextual Bandit algorithms. Trained on **10.6 million** real student interactions from the Open University.
+A self-learning personalization engine for education, powered by Contextual Bandit algorithms.
+
+## Why This Matters
+
+In Nigeria and across Africa, teachers manage 40-80 students per class with no way to personalize learning. A student struggling with fractions gets the same content as one ready for algebra. GradePulse changes that — it learns what works for each student and recommends the right content at the right time, using the teacher's existing weekly test scores as its signal.
+
+Most LMS platforms are content repositories. GradePulse is a recommendation engine that gets smarter with every score a teacher enters.
 
 ## What It Does
 
@@ -24,12 +30,16 @@ Every student is different. Most LMS platforms serve the same content to everyon
 
 | Capability | What It Means |
 |---|---|
-| **3 Algorithms** | Disjoint LinUCB, Hybrid LinUCB (+ clustering), Linear Thompson Sampling |
+| **2 Algorithms** | Disjoint LinUCB and Hybrid LinUCB with online clustering |
 | **Real-time Learning** | Updates after every interaction — no batch retraining |
 | **Cold-start Ready** | Explores when it has no data; exploits when it does |
 | **Self-Diagnostics** | Neural Score measures 7 dimensions of model health |
 | **Online Clustering** | Groups similar students to share knowledge (COBART-style) |
-| **FastAPI + Docker** | Production-ready REST API, one-command deploy |
+| **FastAPI REST API** | Production-ready REST API with demo seeding |
+| **Multi-Tenant** | School-scoped data model with class management |
+| **Multi-Worker Safe** | File-based brain state sync with locking — safe for multiple uvicorn workers |
+| **Data Ingestion** | CLI tool for pilot-school data (CSV/Excel) with 17-dim context vector validation |
+| **Automated Backups** | Periodic brain state backups with rotation, atomic writes, and restore capability |
 
 ## Neural Score — Built-in Diagnostics
 
@@ -53,63 +63,63 @@ NEURAL SCORE            →  7.2/10
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Run the investor demo (8 students, 8 content items, 500 interactions)
-PYTHONPATH=. python3 demo_investor.py
-
-# 3. Start the API (auto-seeds demo data if no checkpoint found)
+# 2. Start the REST API (auto-loads brain_state.json, seeds demo data if empty)
 PYTHONPATH=. uvicorn linucb_brain.api.app:app --host 0.0.0.0 --port 8000
 
-# 4. Get a recommendation
+# 3. Get a recommendation
 curl -X POST http://localhost:8000/recommend \
   -H "Content-Type: application/json" \
   -d '{"student_id": "608041", "top_n": 3}'
 
-# 5. Open the dashboard
-streamlit run dashboard.py
+# 4. Open the Teacher Portal (Streamlit)
+PYTHONPATH=. streamlit run teacher_portal.py
+
+# 5. Generate offline HTML tool
+PYTHONPATH=. python3 generate_offline.py
+
+# 6. Ingest pilot-school data
+PYTHONPATH=. python3 ingest.py sample_data/sample_students.csv --school-name "Lagos Model School"
+
+# 7. Create a backup (requires running API + auth token)
+curl -X POST http://localhost:8000/backup -H "Authorization: Bearer <token>"
+
+# 8. List backups
+curl http://localhost:8000/backups -H "Authorization: Bearer <token>"
 ```
 
 > **Windows?** Use `set PYTHONPATH=. && uvicorn ...` (CMD) or `$env:PYTHONPATH='.'; uvicorn ...` (PowerShell) instead of `PYTHONPATH=.`.
 
-## Full Training (OULAD Dataset)
+> **Multi-worker safe:** Brain state is synced to disk with file-based locking (`linucb_brain/sync.py`). Multiple uvicorn workers are now supported.
 
-To reproduce the 10.6M-interaction training:
+## Running Tests
 
 ```bash
-# 1. Download OULAD from Kaggle into data/oulad/
-# 2. Preprocess
-PYTHONPATH=. python3 oulad_preprocessor.py
-# 3. Train (may take hours)
-PYTHONPATH=. python3 oulad_brain_run.py
+PYTHONPATH=. python3 -m pytest tests/ -v
 ```
 
 ## Project Structure
 
 ```
-├── linucb_brain/       # Core engine
-│   ├── core/           # Algorithms (linucb, hybrid, thompson, clustering)
-│   ├── models/         # Data models (student, content, session)
-│   ├── diagnostics/    # Neural Score engine
-│   └── api/            # FastAPI application
-├── examples/           # Integration examples
-├── tests/              # Test suite (pytest)
-├── figures/            # Training visualizations
-├── dashboard.py        # Streamlit real-time dashboard
-├── demo_investor.py    # Guided walkthrough demo
-└── docker-compose.yml  # One-command deploy
+├── linucb_brain/           # Core engine
+│   ├── core/               # Algorithms (linucb, hybrid, clustering, reward)
+│   ├── models/             # Data models (student, content, session, school)
+│   ├── diagnostics/        # Neural Score engine
+│   ├── api/                # FastAPI application (29 endpoints)
+│   ├── sync.py             # Multi-worker brain state synchronization
+│   └── backup.py           # Automated backup system (rotation, restore)
+├── tests/                  # Test suite (179 tests, pytest)
+├── sample_data/            # Sample pilot-school data (CSV)
+│   ├── large/              # Large sample dataset (56 students)
+│   └── pilot_grade/        # Pilot-grade validation data
+├── ingest.py               # Data ingestion CLI tool
+├── generate_pilot_data.py  # Pilot data generation script
+├── .env.example            # Production configuration variables
+├── teacher_portal.py       # Streamlit teacher dashboard
+├── generate_offline.py     # Offline HTML tool generator
+├── offline_teacher.html    # Generated standalone tool
+├── brain_state.json        # Model persistence
+└── class_config.json       # School/class registry
 ```
-
-## Docker
-
-```bash
-docker-compose up --build
-```
-
-## Results (10.6M Interactions)
-
-- **Exploration Efficiency:** 9.4/10
-- **Average Reward:** 0.70–0.90
-- **Students:** 32,000+
-- **Content Items:** 6,000+
 
 ## License
 
