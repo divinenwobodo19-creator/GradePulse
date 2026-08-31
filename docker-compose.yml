@@ -1,0 +1,73 @@
+# GradePulse — Docker Compose
+# ============================
+# Usage:
+#   docker compose up -d              # start all services
+#   docker compose up -d --build      # rebuild and start
+#   docker compose logs -f api        # follow API logs
+#   docker compose down               # stop all services
+#
+# First time:
+#   cp .env.example .env              # create your .env
+#   docker compose up -d --build
+#
+# Data persists in the `gradepulse-data` volume across restarts.
+
+services:
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backend
+    container_name: gradepulse-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - BRAIN_STATE_PATH=/data/brain_state.json
+      - CONFIG_PATH=/data/class_config.json
+      - USER_DB_PATH=/data/gradepulse_users.db
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - gradepulse-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - gradepulse
+
+  # ── Next.js Frontend ──────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: gradepulse-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - gradepulse
+
+volumes:
+  gradepulse-data:
+    driver: local
+
+networks:
+  gradepulse:
+    driver: bridge

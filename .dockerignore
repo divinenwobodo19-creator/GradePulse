@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.egg-info
+.eggs
+dist
+build
+.venv
+venv
+env
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Data (persisted via volumes, not baked into image)
+brain_state.json
+brain_state.json.lock
+class_config.json
+gradepulse_users.db
+backups/
+
+# Tests (not needed in production image)
+tests/
+
+# Documentation
+*.md
+!requirements.txt
+Team Handbooks/
+investor-deck/
+obsidian-vault/
+.obsidian/
+.archive/
+
+# Sample data
+sample_data/
+
+# Next.js frontend (built separately)
+gradepulse-web/
+
+# Streamlit teacher portal (not used in Docker)
+teacher_portal.py
+generate_offline.py
+offline_teacher.html
+
+# Branding
+assets/
