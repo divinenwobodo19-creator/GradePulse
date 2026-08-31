@@ -29,6 +29,19 @@ Codebase navigation map. Each section maps to an owner role.
 | `INVESTOR_CHECKLIST.md` | Investor due diligence checklist | Divine |
 | `Model Specifications.md` | Model technical specifications | Sam |
 | `backups/` | Automated brain state backups (rotated, timestamped) | Infrastructure |
+| `Dockerfile` | Multi-stage Docker build (backend + frontend targets) | Infrastructure |
+| `docker-compose.yml` | Docker Compose orchestration (API + web services, volumes) | Infrastructure |
+| `.dockerignore` | Excludes dev/test files from Docker build context | Infrastructure |
+| `DEPLOYMENT.md` | Production deployment runbook (VPS, HTTPS, backup/restore) | Infrastructure |
+
+---
+
+## `.github/workflows/` — CI/CD (Infrastructure)
+
+| File | Purpose |
+|---|---|
+| `ci.yml` | Test on push/PR to main (Python 3.12, pip cache, pytest) |
+| `docker.yml` | Build + push Docker images to GHCR on version tags |
 
 ---
 
@@ -151,4 +164,4 @@ Codebase navigation map. Each section maps to an owner role.
 
 ---
 
-*Last updated: 2026-08-31 by Alice (Documentation) — v5: added generate_pilot_data.py, pilot_grade sample data, corrected API endpoint count to 29*
+*Last updated: 2026-08-31 by Alice (Infrastructure) — v6: added Dockerfile, docker-compose.yml, .dockerignore, .github/workflows/, DEPLOYMENT.md*

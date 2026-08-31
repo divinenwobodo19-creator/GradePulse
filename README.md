@@ -40,6 +40,8 @@ Every student is different. Most LMS platforms serve the same content to everyon
 | **Multi-Worker Safe** | File-based brain state sync with locking — safe for multiple uvicorn workers |
 | **Data Ingestion** | CLI tool for pilot-school data (CSV/Excel) with 17-dim context vector validation |
 | **Automated Backups** | Periodic brain state backups with rotation, atomic writes, and restore capability |
+| **Docker Ready** | Multi-stage Dockerfile + docker-compose for one-command production deployment |
+| **CI/CD Pipeline** | GitHub Actions: test on every push, Docker images built on release tags |
 
 ## Neural Score — Built-in Diagnostics
 
@@ -91,6 +93,23 @@ curl http://localhost:8000/backups -H "Authorization: Bearer <token>"
 
 > **Multi-worker safe:** Brain state is synced to disk with file-based locking (`linucb_brain/sync.py`). Multiple uvicorn workers are now supported.
 
+### Docker (Production)
+
+```bash
+# 1. Clone and configure
+cp .env.example .env
+# Edit .env — set JWT_SECRET at minimum
+
+# 2. Start all services
+docker compose up -d --build
+
+# 3. Verify
+curl http://localhost:8000/health
+# Frontend: http://localhost:3000
+```
+
+Data persists in the `gradepulse-data` Docker volume across restarts. See `DEPLOYMENT.md` for full production setup (HTTPS, Nginx, backups, upgrades).
+
 ## Running Tests
 
 ```bash
@@ -111,15 +130,31 @@ PYTHONPATH=. python3 -m pytest tests/ -v
 ├── sample_data/            # Sample pilot-school data (CSV)
 │   ├── large/              # Large sample dataset (56 students)
 │   └── pilot_grade/        # Pilot-grade validation data
+├── .github/workflows/      # CI/CD (GitHub Actions)
+│   ├── ci.yml              # Test on push/PR to main
+│   └── docker.yml          # Build Docker images on version tags
 ├── ingest.py               # Data ingestion CLI tool
 ├── generate_pilot_data.py  # Pilot data generation script
+├── Dockerfile              # Multi-stage Docker build (backend + frontend)
+├── docker-compose.yml      # Docker Compose orchestration
+├── DEPLOYMENT.md           # Production deployment runbook
 ├── .env.example            # Production configuration variables
+├── .dockerignore           # Docker build context exclusions
 ├── teacher_portal.py       # Streamlit teacher dashboard
 ├── generate_offline.py     # Offline HTML tool generator
 ├── offline_teacher.html    # Generated standalone tool
 ├── brain_state.json        # Model persistence
 └── class_config.json       # School/class registry
 ```
+
+## Deployment
+
+See `DEPLOYMENT.md` for the full production runbook covering:
+- First-time VPS setup
+- Docker deployment
+- HTTPS/SSL with Nginx
+- Backup and restore procedures
+- Upgrades and troubleshooting
 
 ## License
 
