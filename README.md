@@ -123,7 +123,7 @@ PYTHONPATH=. python3 -m pytest tests/ -v
 │   ├── core/               # Algorithms (linucb, hybrid, clustering, reward)
 │   ├── models/             # Data models (student, content, session, school)
 │   ├── diagnostics/        # Neural Score engine
-│   ├── api/                # FastAPI application (29 endpoints)
+│   ├── api/                # FastAPI application (8 endpoints — auth/schools/students routes pending, see Decision Log)
 │   ├── sync.py             # Multi-worker brain state synchronization
 │   └── backup.py           # Automated backup system (rotation, restore)
 ├── tests/                  # Test suite (179 tests, pytest)

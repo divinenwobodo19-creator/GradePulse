@@ -77,7 +77,7 @@ Codebase navigation map. Each section maps to an owner role.
 
 | File | Purpose |
 |---|---|
-| `app.py` | FastAPI application (29 endpoints) |
+| `app.py` | FastAPI application (8 endpoints — auth, schools, classes, students, backup routes missing, see Decision Log) |
 | `schemas.py` | Pydantic request/response models |
 | `auth.py` | JWT authentication |
 
