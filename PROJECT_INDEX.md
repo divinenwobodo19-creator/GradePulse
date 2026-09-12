@@ -8,8 +8,12 @@ Codebase navigation map. Each section maps to an owner role.
 
 | File | Purpose | Owner |
 |---|---|---|
-| `README.md` | Quick start, project structure, results | Documentation |
+| `README.md` | Quick start, project structure, API examples | Documentation |
 | `PROJECT_INDEX.md` | This file — codebase navigation | Documentation |
+| `CHANGELOG.md` | Release notes for v0.1.0 | Documentation |
+| `RELEASE_CHECKLIST.md` | Pre-release verification steps for all agents | Documentation |
+| `API_REFERENCE.md` | All 29 endpoints with request/response examples | Documentation |
+| `DEPLOYMENT.md` | Production deployment runbook | Infrastructure |
 | `requirements.txt` | Python dependencies | Sam / Infra |
 | `pyproject.toml` | Project metadata | Sam |
 | `teacher_portal.py` | Streamlit teacher dashboard | Mia |
@@ -164,4 +168,4 @@ Codebase navigation map. Each section maps to an owner role.
 
 ---
 
-*Last updated: 2026-08-31 by Alice (Infrastructure) — v6: added Dockerfile, docker-compose.yml, .dockerignore, .github/workflows/, DEPLOYMENT.md*
+*Last updated: 2026-08-31 by Alice (Documentation) — v7: added CHANGELOG.md, RELEASE_CHECKLIST.md, API_REFERENCE.md, updated README.md for v0.1.0 release*
