@@ -1,0 +1,857 @@
+{
+  "term_subjects": [
+    "Maths"
+  ],
+  "schools": [
+    {
+      "school_id": "8aa6f66b",
+      "name": "MY SCHOOL",
+      "classes": [
+        {
+          "class_id": "204a2e78",
+          "label": "300 LEVEL",
+          "grade_level": "",
+          "arm": "300 LEVEL"
+        },
+        {
+          "class_id": "837cc8f5",
+          "label": "JSS 1",
+          "grade_level": "",
+          "arm": "JSS 1"
+        }
+      ]
+    },
+    {
+      "school_id": "378cd638",
+      "name": "API TEST SCHOOL",
+      "classes": []
+    },
+    {
+      "school_id": "ca827cb4",
+      "name": "CLASS TEST SCHOOL",
+      "classes": [
+        {
+          "class_id": "14d30426",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "9779cecb",
+      "name": "CLASS TEST 1787912278563",
+      "classes": [
+        {
+          "class_id": "cd90283c",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "3c7f7248",
+      "name": "CLASS TEST 1787912278636",
+      "classes": []
+    },
+    {
+      "school_id": "bd5922bc",
+      "name": "CLASS TEST 1787912278743",
+      "classes": [
+        {
+          "class_id": "f1ba8584",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "8888b712",
+      "name": "CLASS TEST 1787912792437",
+      "classes": [
+        {
+          "class_id": "e32d8ca8",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "df2eef7f",
+      "name": "CLASS TEST 1787912792564",
+      "classes": []
+    },
+    {
+      "school_id": "c41da56b",
+      "name": "CLASS TEST 1787912792758",
+      "classes": [
+        {
+          "class_id": "22b8cf49",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "cbc79fba",
+      "name": "CLASS TEST 1787912925924",
+      "classes": [
+        {
+          "class_id": "6e946f14",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "837aad3b",
+      "name": "CLASS TEST 1787912926104",
+      "classes": []
+    },
+    {
+      "school_id": "3b467f76",
+      "name": "CLASS TEST 1787912926230",
+      "classes": [
+        {
+          "class_id": "835a159a",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "ffa797ec",
+      "name": "CLASS TEST 1787919183687",
+      "classes": [
+        {
+          "class_id": "0b4a2de3",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "a75f2223",
+      "name": "CLASS TEST 1787919183914",
+      "classes": []
+    },
+    {
+      "school_id": "2e5d9e8a",
+      "name": "CLASS TEST 1787919184073",
+      "classes": [
+        {
+          "class_id": "f96929e5",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "e68e6fd0",
+      "name": "LAGOS MODEL SCHOOL",
+      "classes": [
+        {
+          "class_id": "2dad7e44",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        },
+        {
+          "class_id": "82819b86",
+          "label": "JSS2B",
+          "grade_level": "JSS2",
+          "arm": "B"
+        },
+        {
+          "class_id": "68632444",
+          "label": "SSS1A",
+          "grade_level": "SSS1",
+          "arm": "A"
+        },
+        {
+          "class_id": "4e129ea6",
+          "label": "SSS2A",
+          "grade_level": "SSS2",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "02f08838",
+      "name": "CLASS TEST 1787920245945",
+      "classes": [
+        {
+          "class_id": "d267afbf",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "ced7ad61",
+      "name": "CLASS TEST 1787920246189",
+      "classes": []
+    },
+    {
+      "school_id": "9632383a",
+      "name": "CLASS TEST 1787920246345",
+      "classes": [
+        {
+          "class_id": "ea13e873",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "b6829857",
+      "name": "CLASS TEST 1787920554927",
+      "classes": [
+        {
+          "class_id": "e91bf3da",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "71e28d16",
+      "name": "CLASS TEST 1787920555099",
+      "classes": []
+    },
+    {
+      "school_id": "f5e5c755",
+      "name": "CLASS TEST 1787920555252",
+      "classes": [
+        {
+          "class_id": "5f6bf8da",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "ab2433f3",
+      "name": "CLASS TEST 1787920806579",
+      "classes": [
+        {
+          "class_id": "89630f4f",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "748bfa0b",
+      "name": "CLASS TEST 1787920806799",
+      "classes": []
+    },
+    {
+      "school_id": "aed1e627",
+      "name": "CLASS TEST 1787920807092",
+      "classes": [
+        {
+          "class_id": "d8ab06a6",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "41df826e",
+      "name": "CLASS TEST 1787920928985",
+      "classes": [
+        {
+          "class_id": "5671ecef",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "1d03a4ce",
+      "name": "CLASS TEST 1787920929060",
+      "classes": []
+    },
+    {
+      "school_id": "bd719c06",
+      "name": "CLASS TEST 1787920929125",
+      "classes": [
+        {
+          "class_id": "8e3c7709",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "621efa3a",
+      "name": "CLASS TEST 1787921379993",
+      "classes": [
+        {
+          "class_id": "33344418",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "15ac97b4",
+      "name": "CLASS TEST 1787921380159",
+      "classes": []
+    },
+    {
+      "school_id": "9cf3da0b",
+      "name": "CLASS TEST 1787921380330",
+      "classes": [
+        {
+          "class_id": "0796ae50",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "18da706d",
+      "name": "CLASS TEST 1787922307603",
+      "classes": [
+        {
+          "class_id": "aabddf1a",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "3af8800c",
+      "name": "CLASS TEST 1787922309344",
+      "classes": []
+    },
+    {
+      "school_id": "e5bbdac5",
+      "name": "CLASS TEST 1787922310498",
+      "classes": [
+        {
+          "class_id": "beb55603",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "379c0e67",
+      "name": "CLASS TEST 1787922878540",
+      "classes": [
+        {
+          "class_id": "c605f17c",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "8048341c",
+      "name": "CLASS TEST 1787922878652",
+      "classes": []
+    },
+    {
+      "school_id": "584ca4bf",
+      "name": "CLASS TEST 1787922878763",
+      "classes": [
+        {
+          "class_id": "75cc205c",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "607a301d",
+      "name": "CLASS TEST 1787922979778",
+      "classes": [
+        {
+          "class_id": "b33569de",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "3ac209fe",
+      "name": "CLASS TEST 1787922980124",
+      "classes": []
+    },
+    {
+      "school_id": "af2bb261",
+      "name": "CLASS TEST 1787922980323",
+      "classes": [
+        {
+          "class_id": "68b90cf8",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "016a5070",
+      "name": "CLASS TEST 1787923788625",
+      "classes": [
+        {
+          "class_id": "db3932bb",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "d5300c7e",
+      "name": "CLASS TEST 1787923788884",
+      "classes": []
+    },
+    {
+      "school_id": "cad4e2e9",
+      "name": "CLASS TEST 1787923789091",
+      "classes": [
+        {
+          "class_id": "fcb36597",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "ce247b5d",
+      "name": "CLASS TEST 1787924471283",
+      "classes": [
+        {
+          "class_id": "debbadc8",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "bba46cbb",
+      "name": "CLASS TEST 1787924471643",
+      "classes": []
+    },
+    {
+      "school_id": "e68f82ce",
+      "name": "CLASS TEST 1787924471932",
+      "classes": [
+        {
+          "class_id": "de7cdd3c",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "0016cd4d",
+      "name": "CLASS TEST 1787926121731",
+      "classes": [
+        {
+          "class_id": "2f24ec96",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "73728a19",
+      "name": "CLASS TEST 1787926121805",
+      "classes": []
+    },
+    {
+      "school_id": "d8507ef6",
+      "name": "CLASS TEST 1787926121853",
+      "classes": [
+        {
+          "class_id": "7d69f316",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "88e16c19",
+      "name": "CLASS TEST 1787927801264",
+      "classes": [
+        {
+          "class_id": "c6350900",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "0067e7d5",
+      "name": "CLASS TEST 1787927801359",
+      "classes": []
+    },
+    {
+      "school_id": "5e09d6c0",
+      "name": "CLASS TEST 1787927801440",
+      "classes": [
+        {
+          "class_id": "71660f34",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "fd93359a",
+      "name": "E2E PILOT SCHOOL",
+      "classes": [
+        {
+          "class_id": "6e85b47a",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "142a571d",
+      "name": "QA TEST SCHOOL",
+      "classes": [
+        {
+          "class_id": "f3bdf6e6",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "6f27c276",
+      "name": "CLASS TEST 1788177023358",
+      "classes": [
+        {
+          "class_id": "bd71e13b",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "fd5dc388",
+      "name": "CLASS TEST 1788177023617",
+      "classes": []
+    },
+    {
+      "school_id": "81e82b8d",
+      "name": "CLASS TEST 1788177024009",
+      "classes": [
+        {
+          "class_id": "a608e3af",
+          "label": "JSS1A",
+          "grade_level": "JSS1",
+          "arm": "A"
+        }
+      ]
+    },
+    {
+      "school_id": "e9b5bcd5",
+      "name": "QA SCHOOL 28C9",
+      "classes": []
+    },
+    {
+      "school_id": "da54fc79",
+      "name": "QA SCHOOL 9AEB",
+      "classes": []
+    },
+    {
+      "school_id": "49f6605e",
+      "name": "UPDATED NAME",
+      "classes": []
+    },
+    {
+      "school_id": "ee24c1c7",
+      "name": "DELETE SCHOOL EED5",
+      "classes": []
+    },
+    {
+      "school_id": "bc9e70be",
+      "name": "CLASS TEST SCHOOL 5CDD",
+      "classes": []
+    },
+    {
+      "school_id": "5f0e4c87",
+      "name": "CLASS TEST SCHOOL 7B24",
+      "classes": [
+        {
+          "class_id": "5961720d",
+          "label": "JSS1A_722E",
+          "grade_level": "JSS1",
+          "arm": "A_722E"
+        }
+      ]
+    },
+    {
+      "school_id": "fe282402",
+      "name": "CLASS TEST SCHOOL EEF8",
+      "classes": [
+        {
+          "class_id": "5d193705",
+          "label": "DUP_E13F",
+          "grade_level": "",
+          "arm": "DUP_E13F"
+        }
+      ]
+    },
+    {
+      "school_id": "99ee9bac",
+      "name": "CLASS TEST SCHOOL 6B28",
+      "classes": [
+        {
+          "class_id": "df39b09f",
+          "label": "NEWLABEL",
+          "grade_level": "",
+          "arm": "UPD_6C15"
+        }
+      ]
+    },
+    {
+      "school_id": "331e49d4",
+      "name": "CLASS TEST SCHOOL A091",
+      "classes": [
+        {
+          "class_id": "0d8f6711",
+          "label": "DEL_E80B",
+          "grade_level": "",
+          "arm": "DEL_E80B"
+        }
+      ]
+    },
+    {
+      "school_id": "876ef20f",
+      "name": "QA SCHOOL EB4B",
+      "classes": []
+    },
+    {
+      "school_id": "e512c637",
+      "name": "QA SCHOOL 6509",
+      "classes": []
+    },
+    {
+      "school_id": "fb421513",
+      "name": "UPDATED NAME",
+      "classes": []
+    },
+    {
+      "school_id": "61fb6f10",
+      "name": "DELETE SCHOOL A698",
+      "classes": []
+    },
+    {
+      "school_id": "b00d3900",
+      "name": "CLASS TEST SCHOOL 123F",
+      "classes": []
+    },
+    {
+      "school_id": "d614c5f1",
+      "name": "CLASS TEST SCHOOL CBAA",
+      "classes": [
+        {
+          "class_id": "19ecb23c",
+          "label": "JSS1A_7921",
+          "grade_level": "JSS1",
+          "arm": "A_7921"
+        }
+      ]
+    },
+    {
+      "school_id": "8865d5be",
+      "name": "CLASS TEST SCHOOL 1027",
+      "classes": [
+        {
+          "class_id": "5c3e7794",
+          "label": "DUP_C3D8",
+          "grade_level": "",
+          "arm": "DUP_C3D8"
+        }
+      ]
+    },
+    {
+      "school_id": "ccdf95e2",
+      "name": "CLASS TEST SCHOOL 87FA",
+      "classes": [
+        {
+          "class_id": "4e6500e8",
+          "label": "NEWLABEL",
+          "grade_level": "",
+          "arm": "UPD_D596"
+        }
+      ]
+    },
+    {
+      "school_id": "38653fa1",
+      "name": "CLASS TEST SCHOOL C4B6",
+      "classes": [
+        {
+          "class_id": "71c8cdd2",
+          "label": "DEL_B549",
+          "grade_level": "",
+          "arm": "DEL_B549"
+        }
+      ]
+    },
+    {
+      "school_id": "02b49fe1",
+      "name": "QA SCHOOL 6B2B",
+      "classes": []
+    },
+    {
+      "school_id": "e3583622",
+      "name": "QA SCHOOL 047E",
+      "classes": []
+    },
+    {
+      "school_id": "ecc68350",
+      "name": "UPDATED NAME",
+      "classes": []
+    },
+    {
+      "school_id": "1d305de6",
+      "name": "CLS SCHOOL 8704",
+      "classes": []
+    },
+    {
+      "school_id": "a7b4b124",
+      "name": "CLS SCHOOL AEAC",
+      "classes": [
+        {
+          "class_id": "313f9242",
+          "label": "JSS1A_8690",
+          "grade_level": "JSS1",
+          "arm": "A_8690"
+        }
+      ]
+    },
+    {
+      "school_id": "baa23219",
+      "name": "CLS SCHOOL 4A19",
+      "classes": [
+        {
+          "class_id": "767e3779",
+          "label": "DUP_1105",
+          "grade_level": "",
+          "arm": "DUP_1105"
+        }
+      ]
+    },
+    {
+      "school_id": "6f6dc362",
+      "name": "CLS SCHOOL 0AF7",
+      "classes": [
+        {
+          "class_id": "01bcd4e4",
+          "label": "NEWLABEL",
+          "grade_level": "",
+          "arm": "UPD_27CA"
+        }
+      ]
+    },
+    {
+      "school_id": "b2ac61e9",
+      "name": "CLS SCHOOL B1B6",
+      "classes": []
+    },
+    {
+      "school_id": "2734700b",
+      "name": "QA SCHOOL D292",
+      "classes": []
+    },
+    {
+      "school_id": "c4d9ac76",
+      "name": "QA SCHOOL CCCC",
+      "classes": []
+    },
+    {
+      "school_id": "2a32e89d",
+      "name": "UPDATED NAME",
+      "classes": []
+    },
+    {
+      "school_id": "bdb3b472",
+      "name": "CLS SCHOOL AD3D",
+      "classes": []
+    },
+    {
+      "school_id": "f7b88737",
+      "name": "CLS SCHOOL 441F",
+      "classes": [
+        {
+          "class_id": "ba16c631",
+          "label": "JSS1A_67B3",
+          "grade_level": "JSS1",
+          "arm": "A_67B3"
+        }
+      ]
+    },
+    {
+      "school_id": "05643c27",
+      "name": "CLS SCHOOL 2C21",
+      "classes": [
+        {
+          "class_id": "15e70224",
+          "label": "DUP_6662",
+          "grade_level": "",
+          "arm": "DUP_6662"
+        }
+      ]
+    },
+    {
+      "school_id": "f10ab43b",
+      "name": "CLS SCHOOL FE98",
+      "classes": [
+        {
+          "class_id": "948bbb4e",
+          "label": "NEWLABEL",
+          "grade_level": "",
+          "arm": "UPD_4B55"
+        }
+      ]
+    },
+    {
+      "school_id": "6fff70c4",
+      "name": "CLS SCHOOL 2D12",
+      "classes": []
+    }
+  ]
+}

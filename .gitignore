@@ -114,9 +114,6 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Demo
-demo_brain_state.json
-
 # Environments
 .env
 .venv
@@ -160,7 +157,6 @@ cython_debug/
 
 # Data and large files
 data/
-*.json
 *.csv
 *.zip
 *.gz
@@ -178,5 +174,18 @@ data/
 *.joblib
 *.pkl
 *.pickle
+
+# JSON — block demo/checkpoint files, allow app config
 oulad_checkpoint_*.json
 oulad_brain_state.json
+demo_brain_state.json
+
+# Runtime files (generated, not source)
+gradepulse_users.db
+brain_state.json.lock
+
+# Internal docs (not needed for public release)
+.obsidian-vault/
+.obsidian/
+.archive/
+investor-deck/
