@@ -54,3 +54,56 @@ class BrainSummary(BaseModel):
     current_gamma: float
     cumulative_regret: float
     last_neural_score: Optional[float]
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    school_name: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    school_id: str = ""
+    school_name: str = ""
+    token: str = ""
+
+class SchoolResponse(BaseModel):
+    school_id: str
+    name: str
+    classes: List[Dict[str, Any]] = []
+
+class CreateSchoolRequest(BaseModel):
+    name: str
+
+class ClassResponse(BaseModel):
+    class_id: str
+    label: str
+    grade_level: str
+    arm: str
+
+class CreateClassRequest(BaseModel):
+    label: str
+
+class BulkUpdateEntry(BaseModel):
+    student_id: str
+    subject: str
+    score: float = Field(..., ge=0.0, le=1.0)
+
+class BulkUpdateRequest(BaseModel):
+    entries: List[BulkUpdateEntry]
+
+class TriageRequest(BaseModel):
+    subject: str
+
+class UpdateStudentRequest(BaseModel):
+    name: Optional[str] = None
+    current_topic: Optional[str] = None
+    class_id: Optional[str] = None
+
+class IngestResponse(BaseModel):
+    status: str
+    report: Dict[str, Any]

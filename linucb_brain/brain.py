@@ -1,6 +1,7 @@
 import numpy as np
 import uuid
 import threading
+from collections import deque
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 from .models.student import Student
@@ -75,6 +76,12 @@ class Brain:
         
         # Last Neural Score
         self.last_neural_score: Optional[Dict[str, float]] = None
+
+        # Adaptive Gamma — non-stationarity detection
+        self._reward_window = deque(maxlen=50)
+        self._gamma_floor = 0.85
+        self._gamma_adapt_interval = 25
+        self._baseline_gamma = gamma
 
         # Thread safety lock (RLock allows re-entrancy from the same thread)
         self._lock = threading.RLock()
@@ -204,9 +211,11 @@ class Brain:
                 c.times_recommended += 1
             return best_contents[0] if top_n == 1 else best_contents
 
-    def calculate_multi_objective_reward(self, improvement: float, completed: bool, engaged: bool, churned: bool) -> float:
+    def calculate_multi_objective_reward(self, improvement: float, completed: bool, engaged: bool, churned: bool, current_performance: float = 0.5) -> float:
         """
         Combine multiple reward signals based on the Brain's current weights.
+        Anti-gaming: improvement reward is scaled by difficulty of improvement
+        relative to the student's current performance level.
         """
         if churned:
             return -1.0
@@ -216,7 +225,12 @@ class Brain:
         # Normalize signals
         comp_signal = 1.0 if completed else -0.2
         eng_signal = 1.0 if engaged else -0.5
-        imp_signal = np.clip(improvement * 5.0, -1.0, 1.0)
+        
+        # Anti-gaming: scale improvement by how hard it is at this level
+        # Improving at 0.1 is easy (lots of easy gains); improving at 0.7 is hard
+        # A student gaming the system by scoring low first gets a small improvement signal
+        performance_factor = max(0.1, current_performance)
+        imp_signal = np.clip(improvement * 5.0 * performance_factor, -1.0, 1.0)
         
         weighted_reward = (
             weights['improvement'] * imp_signal +
@@ -225,6 +239,32 @@ class Brain:
         )
         
         return float(np.clip(weighted_reward, -1.0, 1.0))
+
+    def _adapt_gamma(self):
+        """
+        Detect non-stationarity via reward variance and auto-adjust gamma.
+        Called every _gamma_adapt_interval updates.
+        """
+        recent = list(self._reward_window)
+        if len(recent) < 20:
+            return
+
+        window = np.array(recent)
+        half = len(window) // 2
+        first_half_std = np.std(window[:half])
+        second_half_std = np.std(window[half:])
+
+        # Variance spike detected — accelerate forgetting
+        # Absolute threshold prevents false positives when both stds are near zero
+        if (second_half_std > first_half_std * 1.4 and first_half_std > 0.05) or second_half_std > 0.35:
+            self.gamma = max(self._gamma_floor, self.gamma - 0.03)
+            if hasattr(self.model, 'gamma'):
+                self.model.gamma = self.gamma
+        # Variance normalized — slowly restore baseline
+        elif self.gamma < self._baseline_gamma:
+            self.gamma = min(self._baseline_gamma, self.gamma + 0.005)
+            if hasattr(self.model, 'gamma'):
+                self.model.gamma = self.gamma
 
     def update(self, student_id: Optional[str] = None, content_id: Optional[str] = None, reward: float = 0.0, agent_id: Optional[str] = None, arm_id: Optional[str] = None) -> None:
         """
@@ -295,8 +335,13 @@ class Brain:
 
             self.update_count += 1
 
+            self._reward_window.append(reward)
+
             if self.auto_diagnose_every and self.update_count % self.auto_diagnose_every == 0:
                 self.neural_score(verbose=False)
+
+            if self.update_count % self._gamma_adapt_interval == 0:
+                self._adapt_gamma()
 
     def predict_grade(self, student_id: str, subject: str) -> float:
         """
@@ -521,6 +566,7 @@ class Brain:
                 'model_type': self.model_type,
                 'current_alpha': round(self.alpha, 4),
                 'current_gamma': round(self.gamma, 4),
+                'baseline_gamma': round(self._baseline_gamma, 4),
                 'cumulative_regret': round(self.cumulative_regret, 2),
                 'last_neural_score': self.last_neural_score.get('neural_score') if self.last_neural_score else None
             }

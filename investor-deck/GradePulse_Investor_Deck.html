@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GradePulse — Investor Presentation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --navy: #1a1a2e;
+    --gold: #c9a227;
+    --gold-light: #f0d66b;
+    --white: #ffffff;
+    --gray-50: #f8f9fa;
+    --gray-100: #e2e8f0;
+    --gray-500: #64748b;
+    --gray-700: #334155;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--gray-50);
+    color: var(--navy);
+  }
+
+  .slide {
+    width: 960px;
+    height: 540px;
+    margin: 40px auto;
+    background: var(--white);
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    padding: 60px 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .slide-number {
+    position: absolute;
+    bottom: 24px;
+    right: 32px;
+    font-size: 12px;
+    color: var(--gray-500);
+  }
+
+  .slide-dark {
+    background: var(--navy);
+    color: var(--white);
+  }
+
+  .slide-dark .slide-number { color: rgba(255,255,255,0.4); }
+
+  h1 { font-size: 42px; font-weight: 800; line-height: 1.1; margin-bottom: 16px; }
+  h2 { font-size: 32px; font-weight: 700; line-height: 1.2; margin-bottom: 12px; }
+  h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+  p { font-size: 18px; line-height: 1.6; color: var(--gray-700); }
+  .slide-dark p { color: rgba(255,255,255,0.7); }
+
+  .gold { color: var(--gold); }
+  .tag {
+    display: inline-block;
+    background: rgba(201,162,39,0.15);
+    color: var(--gold);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 16px;
+  }
+
+  .screenshot-placeholder {
+    width: 100%;
+    height: 280px;
+    background: var(--gray-100);
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--gray-500);
+    font-size: 14px;
+    margin-top: 16px;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin-top: 24px;
+  }
+
+  .metric-box {
+    text-align: center;
+    padding: 20px;
+    background: var(--gray-50);
+    border-radius: 12px;
+  }
+
+  .metric-value {
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--gold);
+  }
+
+  .metric-label {
+    font-size: 12px;
+    color: var(--gray-500);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-top: 20px;
+  }
+
+  .feature-list {
+    list-style: none;
+    margin-top: 12px;
+  }
+
+  .feature-list li {
+    padding: 8px 0;
+    font-size: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .feature-list li::before {
+    content: "✓";
+    color: var(--gold);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .pricing-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 24px;
+  }
+
+  .pricing-card {
+    border: 2px solid var(--gray-100);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .pricing-card.popular {
+    border-color: var(--gold);
+    position: relative;
+  }
+
+  .pricing-card.popular::before {
+    content: "POPULAR";
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--gold);
+    color: var(--navy);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 999px;
+  }
+
+  .pricing-card h3 { font-size: 16px; }
+  .pricing-card .price { font-size: 28px; font-weight: 800; margin: 8px 0; }
+  .pricing-card .price span { font-size: 14px; font-weight: 400; color: var(--gray-500); }
+
+  .timeline {
+    margin-top: 20px;
+  }
+
+  .timeline-item {
+    display: flex;
+    gap: 16px;
+    padding: 12px 0;
+    border-left: 2px solid var(--gray-100);
+    padding-left: 20px;
+    margin-left: 8px;
+  }
+
+  .timeline-item.active {
+    border-left-color: var(--gold);
+  }
+
+  .timeline-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--gray-100);
+    flex-shrink: 0;
+    margin-top: 4px;
+    margin-left: -26px;
+  }
+
+  .timeline-item.active .timeline-dot {
+    background: var(--gold);
+  }
+
+  .cta-button {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--navy);
+    font-size: 18px;
+    font-weight: 700;
+    padding: 16px 40px;
+    border-radius: 12px;
+    text-decoration: none;
+    margin-top: 24px;
+  }
+
+  @media print {
+    body { background: white; }
+    .slide { box-shadow: none; margin: 0; border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SLIDE 1: Title -->
+<div class="slide slide-dark" style="text-align: center; align-items: center;">
+  <img src="logo.png" alt="GradePulse" style="width: 140px; height: 140px; margin-bottom: 16px; border-radius: 24px;">
+  <h1><span class="gold">GradePulse</span></h1>
+  <p style="font-size: 24px; color: rgba(255,255,255,0.8); margin-top: 8px;">
+    AI-Powered Student Performance Intelligence
+  </p>
+  <p style="font-size: 16px; color: rgba(255,255,255,0.5); margin-top: 32px;">
+    Personalizing learning for 10M+ students across 40,000+ Nigerian schools
+  </p>
+  <div class="slide-number">1</div>
+</div>
+
+<!-- SLIDE 2: The Problem -->
+<div class="slide">
+  <div class="tag">The Problem</div>
+  <h2>Every student gets the <span class="gold">same content</span></h2>
+  <div class="two-col">
+    <div>
+      <p style="margin-bottom: 16px;">In Nigeria, teachers manage 40-80 students per class. Every student receives identical content regardless of ability.</p>
+      <p>A student who scored 90% last week gets the same exercises as one who scored 15%. There is no personalization, no adaptive learning.</p>
+    </div>
+    <div>
+      <ul class="feature-list">
+        <li>No way to identify struggling students early</li>
+        <li>Hours spent manually analyzing test scores</li>
+        <li>Existing LMS platforms are content repositories — they don't learn</li>
+        <li>Teachers can't scale personalized attention</li>
+      </ul>
+    </div>
+  </div>
+  <div class="slide-number">2</div>
+</div>
+
+<!-- SLIDE 3: The Solution -->
+<div class="slide">
+  <div class="tag">The Solution</div>
+  <h2>A recommendation engine that <span class="gold">learns what works</span></h2>
+  <div class="two-col">
+    <div>
+      <p style="margin-bottom: 16px;">GradePulse uses the teacher's existing weekly test scores as its signal — no extra data collection required.</p>
+      <p>After every score entry, the model updates its understanding and recommends the right content at the right time.</p>
+    </div>
+    <div>
+      <div style="margin-top: 16px;">
+        <img src="screenshots/login.png" alt="GradePulse Login" style="width: 100%; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1);">
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">3</div>
+</div>
+
+<!-- SLIDE 4: How It Works -->
+<div class="slide">
+  <div class="tag">How It Works</div>
+  <h2>Four steps to <span class="gold">personalized learning</span></h2>
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-top: 24px;">
+    <div style="text-align: center;">
+      <div style="width: 48px; height: 48px; background: rgba(201,162,39,0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 20px; font-weight: 800; color: var(--gold);">1</div>
+      <h3 style="font-size: 14px;">Enter Scores</h3>
+      <p style="font-size: 13px;">Teacher enters weekly test scores — the same workflow they already do</p>
+    </div>
+    <div style="text-align: center;">
+      <div style="width: 48px; height: 48px; background: rgba(201,162,39,0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 20px; font-weight: 800; color: var(--gold);">2</div>
+      <h3 style="font-size: 14px;">AI Learns</h3>
+      <p style="font-size: 13px;">Model discovers which content types work for which students</p>
+    </div>
+    <div style="text-align: center;">
+      <div style="width: 48px; height: 48px; background: rgba(201,162,39,0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 20px; font-weight: 800; color: var(--gold);">3</div>
+      <h3 style="font-size: 14px;">Triage Students</h3>
+      <p style="font-size: 13px;">Instant classification: who needs help, who's on track, who's ahead</p>
+    </div>
+    <div style="text-align: center;">
+      <div style="width: 48px; height: 48px; background: rgba(201,162,39,0.15); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 20px; font-weight: 800; color: var(--gold);">4</div>
+      <h3 style="font-size: 14px;">Recommend Content</h3>
+      <p style="font-size: 13px;">Specific, personalized content recommendations for each student</p>
+    </div>
+  </div>
+  <div class="slide-number">4</div>
+</div>
+
+<!-- SLIDE 5: App Screenshots -->
+<div class="slide">
+  <div class="tag">Product</div>
+  <h2>Built for <span class="gold">Nigerian classrooms</span></h2>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+    <div style="text-align: center;">
+      <img src="screenshots/login.png" alt="Login" style="height: 180px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); object-fit: cover; object-position: top;">
+      <p style="font-size: 12px; color: var(--gray-500); margin-top: 6px;">Branded Login</p>
+    </div>
+    <div style="text-align: center;">
+      <img src="screenshots/pricing.png" alt="Pricing" style="height: 180px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); object-fit: cover; object-position: top;">
+      <p style="font-size: 12px; color: var(--gray-500); margin-top: 6px;">Freemium Pricing</p>
+    </div>
+    <div style="text-align: center;">
+      <img src="screenshots/signup.png" alt="Signup" style="height: 180px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); object-fit: cover; object-position: top;">
+      <p style="font-size: 12px; color: var(--gray-500); margin-top: 6px;">Onboarding Flow</p>
+    </div>
+    <div style="text-align: center;">
+      <img src="screenshots/students.png" alt="Dashboard" style="height: 180px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); object-fit: cover; object-position: top;">
+      <p style="font-size: 12px; color: var(--gray-500); margin-top: 6px;">Student Dashboard</p>
+    </div>
+  </div>
+  <div class="slide-number">5</div>
+</div>
+
+<!-- SLIDE 6: Key Metrics -->
+<div class="slide">
+  <div class="tag">Traction</div>
+  <h2>Performance that <span class="gold">speaks for itself</span></h2>
+  <div class="metrics-grid">
+    <div class="metric-box">
+      <div class="metric-value">250+</div>
+      <div class="metric-label">Recommendations/sec</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">87%</div>
+      <div class="metric-label">Topic Accuracy</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">7.2</div>
+      <div class="metric-label">Neural Score /10</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">100+</div>
+      <div class="metric-label">Automated Tests</div>
+    </div>
+  </div>
+  <div style="margin-top: 24px;">
+    <p style="font-size: 14px; color: var(--gray-500); text-align: center;">
+      Cold-start capable • Works from the first student • No training data required
+    </p>
+  </div>
+  <div class="slide-number">6</div>
+</div>
+
+<!-- SLIDE 7: Competitive Advantage -->
+<div class="slide">
+  <div class="tag">Why Us</div>
+  <h2>Five reasons <span class="gold">GradePulse wins</span></h2>
+  <div class="two-col">
+    <div>
+      <ul class="feature-list">
+        <li><strong>Zero extra data</strong> — Uses test scores teachers already collect</li>
+        <li><strong>Cold-start capable</strong> — Works from the first student, no training data</li>
+        <li><strong>Offline-first</strong> — Works without internet via generated HTML tools</li>
+      </ul>
+    </div>
+    <div>
+      <ul class="feature-list">
+        <li><strong>Explainable</strong> — Teachers see why content is recommended</li>
+        <li><strong>Self-monitoring</strong> — Neural Score tells you when the model needs attention</li>
+      </ul>
+    </div>
+  </div>
+  <div class="slide-number">7</div>
+</div>
+
+<!-- SLIDE 8: Market -->
+<div class="slide">
+  <div class="tag">Market</div>
+  <h2>A <span class="gold">massive</span> underserved market</h2>
+  <div class="metrics-grid">
+    <div class="metric-box">
+      <div class="metric-value">40K+</div>
+      <div class="metric-label">Secondary Schools</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">10M+</div>
+      <div class="metric-label">Students</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">₦0</div>
+      <div class="metric-label">Current Personalization</div>
+    </div>
+    <div class="metric-box">
+      <div class="metric-value">WAEC</div>
+      <div class="metric-label">Framework Aligned</div>
+    </div>
+  </div>
+  <div style="margin-top: 24px;">
+    <p><strong>Primary:</strong> Nigerian secondary schools &nbsp;|&nbsp; <strong>Secondary:</strong> African EdTech platforms &nbsp;|&nbsp; <strong>Expansion:</strong> Any WAEC-aligned system</p>
+  </div>
+  <div class="slide-number">8</div>
+</div>
+
+<!-- SLIDE 9: Pricing -->
+<div class="slide">
+  <div class="tag">Business Model</div>
+  <h2>Freemium with <span class="gold">clear upgrade path</span></h2>
+  <div class="pricing-cards">
+    <div class="pricing-card">
+      <h3>Free</h3>
+      <div class="price">₦0 <span>/forever</span></div>
+      <p style="font-size: 13px;">1 teacher, 30 students, 1 school</p>
+    </div>
+    <div class="pricing-card popular">
+      <h3>Starter</h3>
+      <div class="price">₦5,000 <span>/month</span></div>
+      <p style="font-size: 13px;">1 teacher, 150 students, 3 schools</p>
+    </div>
+    <div class="pricing-card">
+      <h3>School</h3>
+      <div class="price">₦15,000 <span>/month</span></div>
+      <p style="font-size: 13px;">10 teachers, 500 students, unlimited</p>
+    </div>
+  </div>
+  <p style="text-align: center; margin-top: 16px; font-size: 14px; color: var(--gray-500);">
+    No hidden fees • Updates & support included • Bank transfer, card, USSD
+  </p>
+  <div class="slide-number">9</div>
+</div>
+
+<!-- SLIDE 10: Roadmap -->
+<div class="slide">
+  <div class="tag">Roadmap</div>
+  <h2>What's <span class="gold">next</span></h2>
+  <div class="timeline">
+    <div class="timeline-item active">
+      <div class="timeline-dot"></div>
+      <div>
+        <h3 style="font-size: 14px;">v0.1 — Complete</h3>
+        <p style="font-size: 13px;">Core engine, REST API, teacher portal, offline tool, 100+ tests, multi-worker support</p>
+      </div>
+    </div>
+    <div class="timeline-item active">
+      <div class="timeline-dot"></div>
+      <div>
+        <h3 style="font-size: 14px;">v0.2 — Post-Pilot</h3>
+        <p style="font-size: 13px;">Thompson Sampling cold-start, group recommendations, context diversity, SQLite migration</p>
+      </div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div>
+        <h3 style="font-size: 14px;">v1.0 — Scale</h3>
+        <p style="font-size: 13px;">Multi-school admin, mobile app, API marketplace for EdTech platforms</p>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">10</div>
+</div>
+
+<!-- SLIDE 11: CTA -->
+<div class="slide slide-dark" style="text-align: center; justify-content: center; align-items: center;">
+  <h1>Let's <span class="gold">personalize learning</span><br>for 10M students</h1>
+  <p style="font-size: 20px; margin-top: 16px; color: rgba(255,255,255,0.6);">
+    divinenwobodo5@gmail.com
+  </p>
+  <a href="mailto:divinenwobodo5@gmail.com" class="cta-button" style="margin-top: 32px;">Schedule a Demo</a>
+  <div class="slide-number">11</div>
+</div>
+
+</body>
+</html>
