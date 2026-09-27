@@ -222,18 +222,14 @@ class ApiClient {
   }
 
   // ─── Brain Operations ───
-  // /recommend always returns a JSON array (normalised at the backend for
-  // top_n=1 as well, 2026-09-27). Defensive handling below stays for safety.
+  // /recommend always returns a JSON array, including at top_n=1.
   async recommend(studentId: string, topN: number = 3, signal?: AbortSignal) {
-    const data = await this.request<Recommendation | Recommendation[] | null>(
+    return this.request<Recommendation[]>(
       "POST",
       "/recommend",
       { student_id: studentId, top_n: topN },
       signal
     );
-    if (data === null || data === undefined) return [];
-    const list = Array.isArray(data) ? data : [data];
-    return list.filter((item) => Boolean(item?.content_id));
   }
 
   async bulkUpdate(
