@@ -2,8 +2,21 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { BrainSummary, TriageResult, Student } from "@/lib/types";
 import { TIER_LABELS } from "@/lib/types";
+
+const NEURAL_SCORE_MAX = 10;
+const NEURAL_TONES: { atLeast: number; tone: string }[] = [
+  { atLeast: 8.5, tone: "success" },
+  { atLeast: 7, tone: "info" },
+  { atLeast: 5, tone: "warning" },
+];
+
+function neuralTone(score: number) {
+  if (score < 5) return "danger";
+  return NEURAL_TONES.find((t) => score >= t.atLeast)?.tone ?? "warning";
+}
 
 function MetricCard({ accent, label, value, sub, icon }: {
   accent: string;
@@ -27,20 +40,29 @@ function MetricCard({ accent, label, value, sub, icon }: {
 }
 
 export default function DashboardPage() {
+  const { user, loading: authLoading } = useAuth();
   const [summary, setSummary] = useState<BrainSummary | null>(null);
   const [triage, setTriage] = useState<TriageResult | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const neuralScore = Math.min(
+    Math.max(summary?.last_neural_score ?? 0, 0),
+    NEURAL_SCORE_MAX
+  );
+
   useEffect(() => {
+    if (authLoading || !user) return;
+
     let cancelled = false;
+    const controller = new AbortController();
     async function load() {
       try {
         const [s, t, st] = await Promise.all([
-          api.summary(),
-          api.triage("MATH").catch(() => null),
-          api.getStudents().catch(() => []),
+          api.summary(controller.signal),
+          api.triage("MATH", controller.signal).catch(() => null),
+          api.getStudents(undefined, undefined, controller.signal).catch(() => []),
         ]);
         if (!cancelled) {
           setSummary(s);
@@ -48,14 +70,20 @@ export default function DashboardPage() {
           setStudents(st);
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load dashboard");
+        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+          setError(err instanceof Error ? err.message : "Failed to load dashboard");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
+
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user]);
 
   const tierCounts = useMemo(() => triage?.tiers
     ? Object.fromEntries(Object.entries(triage.tiers).map(([key, val]) => [key, val.count]))
@@ -65,9 +93,9 @@ export default function DashboardPage() {
   const riskCount = tierCounts["remediation"] ?? 0;
   const riskPct = totalTriaged > 0 ? Math.round((riskCount / totalTriaged) * 100) : 0;
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
-      <div className="page-shell">
+      <div role="status" aria-live="polite" className="page-shell">
         <div className="h-8 w-48 rounded-lg skeleton" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 rounded-xl skeleton" />)}
@@ -82,7 +110,7 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
+      <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
         {error}
       </div>
     );
@@ -195,12 +223,12 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <div className="flex-1 progress-bar">
                   <div
-                    className="progress-bar-fill success"
-                    style={{ width: `${((summary?.last_neural_score ?? 0) + 1) / 2 * 100}%` }}
+                    className={`progress-bar-fill ${neuralTone(neuralScore)}`}
+                    style={{ width: `${(neuralScore / 10) * 100}%` }}
                   />
                 </div>
                 <span className="text-sm font-mono font-semibold text-navy">
-                  {summary?.last_neural_score?.toFixed(2) ?? "0.00"}
+                  {summary?.last_neural_score != null ? `${neuralScore.toFixed(1)}/10` : "—"}
                 </span>
               </div>
             </div>
@@ -265,7 +293,7 @@ export default function DashboardPage() {
                               <div className="caption text-text-muted">{s.attempts} attempt{s.attempts !== 1 ? "s" : ""}</div>
                             </div>
                             <span className="text-sm font-mono font-semibold text-navy ml-2">
-                              {Math.round(s.average_score * 100)}%
+                              {Math.round((s.average_score ?? s.predicted_score ?? 0) * 100)}%
                             </span>
                           </div>
                         ))}

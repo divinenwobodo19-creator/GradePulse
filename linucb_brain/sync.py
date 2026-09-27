@@ -19,11 +19,25 @@ class FileLock:
     
     This ensures only one worker can write to the brain state file at a time,
     preventing corruption from concurrent writes.
+
+    Design notes:
+    - `flock()` fences across processes (and across distinct FileLock instances
+      in the same process, because each open() creates a separate open-file
+      description).
+    - A per-instance `threading.Lock` serializes concurrent holders of the SAME
+      FileLock instance inside a single process. Without it, two threads that
+      share one instance can clobber each other's `_lock_fd` and close a lock
+      file descriptor out from under the thread that actually holds the lock
+      (observed as `OSError: [Errno 9] Bad file descriptor` under concurrent
+      bulk-update load, which then lets writers race unsynchronized).
+    - Lock *attempts* keep their file descriptor in a local variable so a
+      failed acquire can never release/close a descriptor owned by the holder.
     """
     def __init__(self, filepath: str):
         self.filepath = filepath
         self.lock_path = f"{filepath}.lock"
         self._lock_fd: Optional[int] = None
+        self._thread_lock = threading.Lock()
     
     def acquire(self, timeout: float = 30.0) -> bool:
         """
@@ -35,35 +49,59 @@ class FileLock:
         Returns:
             True if lock acquired, False if timeout.
         """
+        # Serialize same-instance holders in this process. This lock is held
+        # until release() so a single instance can never have two active fds.
+        if not self._thread_lock.acquire(timeout=timeout):
+            return False
         start_time = time.time()
+        attempt_fd: Optional[int] = None
         while True:
             try:
-                self._lock_fd = os.open(self.lock_path, os.O_CREAT | os.O_RDWR)
-                fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                # Write PID for debugging
-                os.write(self._lock_fd, str(os.getpid()).encode())
+                attempt_fd = os.open(self.lock_path, os.O_CREAT | os.O_RDWR)
+                fcntl.flock(attempt_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Write PID for debugging (truncate stale content first)
+                os.ftruncate(attempt_fd, 0)
+                os.write(attempt_fd, str(os.getpid()).encode())
+                self._lock_fd = attempt_fd
                 return True
             except (IOError, OSError):
-                if self._lock_fd is not None:
-                    os.close(self._lock_fd)
-                    self._lock_fd = None
+                # Never touch self._lock_fd from the failure path — it may
+                # belong to an in-progress holder of this instance.
+                if attempt_fd is not None:
+                    try:
+                        os.close(attempt_fd)
+                    except OSError:
+                        pass
+                    attempt_fd = None
                 if time.time() - start_time >= timeout:
+                    self._thread_lock.release()
                     return False
-                time.sleep(0.01)
+                time.sleep(0.005)
     
     def release(self):
         """Release the file lock."""
-        if self._lock_fd is not None:
+        fd, self._lock_fd = self._lock_fd, None
+        if fd is not None:
             try:
-                fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
-                os.close(self._lock_fd)
+                fcntl.flock(fd, fcntl.LOCK_UN)
             except (IOError, OSError):
                 pass
-            finally:
-                self._lock_fd = None
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        # Release the in-process serialization lock (release-without-acquire is
+        # a no-op rather than an error).
+        try:
+            self._thread_lock.release()
+        except RuntimeError:
+            pass
     
     def __enter__(self):
-        self.acquire()
+        if not self.acquire():
+            raise TimeoutError(
+                f"Could not acquire file lock within timeout: {self.lock_path}"
+            )
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):

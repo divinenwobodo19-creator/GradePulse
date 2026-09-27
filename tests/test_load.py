@@ -15,6 +15,8 @@ import statistics
 import pytest
 import requests
 
+from live_api import is_real_api
+
 BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000")
 TEST_EMAIL = "loadtest@gradepulse.com"
 TEST_PASSWORD = "loadtest123"
@@ -22,11 +24,7 @@ TEST_PASSWORD = "loadtest123"
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _api_available():
-    try:
-        r = requests.get(f"{BASE_URL}/health", timeout=2)
-        return r.status_code == 200
-    except requests.ConnectionError:
-        return False
+    return is_real_api()
 
 
 def _get_token():

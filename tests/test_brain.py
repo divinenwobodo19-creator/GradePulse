@@ -64,3 +64,42 @@ def test_save_and_load_preserves_state(tmp_path):
     assert loaded_brain.students["S1"].name == "Alice"
     assert loaded_brain.contents["C1"].title == "Math Video"
     assert np.allclose(loaded_brain.model.arms["C1"]['A'], brain.model.arms["C1"]['A'])
+
+def test_save_is_atomic_and_leaves_no_tmp(tmp_path):
+    brain = Brain()
+    brain.add_student("S1", "Alice")
+    brain.add_content("C1", "Math", "Math", 3, "video")
+    brain.update("S1", "C1", 0.9)
+
+    path = tmp_path / "state.json"
+    brain.save(str(path))
+
+    tmp_leftovers = [p.name for p in tmp_path.iterdir() if ".tmp" in p.name]
+    assert tmp_leftovers == []
+    loaded = Brain.load(str(path))
+    assert loaded.students["S1"].name == "Alice"
+    assert loaded.contents["C1"].avg_reward is not None
+
+def test_save_retains_bak_and_load_falls_back(tmp_path):
+    brain = Brain()
+    brain.add_student("S1", "Alice")
+    brain.add_content("C1", "Math", "Math", 3, "video")
+    brain.update("S1", "C1", 0.9)
+
+    path = tmp_path / "state.json"
+    brain.save(str(path))
+    brain.update("S1", "C1", 0.2)   # second save -> first good state is kept as .bak
+    brain.save(str(path))
+
+    assert (tmp_path / "state.json.bak").exists()
+
+    path.write_text("{ this is not valid json, so the main file is corrupt ")
+    loaded = Brain.load(str(path))
+    assert "S1" in loaded.students
+    assert "C1" in loaded.contents
+
+def test_load_raises_when_no_bak_and_main_corrupt(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text("not json at all")
+    with pytest.raises(ValueError):
+        Brain.load(str(path))

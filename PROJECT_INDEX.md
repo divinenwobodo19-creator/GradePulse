@@ -2,54 +2,56 @@
 
 Codebase navigation map. Each section maps to an owner role.
 
+> **Ownership note (2026-09-27):** All original role-agents (Sam, Mia, Ali, Bob, David, Alice) were AI models and have been **scrapped by Divine**. The **Backend Engineer (opencode session)** is now the sole engineering agent and owns everything backend-related: engine, API, auth, storage/sync/backup, ingestion, infra config, QA/testing, and tech docs. Frontend (`gradepulse-web/`) has no agent; it ships as-is and its API contract is maintained backend-side. Owners below are updated to match (Unassigned = no agent).
+
 ---
 
 ## Root-Level Files
 
 | File | Purpose | Owner |
 |---|---|---|
-| `README.md` | Quick start, project structure, API examples | Documentation |
-| `PROJECT_INDEX.md` | This file — codebase navigation | Documentation |
-| `CHANGELOG.md` | Release notes for v0.1.0 | Documentation |
-| `RELEASE_CHECKLIST.md` | Pre-release verification steps for all agents | Documentation |
-| `API_REFERENCE.md` | All 29 endpoints with request/response examples | Documentation |
-| `DEPLOYMENT.md` | Production deployment runbook | Infrastructure |
-| `requirements.txt` | Python dependencies | Sam / Infra |
-| `pyproject.toml` | Project metadata | Sam |
-| `teacher_portal.py` | Streamlit teacher dashboard | Mia |
-| `generate_offline.py` | Offline HTML tool generator | Mia |
-| `offline_teacher.html` | Generated standalone tool | Mia |
-| `brain_state.json` | Model persistence (LinUCB state) | Sam |
-| `class_config.json` | School/class registry | Sam |
-| `gradepulse_users.db` | SQLite user accounts (JWT auth) | Sam |
-| `ingest.py` | Data ingestion CLI (CSV/Excel → 17-dim vector) | Data Engineer |
-| `generate_pilot_data.py` | Generate pilot-grade validation datasets | Data Engineer |
-| `sample_data/` | Sample pilot-school data (5 students, 8 content items) | Data Engineer |
-| `sample_data/large/` | Large sample dataset (56 students, 24 content items) | Data Engineer |
-| `sample_data/pilot_grade/` | Pilot-grade validation data (edge cases) | Data Engineer |
-| `.env.example` | Production configuration variables (backup, sync, env) | Infrastructure |
-| `Consolidated QA Audit Report.md` | Consolidated QA findings across all modules | QA |
-| `QA AUDIT REPORT.md` | QA audit report | QA |
+| `README.md` | Quick start, project structure, API examples | Backend Engineer |
+| `PROJECT_INDEX.md` | This file — codebase navigation | Backend Engineer |
+| `CHANGELOG.md` | Release notes | Backend Engineer |
+| `RELEASE_CHECKLIST.md` | Pre-release verification steps | Backend Engineer |
+| `API_REFERENCE.md` | All documented endpoints with request/response examples | Backend Engineer |
+| `DEPLOYMENT.md` | Production deployment runbook | Backend Engineer |
+| `requirements.txt` | Python dependencies | Backend Engineer |
+| `pyproject.toml` | Project metadata | Backend Engineer |
+| `teacher_portal.py` | Streamlit teacher dashboard | Unassigned (legacy) |
+| `generate_offline.py` | Offline HTML tool generator | Unassigned (legacy) |
+| `offline_teacher.html` | Generated standalone tool | Unassigned (legacy) |
+| `brain_state.json` | Model persistence (LinUCB state) | Backend Engineer |
+| `class_config.json` | School/class registry | Backend Engineer |
+| `gradepulse_users.db` | SQLite user accounts (JWT auth) | Backend Engineer |
+| `ingest.py` | Data ingestion CLI (CSV/Excel → 17-dim vector) | Backend Engineer |
+| `generate_pilot_data.py` | Generate pilot-grade validation datasets | Backend Engineer |
+| `sample_data/` | Sample pilot-school data | Backend Engineer |
+| `sample_data/large/` | Large sample dataset | Backend Engineer |
+| `sample_data/pilot_grade/` | Pilot-grade validation data (edge cases) | Backend Engineer |
+| `.env.example` | Production configuration variables | Backend Engineer |
+| `Consolidated QA Audit Report.md` | Consolidated QA findings across all modules | Backend Engineer |
+| `QA AUDIT REPORT.md` | QA audit report | Backend Engineer |
 | `INVESTOR_CHECKLIST.md` | Investor due diligence checklist | Divine |
-| `Model Specifications.md` | Model technical specifications | Sam |
-| `backups/` | Automated brain state backups (rotated, timestamped) | Infrastructure |
-| `Dockerfile` | Multi-stage Docker build (backend + frontend targets) | Infrastructure |
-| `docker-compose.yml` | Docker Compose orchestration (API + web services, volumes) | Infrastructure |
-| `.dockerignore` | Excludes dev/test files from Docker build context | Infrastructure |
-| `DEPLOYMENT.md` | Production deployment runbook (VPS, HTTPS, backup/restore) | Infrastructure |
+| `Model Specifications.md` | Model technical specifications | Backend Engineer |
+| `backups/` | Automated brain state backups (rotated, timestamped) | Backend Engineer |
+| `Dockerfile` | Multi-stage Docker build (backend + frontend targets) | Backend Engineer |
+| `docker-compose.yml` | Docker Compose orchestration (API + web services, volumes) | Backend Engineer |
+| `.dockerignore` | Excludes dev/test files from Docker build context | Backend Engineer |
+| `DEPLOYMENT.md` | Production deployment runbook (VPS, HTTPS, backup/restore) | Backend Engineer |
 
 ---
 
-## `.github/workflows/` — CI/CD (Infrastructure)
+## `.github/workflows/` — CI/CD
 
-| File | Purpose |
-|---|---|
-| `ci.yml` | Test on push/PR to main (Python 3.12, pip cache, pytest) |
-| `docker.yml` | Build + push Docker images to GHCR on version tags |
+| File | Purpose | Owner |
+|---|---|---|
+| `ci.yml` | Test on push/PR to main (Python 3.12, pip cache, pytest) | Backend Engineer |
+| `docker.yml` | Build + push Docker images to GHCR on version tags | Backend Engineer |
 
 ---
 
-## `linucb_brain/` — Core Engine (Sam)
+## `linucb_brain/` — Core Engine (Backend Engineer)
 
 ### `linucb_brain/core/` — Algorithms
 
@@ -98,7 +100,9 @@ Codebase navigation map. Each section maps to an owner role.
 
 ---
 
-## `tests/` — Test Suite (Sam + Infra)
+## `tests/` — Test Suite (Backend Engineer)
+
+> Per-file counters below are informational and drift as tests evolve; the canonical number is what CI/`pytest` reports. **Latest verified (2026-09-27, after Phase 2): 352 total — 315 offline-file tests + 37 live tests** (backup-api, ingest-api, load) against a real `:8000` server.
 
 | File | Tests | Coverage |
 |---|---|---|
@@ -116,11 +120,12 @@ Codebase navigation map. Each section maps to an owner role.
 | `test_load.py` | 7 | Concurrent API load tests (require running server) |
 | `test_ingest.py` | 60 | CSV readers, validators, grade parsing, student/content ingestion |
 | `test_backup_api.py` | 17 | Backup API endpoints: create, list, restore, auth, integration |
-| **Total** | **179** | **172 passed, 7 skipped (load tests require server)** |
+| `test_security.py` | 11 | Phase 2: school-isolation 403s, JWT claims, rate limiting, fail-fast secret |
+| **Total (latest verified)** | **352** | **315 offline + 37 live on :8000** |
 
 ---
 
-## `gradepulse-web/` — Next.js Frontend (Mia)
+## `gradepulse-web/` — Next.js Frontend (Unassigned — ships as-is)
 
 ### All Pages Complete (15/15)
 
@@ -144,7 +149,7 @@ Codebase navigation map. Each section maps to an owner role.
 
 ---
 
-## `assets/` — Branding (Mia)
+## `assets/` — Branding
 
 | File | Purpose |
 |---|---|
@@ -154,18 +159,20 @@ Codebase navigation map. Each section maps to an owner role.
 
 ## `Team Handbooks/` — Agent Coordination
 
-| File | Purpose | Owner |
+> All former role-agents were scrapped 2026-09-27; files below are **archived reference** (authored by removed agents) or maintained by Divine/Backend Engineer.
+
+| File | Purpose | Maintainer |
 |---|---|---|
 | `TEAM_HANDBOOK.md` | Master source of truth — roles, rules, Decision Log | Divine |
-| `SAM_TECHNICAL_HANDOFF.md` | Full technical architecture | Sam |
-| `SAM_UNDERSTANDING.md` | Sam's role declaration | Sam |
-| `MIA_ENGINEERING_PROFILE.md` | Mia's engineering profile | Mia |
-| `MIA_UNDERSTANDING_AND_ROLE.md` | Mia's role declaration | Mia |
-| `docs-writer.md` | Documentation role scope | Divine |
-| `data-engineer.md` | Data Engineer role scope | Divine |
-| `infra-engineer.md` | Infrastructure/DevOps role scope | Divine |
-| `qa-tester.md` | QA/Testing role scope | Divine |
+| `SAM_TECHNICAL_HANDOFF.md` | Full technical architecture | Reference (archived) |
+| `SAM_UNDERSTANDING.md` | Sam's role declaration | Reference (archived) |
+| `MIA_ENGINEERING_PROFILE.md` | Mia's engineering profile | Reference (archived) |
+| `MIA_UNDERSTANDING_AND_ROLE.md` | Mia's role declaration | Reference (archived) |
+| `docs-writer.md` | Former Documentation role scope | Reference (archived) |
+| `data-engineer.md` | Former Data Engineer role scope | Reference (archived) |
+| `infra-engineer.md` | Former Infra/DevOps role scope | Reference (archived) |
+| `qa-tester.md` | Former QA/Testing role scope | Reference (archived) |
 
 ---
 
-*Last updated: 2026-08-31 by Alice (Documentation) — v7: added CHANGELOG.md, RELEASE_CHECKLIST.md, API_REFERENCE.md, updated README.md for v0.1.0 release*
+*Last updated: 2026-09-27 by Backend Engineer (opencode) — sole-agent restructuring; Owner column updated; verified test count 352*

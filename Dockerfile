@@ -1,8 +1,8 @@
 # ── GradePulse Multi-Stage Dockerfile ──────────────────────────────────────────
 # Targets:  backend  |  frontend
-# Usage:
-#   docker build --target backend -t gradepulse-api .
-#   docker build --target frontend -t gradepulse-web ./gradepulse-web
+# Usage (always build from the repository root so both stages resolve):
+#   docker build --target backend  -t gradepulse-api .
+#   docker build --target frontend -t gradepulse-web .
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Stage 1: Backend (Python / FastAPI)
@@ -49,16 +49,26 @@ FROM node:20-alpine AS frontend
 
 WORKDIR /app
 
-COPY gradepulse-web/package.json gradepulse-web/package-lock.json* ./
-RUN npm install
+# Deterministic install: the lockfile is required for `npm ci`.
+COPY gradepulse-web/package.json gradepulse-web/package-lock.json ./
+RUN npm ci
 
 COPY gradepulse-web/ .
 
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_API_URL=
+ENV API_URL=$API_URL \
+    NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=production
 
-RUN npm run build
+RUN npm run build && chown -R node:node /app
+
+USER node
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD node -e "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" || exit 1
 
 CMD ["npm", "start"]

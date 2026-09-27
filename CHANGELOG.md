@@ -64,7 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Offline HTML tool generator
 
 #### Testing
-- 179 tests (pytest)
+- 339 tests (pytest)
 - Adaptive gamma tests
 - Anti-gaming reward tests
 - API endpoint tests

@@ -1,24 +1,62 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import type { BrainSummary } from "@/lib/types";
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [summary, setSummary] = useState<BrainSummary | null>(null);
+  const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [error, setError] = useState("");
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (type: string, message: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ type, message });
-    setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
   useEffect(() => {
-    api.summary().then(setSummary).catch(() => {});
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
   }, []);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+    async function load() {
+      const [summaryResult, healthResult] = await Promise.allSettled([
+        api.summary(controller.signal),
+        api.health(controller.signal),
+      ]);
+      if (cancelled) return;
+
+      if (summaryResult.status === "fulfilled") {
+        setSummary(summaryResult.value);
+      } else {
+        setError(summaryResult.reason instanceof Error ? summaryResult.reason.message : "Failed to load system summary");
+      }
+
+      setApiStatus(
+        healthResult.status === "fulfilled" && healthResult.value.status === "alive"
+          ? "online"
+          : "offline"
+      );
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user]);
 
   const handleSaveBrain = async () => {
     setSaving(true);
@@ -35,7 +73,7 @@ export default function SettingsPage() {
   return (
     <div className="page-shell max-w-3xl">
       {toast && (
-        <div className={`toast toast-${toast.type}`}>
+        <div role="status" aria-live="polite" aria-atomic="true" className={`toast toast-${toast.type}`}>
           {toast.type === "success" && (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -54,6 +92,12 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {error && (
+        <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Account Section */}
       <div className="card">
@@ -82,7 +126,7 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center justify-between py-3.5">
               <span className="body text-text-secondary">Role</span>
-              <span className="badge badge-info">Teacher</span>
+               <span className="badge badge-neutral">Not specified</span>
             </div>
           </div>
         </div>
@@ -191,10 +235,10 @@ export default function SettingsPage() {
                   Backend connection health
                 </p>
               </div>
-              <span className="flex items-center gap-2 badge badge-success">
-                <span className="status-dot active" />
-                Connected
-              </span>
+               <span className={`flex items-center gap-2 badge ${apiStatus === "online" ? "badge-success" : apiStatus === "offline" ? "badge-danger" : "badge-neutral"}`}>
+                 <span className={`status-dot ${apiStatus === "online" ? "active" : ""}`} />
+                 {apiStatus === "online" ? "Connected" : apiStatus === "offline" ? "Unavailable" : "Checking"}
+               </span>
             </div>
 
             {/* Content Count */}

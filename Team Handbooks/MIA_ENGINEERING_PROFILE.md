@@ -176,10 +176,37 @@ When Mia finishes a frontend session:
 |---|---|
 | Design System | Complete |
 | Teacher Portal (Streamlit) | Complete |
-| Next.js Frontend | 15/15 files written (all pages complete, topics normalized to uppercase) |
+| Next.js Frontend | Complete — all pages built, hardened, and verified |
 | Offline HTML Tool | Complete |
 | Branding | Complete |
-| Remaining 6 Next.js Pages | Blocked by network (npm install) |
+
+### 6.1 Frontend hardening — 27 September 2026
+
+All 6 previously-blocked pages are built. The frontend now has a server-side
+`/api` proxy, central 401 handling, abortable requests, an accessibility pass,
+security headers, 24 unit tests, and a CI job.
+
+| Item | Status |
+|---|---|
+| Remaining 6 Next.js pages | Complete — no longer blocked |
+| API client / auth provider | Complete — `src/lib/`, typed, abortable |
+| Accessibility | Labels, dialog focus trap, live regions, skip link, focus-visible, reduced motion |
+| Security headers | CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy |
+| Test suite | 24 Vitest specs (`npm run check`) |
+| CI | `frontend` job: lint, typecheck, test, build |
+| Mobile responsive | **Not verified this session** — see open items |
+| WCAG conformance level | **Unconfirmed** — awaiting target from Divine |
+| Offline HTML tool | Untouched this session; contains no Neural Score display, so the scale fix below does not apply to it |
+| Teacher Portal (Streamlit) | Untouched this session; contains no Neural Score display either |
+
+### 6.2 Open items on my side
+
+| Item | Needs |
+|---|---|
+| Confirm tablet + desktop layouts still hold after the hardening pass | My own verification |
+| WCAG target level (AA assumed) | Divine |
+| Neural Score "not computed" sentinel — API returns `0.0`, schema says `Optional[float]`, persisted state uses `None` | Backend Engineer |
+| `/recommend` returns object / list / `{}` depending on `top_n`; frontend normalizes, backend should return one stable shape | Backend Engineer |
 
 ---
 

@@ -218,7 +218,7 @@ NEURAL SCORE            →  7.2/10
 ## Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (339 tests)
 PYTHONPATH=. python3 -m pytest tests/ -v
 
 # Run specific test file
@@ -241,7 +241,7 @@ PYTHONPATH=. python3 -m pytest tests/ --cov=linucb_brain
 │   │   └── schemas.py      # Pydantic request/response models
 │   ├── sync.py             # Multi-worker brain state synchronization
 │   └── backup.py           # Automated backup system (rotation, restore)
-├── tests/                  # Test suite (179 tests, pytest)
+├── tests/                  # Test suite (339 tests, pytest)
 ├── sample_data/            # Sample pilot-school data (CSV)
 │   ├── large/              # Large sample dataset (56 students)
 │   └── pilot_grade/        # Pilot-grade validation data
@@ -310,7 +310,7 @@ See `DEPLOYMENT.md` for the full production runbook covering:
 - Next.js frontend (15 pages)
 - Docker containerization
 - CI/CD pipeline (GitHub Actions)
-- 179 tests
+- 339 tests
 
 ## What's Deferred to v0.2
 

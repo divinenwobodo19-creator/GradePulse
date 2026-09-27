@@ -51,8 +51,16 @@ obsidian-vault/
 # Sample data
 sample_data/
 
-# Next.js frontend (built separately)
-gradepulse-web/
+# Next.js frontend sources are required by the `frontend` build stage.
+# Only local build artifacts and dependencies are excluded.
+gradepulse-web/node_modules/
+gradepulse-web/.next/
+gradepulse-web/out/
+gradepulse-web/coverage/
+gradepulse-web/tsconfig.tsbuildinfo
+gradepulse-web/next-env.d.ts
+gradepulse-web/.env
+gradepulse-web/.env.*
 
 # Streamlit teacher portal (not used in Docker)
 teacher_portal.py

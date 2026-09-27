@@ -3,6 +3,7 @@ Authentication module — JWT + bcrypt + SQLite user store.
 """
 import os
 import sqlite3
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -12,9 +13,27 @@ from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-SECRET_KEY = os.getenv("JWT_SECRET", "gradepulse-dev-secret-change-in-production")
+DEV_SECRET = "gradepulse-dev-secret-change-in-production"
+ENV = os.getenv("GRADEPULPE_ENV", os.getenv("ENV", "development")).strip().lower()
+SECRET_KEY = os.getenv("JWT_SECRET", DEV_SECRET)
+
+# Fail fast: never boot a production process on a known/absent signing secret.
+if ENV in ("production", "prod"):
+    if not SECRET_KEY or SECRET_KEY == DEV_SECRET or len(SECRET_KEY) < 32:
+        raise RuntimeError(
+            "Refusing to start in production: set JWT_SECRET to a strong "
+            "random value of at least 32 characters (see .env.example)."
+        )
+elif SECRET_KEY == DEV_SECRET:
+    print(
+        "WARNING: using the development JWT secret. Set JWT_SECRET before "
+        "sharing this deployment (see .env.example).",
+        file=sys.stderr,
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ISSUER = "gradepulse"
 DB_PATH = os.getenv("USER_DB_PATH", "gradepulse_users.db")
 
 security = HTTPBearer(auto_error=False)
@@ -52,16 +71,34 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    to_encode.update({
+        "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        "iat": now,
+        "jti": uuid.uuid4().hex,
+        "iss": ISSUER,
+        "aud": ISSUER,
+    })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> Optional[dict]:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM],
+            audience=ISSUER, issuer=ISSUER,
+            options={"require_sub": True, "verify_iat": True},
+        )
     except JWTError:
         return None
+    # Reject tokens with a future iat (clock-skew slack of 30s).
+    iat = payload.get("iat")
+    if iat is not None:
+        now = datetime.now(timezone.utc)
+        max_future = int(now.timestamp()) + 30
+        if int(iat) > max_future:
+            return None
+    return payload
 
 
 def create_user(email: str, password: str) -> dict:

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { Student, School, SchoolClass } from "@/lib/types";
 import { SUBJECTS } from "@/lib/types";
 
 export default function StudentsPage() {
+  const { user, loading: authLoading } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -22,57 +24,138 @@ export default function StudentsPage() {
   const [newName, setNewName] = useState("");
   const [newTopic, setNewTopic] = useState("MATH");
   const [adding, setAdding] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const newIdInput = useRef<HTMLInputElement>(null);
 
   const showToast = (type: string, message: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ type, message });
-    setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
-  const loadStudents = useCallback(async () => {
-    try {
-      const data = await api.getStudents(selectedSchool || undefined, selectedClass || undefined);
-      setStudents(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load students");
-    }
-  }, [selectedSchool, selectedClass]);
-
-  useEffect(() => {
-    async function init() {
-      try {
-        const s = await api.getSchools();
-        setSchools(s);
-        if (s.length > 0) {
-          setSelectedSchool(s[0].school_id);
-          const c = await api.getClasses(s[0].school_id);
-          setClasses(c);
-        }
-      } catch {
-        // Schools may not exist yet
-      } finally {
-        setLoading(false);
-      }
-    }
-    init();
-  }, []);
-
-  useEffect(() => {
-    if (selectedSchool) {
-      api.getClasses(selectedSchool).then(setClasses).catch(() => setClasses([]));
-      setSelectedClass("");
-    }
-  }, [selectedSchool]);
-
-  useEffect(() => {
-    loadStudents();
-  }, [loadStudents]);
-
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setNewId("");
     setNewName("");
     setNewTopic("MATH");
     setShowModal(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showModal) return;
+
+    const previousFocus = document.activeElement as HTMLElement | null;
+    newIdInput.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !adding) resetForm();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus();
+    };
+  }, [adding, resetForm, showModal]);
+
+  const refreshStudents = useCallback(async () => {
+    try {
+      const data = await api.getStudents(selectedSchool || undefined, selectedClass || undefined);
+      setStudents(data);
+    } catch (err) {
+      if (!(err instanceof Error && err.name === "AbortError")) {
+        setError(err instanceof Error ? err.message : "Failed to load students");
+      }
+    }
+  }, [selectedSchool, selectedClass]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    let cancelled = false;
+    async function init() {
+      try {
+        const schools = await api.getSchools();
+        if (cancelled) return;
+        setSchools(schools);
+        if (schools.length > 0) {
+          setSelectedSchool(schools[0].school_id);
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load schools");
+          setLoading(false);
+        }
+      }
+    }
+
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || !selectedSchool) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+    async function loadClasses() {
+      try {
+        const nextClasses = await api.getClasses(selectedSchool, controller.signal);
+        if (!cancelled) {
+          setClasses(nextClasses);
+          setSelectedClass("");
+        }
+      } catch (err) {
+        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+          setError(err instanceof Error ? err.message : "Failed to load classes");
+        }
+      }
+    }
+
+    void loadClasses();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user, selectedSchool]);
+
+  useEffect(() => {
+    if (authLoading || !user || !selectedSchool) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+    async function loadStudents() {
+      try {
+        setError("");
+        const data = await api.getStudents(
+          selectedSchool,
+          selectedClass || undefined,
+          controller.signal
+        );
+        if (!cancelled) setStudents(data);
+      } catch (err) {
+        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+          setError(err instanceof Error ? err.message : "Failed to load students");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadStudents();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user, selectedSchool, selectedClass]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,13 +165,12 @@ export default function StudentsPage() {
       await api.addStudent({
         student_id: newId.trim(),
         name: newName.trim(),
-        school_id: selectedSchool || undefined,
-        class_id: selectedClass || undefined,
         current_topic: newTopic,
+        ...(selectedClass ? { metadata: { class_id: selectedClass } } : {}),
       });
       showToast("success", `Added ${newName.trim()} successfully`);
       resetForm();
-      loadStudents();
+      refreshStudents();
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Failed to add student");
     } finally {
@@ -101,7 +183,7 @@ export default function StudentsPage() {
     try {
       await api.deleteStudent(id);
       showToast("success", `Deleted ${name}`);
-      loadStudents();
+      refreshStudents();
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Failed to delete");
     }
@@ -112,9 +194,9 @@ export default function StudentsPage() {
     s.student_id.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
-      <div className="space-y-6">
+      <div role="status" aria-live="polite" className="space-y-6">
         <div className="h-8 w-48 skeleton" />
         <div className="h-10 w-full skeleton" />
         <div className="h-64 skeleton" />
@@ -125,7 +207,7 @@ export default function StudentsPage() {
   return (
     <div className="page-shell">
       {toast && (
-        <div className={`toast toast-${toast.type}`}>
+        <div role="status" aria-live="polite" aria-atomic="true" className={`toast toast-${toast.type}`}>
           {toast.type === "success" && (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -143,9 +225,10 @@ export default function StudentsPage() {
             Manage your student roster and track performance
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="btn btn-primary"
+         <button
+           type="button"
+           onClick={() => setShowModal(true)}
+           className="btn btn-primary"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -162,18 +245,21 @@ export default function StudentsPage() {
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <input
-            type="text"
-            value={search}
+           <input
+             id="student-search"
+             type="search"
+             aria-label="Search students"
+             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input pl-10"
             placeholder="Search students..."
           />
         </div>
 
-        <select
-          value={selectedSchool}
-          onChange={(e) => setSelectedSchool(e.target.value)}
+         <select
+           aria-label="Filter by school"
+           value={selectedSchool}
+           onChange={(e) => setSelectedSchool(e.target.value)}
           className="input select w-auto min-w-[160px]"
         >
           <option value="">All Schools</option>
@@ -182,9 +268,10 @@ export default function StudentsPage() {
           ))}
         </select>
 
-        <select
-          value={selectedClass}
-          onChange={(e) => setSelectedClass(e.target.value)}
+         <select
+           aria-label="Filter by class"
+           value={selectedClass}
+           onChange={(e) => setSelectedClass(e.target.value)}
           className="input select w-auto min-w-[160px]"
         >
           <option value="">All Classes</option>
@@ -196,7 +283,7 @@ export default function StudentsPage() {
 
       {/* Error */}
       {error && (
-        <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
+         <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
@@ -218,7 +305,7 @@ export default function StudentsPage() {
               {search ? "Try a different search term" : "Add your first student to get started"}
             </p>
             {!search && (
-              <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
+               <button type="button" onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
                 Add Student
               </button>
             )}
@@ -230,16 +317,17 @@ export default function StudentsPage() {
                 {filtered.length} student{filtered.length !== 1 ? "s" : ""}
               </span>
             </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  <th>ID</th>
-                  <th className="text-right">Score</th>
-                  <th>Topic</th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
+             <table className="data-table">
+               <caption className="sr-only">Student roster</caption>
+               <thead>
+                 <tr>
+                   <th scope="col">Student</th>
+                   <th scope="col">ID</th>
+                   <th scope="col" className="text-right">Score</th>
+                   <th scope="col">Topic</th>
+                   <th scope="col" className="text-right">Actions</th>
+                 </tr>
+               </thead>
               <tbody>
                 {filtered.map((s) => (
                   <tr key={s.student_id}>
@@ -259,10 +347,12 @@ export default function StudentsPage() {
                     </td>
                     <td className="text-text-secondary">{s.current_topic}</td>
                     <td className="text-right">
-                      <button
-                        onClick={() => handleDelete(s.student_id, s.name)}
-                        className="text-xs text-danger hover:text-danger/80 transition-colors font-medium"
-                      >
+                       <button
+                         type="button"
+                         onClick={() => handleDelete(s.student_id, s.name)}
+                         aria-label={`Delete ${s.name}`}
+                         className="text-xs text-danger hover:text-danger/80 transition-colors font-medium"
+                       >
                         Delete
                       </button>
                     </td>
@@ -277,12 +367,20 @@ export default function StudentsPage() {
       {/* Add Student Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => !adding && resetForm()}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-student-title"
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="px-6 py-5 border-b border-border">
               <div className="flex items-center justify-between">
-                <h2 className="heading-2 text-navy">Add New Student</h2>
+                <h2 id="add-student-title" className="heading-2 text-navy">Add New Student</h2>
                 <button
+                  type="button"
                   onClick={() => !adding && resetForm()}
+                  aria-label="Close add student dialog"
                   className="text-text-muted hover:text-text-primary transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -295,35 +393,45 @@ export default function StudentsPage() {
 
             <form onSubmit={handleAdd} className="px-6 py-5 space-y-4">
               <div className="input-group">
-                <label className="input-label">Student ID</label>
-                <input
-                  value={newId}
-                  onChange={(e) => setNewId(e.target.value)}
-                  className="input"
-                  placeholder="e.g. S001, STU005"
-                  required
-                />
-                <span className="input-hint">Unique identifier for this student</span>
+                 <label className="input-label" htmlFor="student-id">Student ID</label>
+                 <input
+                   id="student-id"
+                   name="student_id"
+                   ref={newIdInput}
+                   value={newId}
+                   onChange={(e) => setNewId(e.target.value)}
+                   className="input"
+                   placeholder="e.g. S001, STU005"
+                   autoComplete="off"
+                   aria-describedby="student-id-hint"
+                   required
+                 />
+                 <span id="student-id-hint" className="input-hint">Unique identifier for this student</span>
               </div>
 
               <div className="input-group">
-                <label className="input-label">Full Name</label>
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="input"
-                  placeholder="e.g. Adebayo Okonkwo"
-                  required
-                />
+                 <label className="input-label" htmlFor="student-name">Full Name</label>
+                 <input
+                   id="student-name"
+                   name="name"
+                   value={newName}
+                   onChange={(e) => setNewName(e.target.value)}
+                   className="input"
+                   placeholder="e.g. Adebayo Okonkwo"
+                   autoComplete="off"
+                   required
+                 />
               </div>
 
               <div className="input-group">
-                <label className="input-label">Primary Subject</label>
-                <select
-                  value={newTopic}
-                  onChange={(e) => setNewTopic(e.target.value)}
-                  className="input select"
-                >
+                 <label className="input-label" htmlFor="student-topic">Primary Subject</label>
+                 <select
+                   id="student-topic"
+                   name="current_topic"
+                   value={newTopic}
+                   onChange={(e) => setNewTopic(e.target.value)}
+                   className="input select"
+                 >
                   {SUBJECTS.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
@@ -339,11 +447,12 @@ export default function StudentsPage() {
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={adding || !newId.trim() || !newName.trim()}
-                  className="btn btn-primary"
-                >
+                 <button
+                   type="submit"
+                   disabled={adding || !newId.trim() || !newName.trim()}
+                   aria-busy={adding}
+                   className="btn btn-primary"
+                 >
                   {adding ? (
                     <>
                       <div className="spinner spinner-sm" style={{ borderTopColor: 'var(--color-navy)' }} />

@@ -63,7 +63,7 @@ Pre-release verification steps for all agents. Complete every item before taggin
 - [ ] Load tests pass (if server running)
 - [ ] Backup API tests pass
 - [ ] Ingestion tests pass
-- [ ] Test count documented accurately (179 total)
+- [ ] Test count documented accurately (339 total)
 - [ ] `QA AUDIT REPORT.md` is up to date
 
 ---

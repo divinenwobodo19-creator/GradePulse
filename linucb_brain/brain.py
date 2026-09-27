@@ -159,53 +159,43 @@ class Brain:
             best_contents = []
             remaining_ids = list(content_ids)
 
-            # 1. SPECIAL CASE: HYBRID top_n=1 (Vectorized)
-            if self.model_type == "hybrid" and top_n == 1:
-                z_shared, _ = build_context_split(student, self.contents[remaining_ids[0]])
-                full_ctx = build_context(student, self.contents[remaining_ids[0]])
-                cluster_id = self.clustering.get_cluster(student_id, full_ctx)
-
-                x_arms = {cid: build_context_split(student, self.contents[cid])[1] for cid in remaining_ids}
-
-                best_cid = self.model.select(remaining_ids, z_shared, x_arms, cluster_id=cluster_id)
-                best_contents.append(self.contents[best_cid])
-            else:
-                # 2. GENERAL CASE (Looping for Disjoint, TS, or Hybrid top_n > 1)
-                for _ in range(min(top_n, len(content_ids))):
-                    ucbs = []
-                    if self.model_type == "disjoint":
-                        for cid in remaining_ids:
-                            ctx = build_context(student, self.contents[cid])
-                            arm = self.model.arms.get(cid)
-                            if arm is None: self.model._init_arm(cid); arm = self.model.arms[cid]
-                            A_inv = arm['A_inv']
-                            theta = A_inv @ arm['b']
-                            x = ctx.reshape(-1, 1)
-                            p = theta.T @ x + self.alpha * np.sqrt(max(0, (x.T @ A_inv @ x).item()))
-                            ucbs.append(p.item())
-                    elif self.model_type == "hybrid":
-                        sample_ctx = build_context(student, self.contents[remaining_ids[0]])
-                        cluster_id = self.clustering.get_cluster(student_id, sample_ctx)
-                        z_shared, _ = build_context_split(student, self.contents[remaining_ids[0]])
-                        beta_hat_global = self.model.A0_inv @ self.model.b0
-                        beta_hat_cluster = self.model.Ak_inv[cluster_id] @ self.model.bk[cluster_id]
-                        beta_hat = (beta_hat_global + beta_hat_cluster) / 2.0
-                        for cid in remaining_ids:
-                            _, x_arm = build_context_split(student, self.contents[cid])
-                            self.model._init_arm(cid); arm = self.model.arms[cid]
-                            A_inv = arm['A_inv']; theta_hat = A_inv @ (arm['b'] - arm['B'] @ beta_hat)
-                            z = z_shared.reshape(-1, 1); x = x_arm.reshape(-1, 1)
-                            z_A0_inv = z.T @ self.model.A0_inv; B_A_inv_x = arm['B'].T @ A_inv @ x
-                            var = (z_A0_inv @ z - 2 * (z_A0_inv @ B_A_inv_x) + x.T @ A_inv @ x + B_A_inv_x.T @ self.model.A0_inv @ B_A_inv_x).item()
-                            p = (z.T @ beta_hat + x.T @ theta_hat).item() + self.alpha * np.sqrt(max(0, var))
-                            ucbs.append(p)
-
-                    # Tie-breaking & Regret tracking
-                    best_idx = np.argmax(np.array(ucbs) + np.random.normal(0, 1e-9, len(ucbs)))
+            # One general loop for every model and top_n (incl. top_n == 1).
+            # Previously there was a separate vectorized path for hybrid
+            # top_n == 1 (LinUCBHybrid.select) that differed from this loop:
+            # select() applied a recommendation-frequency penalty and N(0, 0.1)
+            # exploration noise, so top_n == 1 and top_n > 1 disagreed. The
+            # hybrid branch now delegates to select() directly (same vectorized
+            # math incl. penalty + noise), so every top_n is consistent and
+            # fast (2026-09-27).
+            for _ in range(min(top_n, len(content_ids))):
+                ucbs = []
+                if self.model_type == "disjoint":
+                    scored = []
+                    for cid in remaining_ids:
+                        ctx = build_context(student, self.contents[cid])
+                        arm = self.model.arms.get(cid)
+                        if arm is None: self.model._init_arm(cid); arm = self.model.arms[cid]
+                        A_inv = arm['A_inv']
+                        theta = A_inv @ arm['b']
+                        x = ctx.reshape(-1, 1)
+                        p = (theta.T @ x).item() + self.alpha * np.sqrt(max(0, (x.T @ A_inv @ x).item()))
+                        ucbs.append(p)
+                        scored.append(p + np.random.normal(0, 1e-9))
+                    best_idx = int(np.argmax(np.array(scored)))
                     if len(ucbs) > 1:
                         self.cumulative_regret += (ucbs[best_idx] - np.mean(ucbs))
                     best_cid = remaining_ids.pop(best_idx)
-                    best_contents.append(self.contents[best_cid])
+                elif self.model_type == "hybrid":
+                    sample_ctx = build_context(student, self.contents[remaining_ids[0]])
+                    cluster_id = self.clustering.get_cluster(student_id, sample_ctx)
+                    z_shared, _ = build_context_split(student, self.contents[remaining_ids[0]])
+                    x_arms = {cid: build_context_split(student, self.contents[cid])[1] for cid in remaining_ids}
+                    best_cid = self.model.select(remaining_ids, z_shared, x_arms, cluster_id=cluster_id)
+                    remaining_ids.remove(best_cid)
+                else:
+                    raise ValueError(f"Unsupported model type: {self.model_type}")
+
+                best_contents.append(self.contents[best_cid])
 
             for c in best_contents:
                 c.times_recommended += 1

@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { Student } from "@/lib/types";
 import { SUBJECTS } from "@/lib/types";
 import { scoreToGrade } from "@/lib/types";
+import { percentToScore, scoreToInputValue, scoreToPercent, validateScorePercent } from "@/lib/scores";
 
 export default function ScoresPage() {
+  const { user, loading: authLoading } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -15,36 +18,80 @@ export default function ScoresPage() {
   const [scores, setScores] = useState<Record<string, string>>({});
   const [modified, setModified] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [invalid, setInvalid] = useState<Set<string>>(new Set());
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (type: string, message: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ type, message });
-    setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
   useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (modified.size === 0) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [modified.size]);
+
+  const applyStudents = (data: Student[]) => {
+    setStudents(data);
+    const initial: Record<string, string> = {};
+    data.forEach((s) => {
+      initial[s.student_id] = scoreToInputValue(s.performance_score);
+    });
+    setScores(initial);
+  };
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
     async function load() {
       try {
-        const data = await api.getStudents();
-        setStudents(data);
-        const initial: Record<string, string> = {};
-        data.forEach((s) => {
-          initial[s.student_id] = String(Math.round(s.performance_score * 100));
-        });
-        setScores(initial);
+        const data = await api.getStudents(undefined, undefined, controller.signal);
+        if (cancelled) return;
+        applyStudents(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load students");
+        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+          setError(err instanceof Error ? err.message : "Failed to load students");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    load();
-  }, []);
+
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user]);
 
   const handleScoreChange = (studentId: string, value: string) => {
     setScores((prev) => ({ ...prev, [studentId]: value }));
     setModified((prev) => {
       const next = new Set(prev);
       next.add(studentId);
+      return next;
+    });
+    setInvalid((prev) => {
+      const next = new Set(prev);
+      if (validateScorePercent(value).valid) {
+        next.delete(studentId);
+      } else {
+        next.add(studentId);
+      }
       return next;
     });
   };
@@ -58,7 +105,7 @@ export default function ScoresPage() {
         .map(([studentId, score]) => ({
           student_id: studentId,
           subject,
-          score: Math.min(1, Math.max(0, Number(score) / 100)),
+          score: percentToScore(score),
         }));
 
       if (entries.length === 0) {
@@ -66,9 +113,16 @@ export default function ScoresPage() {
         return;
       }
 
+      if (invalid.size > 0) {
+        showToast("error", "Fix the highlighted scores. Each value must be between 0 and 100.");
+        return;
+      }
+
       await api.bulkUpdate(entries);
       showToast("success", `Updated ${entries.length} student${entries.length !== 1 ? "s" : ""}`);
       setModified(new Set());
+      setInvalid(new Set());
+      applyStudents(await api.getStudents(undefined, undefined));
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Failed to update scores");
     } finally {
@@ -78,9 +132,9 @@ export default function ScoresPage() {
 
   const modifiedCount = modified.size;
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
-      <div className="space-y-6">
+      <div role="status" aria-live="polite" className="space-y-6">
         <div className="h-8 w-48 skeleton" />
         <div className="h-10 w-full skeleton" />
         <div className="h-64 skeleton" />
@@ -91,7 +145,7 @@ export default function ScoresPage() {
   return (
     <div className="page-shell">
       {toast && (
-        <div className={`toast toast-${toast.type}`}>
+        <div role="status" aria-live="polite" aria-atomic="true" className={`toast toast-${toast.type}`}>
           {toast.type === "success" && (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -112,7 +166,7 @@ export default function ScoresPage() {
       </div>
 
       {error && (
-        <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
+        <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
@@ -123,9 +177,10 @@ export default function ScoresPage() {
           <div className="card-body">
             <div className="flex flex-wrap items-center gap-4">
               <div className="input-group">
-                <label className="input-label">Subject</label>
-                <select
-                  value={subject}
+                 <label className="input-label" htmlFor="score-subject">Subject</label>
+                 <select
+                   id="score-subject"
+                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   className="input select w-auto min-w-[160px]"
                 >
@@ -147,9 +202,10 @@ export default function ScoresPage() {
                       students.forEach((s) => {
                         initial[s.student_id] = String(Math.round(s.performance_score * 100));
                       });
-                      setScores(initial);
-                    }}
-                    className="btn btn-ghost btn-sm"
+                       applyStudents(students);
+                       setInvalid(new Set());
+                     }}
+                     className="btn btn-ghost btn-sm"
                   >
                     Reset
                   </button>
@@ -185,6 +241,7 @@ export default function ScoresPage() {
                   <button
                     type="submit"
                     disabled={submitting}
+                    aria-busy={submitting}
                     className="btn btn-primary btn-sm"
                   >
                     {submitting ? (
@@ -201,20 +258,23 @@ export default function ScoresPage() {
                 )}
               </div>
               <table className="data-table">
+                <caption className="sr-only">
+                  Weekly scores for {subject}, expressed as percentages
+                </caption>
                 <thead>
                   <tr>
-                    <th>Student</th>
-                    <th>ID</th>
-                    <th>Grade</th>
-                    <th className="text-right">Current (%)</th>
-                    <th className="text-right w-40">New Score (%)</th>
+                    <th scope="col">Student</th>
+                    <th scope="col">ID</th>
+                    <th scope="col">Grade</th>
+                    <th scope="col" className="text-right">Current (%)</th>
+                    <th scope="col" className="text-right w-40">New Score (%)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {students.map((s) => {
-                    const currentPct = Math.round(s.performance_score * 100);
+                    const currentPct = scoreToPercent(s.performance_score);
                     const grade = scoreToGrade(currentPct);
-                    const newVal = scores[s.student_id] || "";
+                    const newVal = scores[s.student_id] ?? "";
                     const isModified = modified.has(s.student_id);
 
                     return (
@@ -236,14 +296,33 @@ export default function ScoresPage() {
                         <td className="text-right font-mono text-sm text-text-secondary">{currentPct}%</td>
                         <td className="text-right">
                           <input
+                            id={`score-${s.student_id}`}
+                            name={`score-${s.student_id}`}
                             type="number"
                             min="0"
                             max="100"
+                            step="1"
+                            inputMode="numeric"
                             value={newVal}
                             onChange={(e) => handleScoreChange(s.student_id, e.target.value)}
-                            className="input w-24 text-right font-mono"
+                            aria-label={`New score for ${s.name} in percent`}
+                            aria-invalid={invalid.has(s.student_id)}
+                            aria-describedby={
+                              invalid.has(s.student_id) ? `score-error-${s.student_id}` : undefined
+                            }
+                            className={`input w-24 text-right font-mono ${
+                              invalid.has(s.student_id) ? "border-danger focus:border-danger" : ""
+                            }`}
                             placeholder="%"
                           />
+                          {invalid.has(s.student_id) && (
+                            <p
+                              id={`score-error-${s.student_id}`}
+                              className="text-xs text-danger mt-1 text-right"
+                            >
+                              Enter 0-100
+                            </p>
+                          )}
                         </td>
                       </tr>
                     );
@@ -260,6 +339,7 @@ export default function ScoresPage() {
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="btn btn-primary btn-lg"
             >
               {submitting ? (

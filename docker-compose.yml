@@ -27,6 +27,7 @@ services:
       - .env
     environment:
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - JWT_SECRET=${JWT_SECRET:-gradepulse-dev-secret-change-in-production}
       - BRAIN_STATE_PATH=/data/brain_state.json
       - CONFIG_PATH=/data/class_config.json
       - USER_DB_PATH=/data/gradepulse_users.db
@@ -51,13 +52,13 @@ services:
       dockerfile: Dockerfile
       target: frontend
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8000
+        API_URL: http://api:8000
     container_name: gradepulse-web
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - API_URL=http://api:8000
     depends_on:
       api:
         condition: service_healthy

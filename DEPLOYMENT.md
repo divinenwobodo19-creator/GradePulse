@@ -9,7 +9,8 @@ Last updated: 2026-08-31
 
 - A Linux VPS (Ubuntu 22.04+ recommended, 2GB+ RAM, 20GB+ disk)
 - Docker and Docker Compose installed
-- A domain name pointed at your VPS IP (for HTTPS)
+- A domain name pointed at your VPS I
+P (for HTTPS)
 - SSH access to the VPS
 
 ---

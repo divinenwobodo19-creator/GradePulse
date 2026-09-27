@@ -24,6 +24,7 @@ from .auth import (
     create_user, authenticate_user, create_access_token,
     get_current_user, optional_user, update_user_school, get_user_by_id,
 )
+from .ratelimit import SlidingWindowLimiter
 from .schemas import (
     StudentSchema, ContentSchema, RecommendationRequest, UpdateRequest,
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
@@ -148,6 +149,58 @@ def _get_class_students(school_id: str = "", class_id: str = "") -> list:
     return all_students
 
 
+# ── Phase 2 security: rate limiters + school-ownership enforcement ──────────
+# Policy (2026-09-27, Divine/Sam sign-off): school context is DERIVED from the
+# caller's authenticated user (users DB), not trusted from request bodies or
+# query strings. Students with an EMPTY school_id are unclaimed/legacy and stay
+# accessible to any authenticated user until a school claims them.
+LOGIN_LIMITER = SlidingWindowLimiter(max_requests=30, window_seconds=60)
+LOGIN_HOST_LIMITER = SlidingWindowLimiter(max_requests=120, window_seconds=60)
+SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=30, window_seconds=60)
+
+
+def _client_host(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _require_school_access(user: dict, school_id: str) -> str:
+    user_school = user.get("school_id", "")
+    if not user_school or user_school != school_id:
+        raise HTTPException(status_code=403, detail="Not authorized for this school")
+    return user_school
+
+
+def _require_student_access(user: dict, student_id: str):
+    student = brain_instance.students.get(student_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    user_school = user.get("school_id", "")
+    if student.school_id and student.school_id != user_school:
+        raise HTTPException(status_code=403, detail="Student belongs to another school")
+    return student
+
+
+def _require_recommend_student(user: dict, student_id: str):
+    # /recommend keeps 400 for a missing id (existing contract); cross-school is 403.
+    if student_id not in brain_instance.students:
+        raise HTTPException(status_code=400, detail=f"Student ID {student_id} not found.")
+    return _require_student_access(user, student_id)
+
+
+def _validate_class_belongs_to_user(user: dict, class_id: str):
+    user_school = user.get("school_id", "")
+    if not user_school:
+        raise HTTPException(status_code=403, detail="User has no school — create/join a school first")
+    registry = _get_registry()
+    if not get_class_by_id(registry, class_id, user_school):
+        raise HTTPException(status_code=400, detail="Class does not belong to your school")
+
+
+def _owns_or_unclaimed(student, user: dict) -> bool:
+    user_school = user.get("school_id", "")
+    return not student.school_id or student.school_id == user_school
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global brain_instance, synchronizer, backup_manager
@@ -212,19 +265,26 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/auth/signup", response_model=UserResponse)
-def signup(request: SignupRequest):
-    user = create_user(request.email, request.password)
-    school = ensure_school(_get_registry(), f"{request.school_name.strip().upper()}" if request.school_name else "MY SCHOOL")
+def signup(request: Request, signup_request: SignupRequest):
+    if not SIGNUP_LIMITER.allow(_client_host(request)):
+        raise HTTPException(status_code=429, detail="Too many signups from this address — try again later")
+    user = create_user(signup_request.email, signup_request.password)
+    registry = _get_registry()
+    school = ensure_school(registry, f"{signup_request.school_name.strip().upper()}" if signup_request.school_name else "MY SCHOOL")
     update_user_school(user["id"], school["school_id"])
-    _save_registry(_get_registry())
+    _save_registry(registry)
     token = create_access_token({"sub": user["id"]})
     return {"id": user["id"], "email": user["email"], "school_id": school["school_id"],
             "school_name": school["name"], "token": token}
 
 
 @app.post("/auth/login", response_model=UserResponse)
-def login(request: LoginRequest):
-    user = authenticate_user(request.email, request.password)
+def login(request: Request, login_request: LoginRequest):
+    if not LOGIN_HOST_LIMITER.allow(_client_host(request)):
+        raise HTTPException(status_code=429, detail="Too many login attempts — try again later")
+    if not LOGIN_LIMITER.allow(f"{_client_host(request)}|{login_request.email.lower()}"):
+        raise HTTPException(status_code=429, detail="Too many login attempts for this account — try again later")
+    user = authenticate_user(login_request.email, login_request.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     school = None
@@ -254,10 +314,10 @@ def me(user: dict = Depends(get_current_user)):
 @app.get("/schools", response_model=List[SchoolResponse])
 def list_schools(user: dict = Depends(get_current_user)):
     registry = _get_registry()
-    schools = get_schools(registry)
-    if user.get("school_id"):
-        return [s for s in schools if s["school_id"] == user["school_id"]]
-    return schools
+    user_school = user.get("school_id", "")
+    if not user_school:
+        return []
+    return [s for s in get_schools(registry) if s["school_id"] == user_school]
 
 
 @app.post("/schools", response_model=SchoolResponse)
@@ -272,6 +332,7 @@ def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current
 
 @app.put("/schools/{school_id}", response_model=SchoolResponse)
 def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Depends(get_current_user)):
+    _require_school_access(user, school_id)
     registry = _get_registry()
     school = get_school_by_id(registry, school_id)
     if not school:
@@ -283,6 +344,7 @@ def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Dep
 
 @app.delete("/schools/{school_id}")
 def delete_school(school_id: str, user: dict = Depends(get_current_user)):
+    _require_school_access(user, school_id)
     registry = _get_registry()
     school = get_school_by_id(registry, school_id)
     if not school:
@@ -303,6 +365,7 @@ def delete_school(school_id: str, user: dict = Depends(get_current_user)):
 
 @app.get("/classes/{school_id}", response_model=List[ClassResponse])
 def list_classes(school_id: str, user: dict = Depends(get_current_user)):
+    _require_school_access(user, school_id)
     registry = _get_registry()
     classes = get_classes(registry, school_id=school_id)
     return classes
@@ -310,6 +373,7 @@ def list_classes(school_id: str, user: dict = Depends(get_current_user)):
 
 @app.post("/classes/{school_id}", response_model=ClassResponse)
 def create_class(school_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
+    _require_school_access(user, school_id)
     registry = _get_registry()
     cls = add_class(registry, school_id, request.label.strip().upper())
     if not cls:
@@ -320,6 +384,7 @@ def create_class(school_id: str, request: CreateClassRequest, user: dict = Depen
 
 @app.put("/classes/{school_id}/{class_id}", response_model=ClassResponse)
 def update_class(school_id: str, class_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
+    _require_school_access(user, school_id)
     registry = _get_registry()
     cls = get_class_by_id(registry, class_id, school_id)
     if not cls:
@@ -331,6 +396,7 @@ def update_class(school_id: str, class_id: str, request: CreateClassRequest, use
 
 @app.delete("/classes/{school_id}/{class_id}")
 def delete_class(school_id: str, class_id: str, user: dict = Depends(get_current_user)):
+    _require_school_access(user, school_id)
     registry = _get_registry()
     cls = get_class_by_id(registry, class_id, school_id)
     if not cls:
@@ -354,18 +420,28 @@ def list_students(
     class_id: Optional[str] = Query(None),
     user: dict = Depends(get_current_user),
 ):
-    sid = school_id or user.get("school_id", "")
-    students = _get_class_students(school_id=sid, class_id=class_id or "")
+    user_school = user.get("school_id", "")
+    # The caller can never override the school filter with the query param —
+    # the school is always derived from the authenticated user (Phase 2).
+    if school_id and school_id != user_school:
+        raise HTTPException(status_code=403, detail="Not authorized for this school")
+    if not user_school:
+        return []
+    students = _get_class_students(school_id=user_school, class_id=class_id or "")
     return [StudentSchema(
         student_id=s.student_id, name=s.name, grade_history=s.grade_history,
         performance_score=s.performance_score,
-        current_topic=getattr(s, "current_topic", ""), metadata=s.metadata,
+        current_topic=getattr(s, "current_topic", ""),
+        class_id=s.class_id, school_id=s.school_id, metadata=s.metadata,
     ) for s in students]
 
 
 @app.post("/students", response_model=StudentSchema)
 def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
     try:
+        class_id = student.metadata.get("class_id") or student.class_id or ""
+        if class_id:
+            _validate_class_belongs_to_user(user, class_id)
         brain_instance.add_student(
             student.student_id, student.name,
             grade_history=student.grade_history,
@@ -373,36 +449,41 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
             current_topic=student.current_topic,
             metadata=student.metadata,
             school_id=user.get("school_id", ""),
-            class_id=student.metadata.get("class_id", ""),
+            class_id=class_id,
         )
         synchronizer.save_brain(brain_instance.save)
-        return student
+        s = brain_instance.students[student.student_id]
+        return StudentSchema(student_id=s.student_id, name=s.name, grade_history=s.grade_history,
+                             performance_score=s.performance_score, current_topic=s.current_topic,
+                             class_id=s.class_id, school_id=s.school_id, metadata=s.metadata)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.put("/students/{student_id}", response_model=StudentSchema)
 def update_student(student_id: str, request: UpdateStudentRequest, user: dict = Depends(get_current_user)):
-    if student_id not in brain_instance.students:
-        raise HTTPException(status_code=404, detail="Student not found")
-    s = brain_instance.students[student_id]
+    s = _require_student_access(user, student_id)
     if request.name is not None:
         s.name = request.name
     if request.current_topic is not None:
         s.current_topic = request.current_topic
     if request.class_id is not None:
+        _validate_class_belongs_to_user(user, request.class_id)
         s.class_id = request.class_id
+        # Keep metadata.class_id in sync — the create path and the frontend
+        # convention treat metadata as the class key too.
+        s.metadata["class_id"] = request.class_id
     s.touch()
     synchronizer.save_brain(brain_instance.save)
     return StudentSchema(student_id=s.student_id, name=s.name, grade_history=s.grade_history,
                          performance_score=s.performance_score,
-                         current_topic=getattr(s, "current_topic", ""), metadata=s.metadata)
+                         current_topic=getattr(s, "current_topic", ""),
+                         class_id=s.class_id, school_id=s.school_id, metadata=s.metadata)
 
 
 @app.delete("/students/{student_id}")
 def delete_student(student_id: str, user: dict = Depends(get_current_user)):
-    if student_id not in brain_instance.students:
-        raise HTTPException(status_code=404, detail="Student not found")
+    _require_student_access(user, student_id)
     del brain_instance.students[student_id]
     synchronizer.save_brain(brain_instance.save)
     return {"status": "deleted"}
@@ -431,9 +512,14 @@ def add_content(content: ContentSchema, user: dict = Depends(get_current_user)):
 @app.post("/recommend")
 def recommend(request: RecommendationRequest, user: dict = Depends(get_current_user)):
     try:
+        # API contract: ALWAYS return a JSON array, even for top_n=1.
+        # The bare-object-vs-array polymorphism was normalised at the HTTP
+        # boundary (see Mia 2026-09-27); `brain.recommend()` is unchanged for
+        # ML-layer callers. `[]` means "nothing to show".
+        _require_recommend_student(user, request.student_id)
         result = brain_instance.recommend(request.student_id, topic=request.topic, top_n=request.top_n)
         if request.top_n == 1:
-            return result.__dict__ if result else {}
+            return [result.__dict__] if result else []
         return [r.__dict__ for r in result]
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -441,6 +527,7 @@ def recommend(request: RecommendationRequest, user: dict = Depends(get_current_u
 
 @app.post("/update")
 def update(request: UpdateRequest, user: dict = Depends(get_current_user)):
+    _require_student_access(user, request.student_id)
     try:
         brain_instance.update(request.student_id, request.content_id, request.reward)
         synchronizer.save_brain(brain_instance.save)
@@ -451,6 +538,8 @@ def update(request: UpdateRequest, user: dict = Depends(get_current_user)):
 
 @app.post("/bulk-update")
 def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_user)):
+    for entry in request.entries:
+        _require_student_access(user, entry.student_id)
     entries = [{"student_id": e.student_id, "subject": e.subject, "score": e.score} for e in request.entries]
     result = brain_instance.bulk_update(entries)
     synchronizer.save_brain(brain_instance.save)
@@ -460,6 +549,13 @@ def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_use
 @app.post("/triage")
 def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
     result = brain_instance.triage(request.subject)
+    # Triage is a school report: only the caller's own (and unclaimed) students.
+    for tier_name, tier in result.items():
+        if isinstance(tier, dict) and isinstance(tier.get("students"), list):
+            tier["students"] = [
+                s for s in tier["students"]
+                if _owns_or_unclaimed(brain_instance.students.get(s["student_id"]), user)
+            ]
     return result
 
 
@@ -610,20 +706,45 @@ async def ingest_data(
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {str(e)}")
     
     try:
-        # Import ingestion functions
-        from ...ingest import ingest_students, ingest_content, ValidationReport
+        # Import ingestion functions (ingest.py is a top-level module; launch
+        # contract is PYTHONPATH=<project root>. The old relative `from ...ingest`
+        # raised ImportError beyond the top-level package.)
+        from ingest import ingest_students, ingest_content, ValidationReport
         
         # Load existing state
         registry = _get_registry()
         
         # Run ingestion
         if type == "students":
-            report = ingest_students(
-                tmp_path, registry, brain_instance.students,
-                school_id=school_id or user.get("school_id"),
-                school_name=school,
-                dry_run=dry_run,
-            )
+            # Phase 2: a user can only ingest rosters into THEIR OWN school.
+            # Form school/school_id overrides are rejected unless consistent.
+            # NOTE: a user's stored school_id can be dangling (the user DB
+            # outlives registry restores), in which case fall back to the
+            # form and re-attach the resolved school to the account.
+            user_school = user.get("school_id", "")
+            own_school = get_school_by_id(registry, user_school) if user_school else None
+            if own_school:
+                if school_id and school_id != user_school:
+                    raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
+                if school and own_school["name"] != school.strip().upper():
+                    raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
+                # Force-school to the caller's own school regardless of form.
+                report = ingest_students(
+                    tmp_path, registry, brain_instance.students,
+                    school_id=user_school, school_name=None,
+                    dry_run=dry_run,
+                )
+            else:
+                # No school yet (or a dangling one): resolve from the form
+                # (or default) and attach it.
+                report = ingest_students(
+                    tmp_path, registry, brain_instance.students,
+                    school_id=school_id, school_name=school,
+                    dry_run=dry_run,
+                )
+                if not dry_run:
+                    resolved = school_id or ensure_school(registry, (school or "MY SCHOOL").strip().upper())["school_id"]
+                    update_user_school(user["id"], resolved)
         else:
             report = ingest_content(
                 tmp_path, brain_instance.contents,
@@ -643,6 +764,8 @@ async def ingest_data(
             status="success" if report.errors == [] else "completed_with_errors",
             report=report.to_dict(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
     finally:

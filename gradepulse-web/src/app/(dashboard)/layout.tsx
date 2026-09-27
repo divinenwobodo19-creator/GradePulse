@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -92,9 +93,18 @@ export default function DashboardLayout({
     }
   }, [user, loading, router]);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen]);
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f7f9]">
+       <div role="status" aria-live="polite" className="flex min-h-screen items-center justify-center bg-[#f6f7f9]">
         <div className="flex flex-col items-center gap-4">
           <div className="spinner" />
           <p className="text-sm text-text-muted">Loading GradePulse...</p>
@@ -106,17 +116,25 @@ export default function DashboardLayout({
   if (!user) return null;
 
   return (
-    <div className="flex min-h-screen bg-[#f6f7f9]">
+    <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[10000] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-navy focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
+      <div className="flex min-h-screen bg-[#f6f7f9]">
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+           aria-hidden="true"
+           className="fixed inset-0 bg-black/40 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <aside className={`
+      <aside id="app-sidebar" aria-label="Application sidebar" className={`
         fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-navy flex flex-col no-print
         transform transition-transform duration-200 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -124,7 +142,7 @@ export default function DashboardLayout({
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/[0.08]">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="GradePulse" className="w-8 h-8 rounded-lg" />
+            <Image src="/logo.png" alt="GradePulse" width={32} height={32} className="w-8 h-8 rounded-lg" />
             <div>
               <span className="text-base font-bold tracking-tight text-white">GradePulse</span>
               <div className="text-[10px] text-white/30 font-medium uppercase tracking-widest">AI Engine</div>
@@ -133,13 +151,14 @@ export default function DashboardLayout({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5">
+        <nav aria-label="Primary navigation" className="flex-1 px-3 py-4 space-y-0.5">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? "page" : undefined}
                 onClick={() => setSidebarOpen(false)}
                 className={`sidebar-link ${isActive ? "active" : ""}`}
               >
@@ -172,10 +191,12 @@ export default function DashboardLayout({
                 {user.school_name || "No school"}
               </div>
             </div>
-            <button
-              onClick={logout}
-              className="text-white/20 hover:text-white/60 transition-colors p-1"
-              title="Sign out"
+             <button
+               type="button"
+               onClick={logout}
+               aria-label="Sign out"
+               className="text-white/20 hover:text-white/60 transition-colors p-1"
+               title="Sign out"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -188,12 +209,16 @@ export default function DashboardLayout({
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0">
+      <main id="main-content" className="flex-1 min-w-0">
         {/* Mobile Top Bar */}
         <div className="lg:hidden sticky top-0 z-30 bg-white border-b border-border px-4 py-3 flex items-center gap-3">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="text-text-secondary hover:text-text-primary"
+           <button
+             type="button"
+             onClick={() => setSidebarOpen(true)}
+             aria-label="Open navigation"
+             aria-expanded={sidebarOpen}
+             aria-controls="app-sidebar"
+             className="text-text-secondary hover:text-text-primary"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12" />
@@ -202,13 +227,14 @@ export default function DashboardLayout({
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="GradePulse" className="w-6 h-6 rounded-md" />
+            <Image src="/logo.png" alt="GradePulse" width={24} height={24} className="w-6 h-6 rounded-md" />
             <span className="font-bold text-navy text-sm">GradePulse</span>
           </div>
         </div>
 
         <div className="p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
-      </main>
-    </div>
+       </main>
+      </div>
+    </>
   );
 }

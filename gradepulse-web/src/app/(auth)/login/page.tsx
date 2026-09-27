@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
@@ -10,8 +11,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { user, loading: authLoading, login } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && user) router.replace("/dashboard");
+  }, [authLoading, router, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +24,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -45,7 +50,7 @@ export default function LoginPage() {
           <div className="max-w-md text-center">
             {/* Logo */}
             <div className="flex items-center justify-center gap-3 mb-8">
-              <img src="/logo.png" alt="GradePulse" className="w-14 h-14 rounded-2xl shadow-lg" />
+              <Image src="/logo.png" alt="GradePulse" width={56} height={56} className="w-14 h-14 rounded-2xl shadow-lg" />
               <span className="text-4xl font-extrabold tracking-tight">GradePulse</span>
             </div>
 
@@ -91,7 +96,7 @@ export default function LoginPage() {
         <div className="w-full max-w-[400px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-2.5 mb-10">
-            <img src="/logo.png" alt="GradePulse" className="w-9 h-9 rounded-xl" />
+            <Image src="/logo.png" alt="GradePulse" width={36} height={36} className="w-9 h-9 rounded-xl" />
             <span className="text-xl font-bold text-navy">GradePulse</span>
           </div>
 
@@ -103,7 +108,7 @@ export default function LoginPage() {
 
           {/* Error */}
           {error && (
-            <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm mb-6 flex items-center gap-2">
+             <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm mb-6 flex items-center gap-2">
               <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
@@ -116,10 +121,13 @@ export default function LoginPage() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="input-group">
-              <label className="input-label">Email</label>
-              <input
-                type="email"
-                value={email}
+               <label className="input-label" htmlFor="login-email">Email</label>
+               <input
+                 id="login-email"
+                 name="email"
+                 type="email"
+                 autoComplete="email"
+                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="input"
@@ -128,10 +136,13 @@ export default function LoginPage() {
             </div>
 
             <div className="input-group">
-              <label className="input-label">Password</label>
-              <input
-                type="password"
-                value={password}
+               <label className="input-label" htmlFor="login-password">Password</label>
+               <input
+                 id="login-password"
+                 name="password"
+                 type="password"
+                 autoComplete="current-password"
+                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="input"
@@ -140,9 +151,10 @@ export default function LoginPage() {
             </div>
 
             <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary btn-lg w-full"
+               type="submit"
+               disabled={loading}
+               aria-busy={loading}
+               className="btn btn-primary btn-lg w-full"
             >
               {loading ? (
                 <>
@@ -163,13 +175,14 @@ export default function LoginPage() {
             </Link>
           </p>
 
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-surface-elevated rounded-lg border border-border">
-            <p className="text-xs font-medium text-text-secondary mb-2">Demo Credentials</p>
-            <div className="space-y-1">
-              <p className="text-xs text-text-muted font-mono">demo@gradepulse.com / demo1234</p>
+          {process.env.NODE_ENV !== "production" && (
+            <div className="mt-6 p-4 bg-surface-elevated rounded-lg border border-border">
+              <p className="text-xs font-medium text-text-secondary mb-2">Demo Credentials</p>
+              <div className="space-y-1">
+                <p className="text-xs text-text-muted font-mono">demo@gradepulse.com / demo1234</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

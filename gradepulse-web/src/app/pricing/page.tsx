@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 
 const plans = [
@@ -69,7 +70,7 @@ export default function PricingPage() {
       <nav className="border-b border-border px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="GradePulse" className="w-8 h-8 rounded-lg" />
+            <Image src="/logo.png" alt="GradePulse" width={32} height={32} className="w-8 h-8 rounded-lg" />
             <span className="text-lg font-bold text-navy">GradePulse</span>
           </Link>
           <div className="flex items-center gap-4">

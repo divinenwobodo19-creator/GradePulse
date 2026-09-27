@@ -5,6 +5,8 @@ from datetime import datetime
 class StudentSchema(BaseModel):
     student_id: str
     name: str
+    class_id: str = ""
+    school_id: str = ""
     grade_history: Dict[str, List[float]] = {}
     performance_score: float = 0.5
     current_topic: str = ""

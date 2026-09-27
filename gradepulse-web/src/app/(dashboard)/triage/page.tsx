@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { TriageResult } from "@/lib/types";
 import { TIER_LABELS, SUBJECTS } from "@/lib/types";
 
@@ -24,6 +25,7 @@ const TIER_ICONS: Record<string, React.ReactNode> = {
 };
 
 export default function TriagePage() {
+  const { user, loading: authLoading } = useAuth();
   const [subject, setSubject] = useState("MATH");
   const [result, setResult] = useState<TriageResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,6 +33,7 @@ export default function TriagePage() {
   const [history, setHistory] = useState<TriageResult[]>([]);
 
   const runTriage = async () => {
+    if (authLoading || !user) return;
     setLoading(true);
     setError("");
     try {
@@ -64,7 +67,9 @@ export default function TriagePage() {
           <div className="flex flex-wrap items-end gap-4">
             <div className="input-group">
               <label className="input-label">Subject</label>
+              <label className="input-label" htmlFor="triage-subject">Subject</label>
               <select
+                id="triage-subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 className="input select w-auto min-w-[160px]"
@@ -75,8 +80,10 @@ export default function TriagePage() {
               </select>
             </div>
             <button
+              type="button"
               onClick={runTriage}
               disabled={loading}
+              aria-busy={loading}
               className="btn btn-primary"
             >
               {loading ? (
@@ -108,7 +115,7 @@ export default function TriagePage() {
 
       {/* Error */}
       {error && (
-        <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+        <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm flex items-center gap-2">
           <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
@@ -259,7 +266,7 @@ export default function TriagePage() {
                             </div>
                             <div className="text-right ml-2 shrink-0">
                               <div className="text-sm font-mono font-semibold text-navy">
-                                {Math.round(s.average_score * 100)}%
+                                {Math.round(s.predicted_score * 100)}%
                               </div>
                               <div className="caption text-text-muted">
                                 {s.attempts} try{s.attempts !== 1 ? "s" : ""}
@@ -289,7 +296,7 @@ export default function TriagePage() {
           <p className="body-sm text-text-muted mb-4">
             Select a subject and click &quot;Run Triage&quot; to classify students into performance tiers
           </p>
-          <button onClick={runTriage} className="btn btn-primary btn-sm">
+          <button type="button" onClick={runTriage} className="btn btn-primary btn-sm">
             Run Triage
           </button>
         </div>

@@ -5,13 +5,15 @@
 **Version:** v0.1
 **Project:** Contextual Bandit-Powered Learning Personalization Engine
 
+> **Note (2026-09-27):** Sam was an AI model scrapped by Divine. This document remains in-repo as **archived technical reference**. Its scope (algorithms, model architecture, reward design, diagnostics, API layer) is now owned by the **Backend Engineer (opencode session)**, the sole engineering agent. See `TEAM_HANDBOOK.md` Decision Log.
+
 ---
 
 ## 1. Role Overview
 
-Sam is the AI/ML engineer responsible for the backend intelligence of GradePulse. All algorithmic decisions, model architecture, reward design, diagnostics, and API layer fall under this role.
+Sam was the AI/ML engineer responsible for the backend intelligence of GradePulse. All algorithmic decisions, model architecture, reward design, diagnostics, and API layer now fall to the **Backend Engineer (opencode session)**.
 
-**Core Responsibilities:**
+**Core Responsibilities (now Backend Engineer):**
 - LinUCB algorithm implementation (Disjoint and Hybrid variants)
 - Contextual bandit model design and tuning
 - Reward function engineering (anti-gaming, multi-objective)

@@ -1,22 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import type { Student, Content } from "@/lib/types";
-import { scoreToGrade, scoreToPercentage, GRADE_COLORS, SUBJECTS } from "@/lib/types";
-
-interface Recommendation {
-  content_id: string;
-  title: string;
-  topic: string;
-  difficulty: number;
-  content_type: string;
-  times_recommended: number;
-  times_rewarded: number;
-  avg_reward: number;
-}
+import { useEffect, useRef, useState } from "react";
+import { api, type Recommendation } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import type { Student } from "@/lib/types";
+import { scoreToGrade, scoreToPercentage, GRADE_COLORS, getStudentClassId } from "@/lib/types";
 
 export default function ProgressPage() {
+  const { user, loading: authLoading } = useAuth();
+  const recommendationController = useRef<AbortController | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -26,30 +18,58 @@ export default function ProgressPage() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    if (authLoading || !user) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
     async function load() {
       try {
-        const data = await api.getStudents();
+        const data = await api.getStudents(undefined, undefined, controller.signal);
+        if (cancelled) return;
         setStudents(data);
         if (data.length > 0) setSelected(data[0].student_id);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load students");
+        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+          setError(err instanceof Error ? err.message : "Failed to load students");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    load();
+
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    return () => recommendationController.current?.abort();
   }, []);
 
   const getRecommendation = async (studentId: string) => {
+    if (authLoading || !user) return;
+
+    recommendationController.current?.abort();
+    const controller = new AbortController();
+    recommendationController.current = controller;
     setRecLoading(true);
+    setError("");
     setRecommendations([]);
     try {
-      const data = await api.recommend(studentId, 3);
-      setRecommendations(Array.isArray(data) ? data : []);
+      const data = await api.recommend(studentId, 3, controller.signal);
+      if (!controller.signal.aborted) {
+        setRecommendations(data);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to get recommendation");
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : "Failed to get recommendation");
+      }
     } finally {
-      setRecLoading(false);
+      if (recommendationController.current === controller) {
+        setRecLoading(false);
+      }
     }
   };
 
@@ -60,17 +80,9 @@ export default function ProgressPage() {
     s.student_id.toLowerCase().includes(search.toLowerCase())
   );
 
-  const getDifficultyColor = (d: number) => {
-    if (d <= 1) return "text-success";
-    if (d <= 2) return "text-info";
-    if (d <= 3) return "text-warning";
-    if (d <= 4) return "text-orange-500";
-    return "text-danger";
-  };
-
-  if (loading) {
+  if (authLoading || loading) {
     return (
-      <div className="space-y-6">
+      <div role="status" aria-live="polite" className="space-y-6">
         <div className="h-8 w-48 skeleton" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="h-96 skeleton" />
@@ -93,7 +105,7 @@ export default function ProgressPage() {
       </div>
 
       {error && (
-        <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm flex items-center gap-2">
+        <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm flex items-center gap-2">
           <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
@@ -119,7 +131,8 @@ export default function ProgressPage() {
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               <input
-                type="text"
+                type="search"
+                aria-label="Search students"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="input pl-10"
@@ -136,7 +149,11 @@ export default function ProgressPage() {
                   return (
                     <button
                       key={s.student_id}
+                      type="button"
+                      aria-pressed={selected === s.student_id}
                       onClick={() => {
+                        recommendationController.current?.abort();
+                        setRecLoading(false);
                         setSelected(s.student_id);
                         setRecommendations([]);
                       }}
@@ -213,7 +230,7 @@ export default function ProgressPage() {
                     </div>
                     <div>
                       <div className="caption text-text-muted mb-1">Class</div>
-                      <div className="heading-2 text-navy">{currentStudent.class_id || "N/A"}</div>
+                      <div className="heading-2 text-navy">{getStudentClassId(currentStudent) || "N/A"}</div>
                     </div>
                     <div>
                       <div className="caption text-text-muted mb-1">Performance</div>
@@ -232,8 +249,10 @@ export default function ProgressPage() {
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => getRecommendation(currentStudent.student_id)}
                     disabled={recLoading}
+                    aria-busy={recLoading}
                     className="btn btn-secondary mt-4"
                   >
                     {recLoading ? (
@@ -305,10 +324,10 @@ export default function ProgressPage() {
                           {/* Stats */}
                           <div className="text-right shrink-0">
                             <div className="text-sm font-mono font-semibold text-navy">
-                              {Math.round(rec.avg_reward * 100)}% reward
+                              {Math.round((rec.avg_reward ?? 0) * 100)}% reward
                             </div>
                             <div className="caption text-text-muted">
-                              recommended {rec.times_recommended}x
+                              recommended {rec.times_recommended ?? 0}x
                             </div>
                           </div>
                         </div>

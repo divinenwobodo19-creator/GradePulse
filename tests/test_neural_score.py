@@ -64,3 +64,26 @@ def test_report_renders_without_errors():
     assert "LINUCB BRAIN — NEURAL SCORE" in report
     assert "★  NEURAL SCORE :  7.9 / 10.0   ★" in report
     assert "Status: GOOD" in report
+
+def test_balance_score_is_computed_not_placeholder():
+    # Diverse rewards spread across the range -> high balance (entropy).
+    brain = Brain()
+    brain.add_student("S1", "Alice")
+    brain.add_content("C1", "Math", "Math", 3, "video")
+    for i in range(20):
+        reward = -0.9 + i * 0.2  # spans the full [-1, 1] regime
+        brain.update("S1", "C1", reward)
+    balance = brain.neural_score(verbose=False)['balance_score']
+    assert 0.0 <= balance <= 10.0
+    assert balance > 2.0
+
+def test_balance_score_low_when_single_mode_dominates():
+    # All-but-one identical rewards -> near-zero entropy -> low balance.
+    brain = Brain()
+    brain.add_student("S1", "Alice")
+    brain.add_content("C1", "Math", "Math", 3, "video")
+    for _ in range(20):
+        brain.update("S1", "C1", 0.9)
+    balance = brain.neural_score(verbose=False)['balance_score']
+    assert 0.0 <= balance <= 10.0
+    assert balance < 2.0

@@ -11,17 +11,14 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000")
+from live_api import BASE_URL, is_real_api
+
 TEST_EMAIL = "backuptest@gradepulse.com"
 TEST_PASSWORD = "backuptest123"
 
 
 def _api_available():
-    try:
-        r = requests.get(f"{BASE_URL}/health", timeout=2)
-        return r.status_code == 200
-    except requests.ConnectionError:
-        return False
+    return is_real_api()
 
 
 def _get_token():
@@ -81,7 +78,7 @@ class TestCreateBackup:
         data = resp.json()
         assert data["size_bytes"] > 0
 
-    def test_create_backup_without_auth_returns_401(self):
+    def test_create_backup_without_auth_returns_401(self, api_ready):
         resp = requests.post(f"{BASE_URL}/backup")
         assert resp.status_code in [401, 403]
 
@@ -121,7 +118,7 @@ class TestListBackups:
             timestamps = [b["timestamp"] for b in data["backups"]]
             assert timestamps == sorted(timestamps, reverse=True)
 
-    def test_list_backups_without_auth_returns_401(self):
+    def test_list_backups_without_auth_returns_401(self, api_ready):
         resp = requests.get(f"{BASE_URL}/backups")
         assert resp.status_code in [401, 403]
 
@@ -137,7 +134,7 @@ class TestRestoreBackup:
         )
         assert resp.status_code == 500
 
-    def test_restore_backup_without_auth_returns_401(self):
+    def test_restore_backup_without_auth_returns_401(self, api_ready):
         resp = requests.post(
             f"{BASE_URL}/backup/restore",
             params={"backup_path": "/some/path"}
@@ -194,9 +191,13 @@ class TestBackupIntegration:
         initial = resp1.json()["total"]
 
         for _ in range(3):
-            requests.post(f"{BASE_URL}/backup", headers=_headers(token))
+            r = requests.post(f"{BASE_URL}/backup", headers=_headers(token))
+            assert r.status_code == 200
             time.sleep(0.5)
 
         resp2 = requests.get(f"{BASE_URL}/backups", headers=_headers(token))
         final = resp2.json()["total"]
-        assert final >= initial + 1
+        # Backup retention is capped (default 24). Below the cap each create
+        # increments the count; at the cap the oldest is rotated out so the
+        # total stays flat. Either way the creates must not fail or vanish.
+        assert final >= initial

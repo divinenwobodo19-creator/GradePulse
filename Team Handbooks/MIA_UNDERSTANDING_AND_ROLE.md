@@ -183,12 +183,18 @@ If I find a bug in Sam's code, I log it in the Decision Log. I do not fix it mys
 
 | Component | Status | Blocker |
 |---|---|---|
-| Next.js: Dashboard page | Pending | Network (npm install) |
-| Next.js: Students page | Pending | Network (npm install) |
-| Next.js: Scores page | Pending | Network (npm install) |
-| Next.js: Triage page | Pending | Network (npm install) |
-| Next.js: Progress page | Pending | Network (npm install) |
-| Next.js: Settings page | Pending | Network (npm install) |
+| Next.js: Dashboard page | Complete | — |
+| Next.js: Students page | Complete | — |
+| Next.js: Scores page | Complete | — |
+| Next.js: Triage page | Complete | — |
+| Next.js: Progress page | Complete | — |
+| Next.js: Settings page | Complete | — |
+
+> **Updated 27 September 2026:** the npm/network blocker is resolved. All six
+> pages are built and have since been through a production-hardening pass
+> (server-side API proxy, central 401 handling, abortable requests,
+> accessibility, security headers, 24 unit tests, CI job). See
+> `MIA_ENGINEERING_PROFILE.md` §6.1.
 
 ---
 

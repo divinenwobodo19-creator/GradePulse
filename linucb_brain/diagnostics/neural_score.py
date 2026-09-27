@@ -137,10 +137,22 @@ def run_neural_diagnostics(
         purity_score = 5.0
     scores['purity_score'] = min(max(purity_score, 0.0), 10.0)
 
-    # 7. OBJECTIVE BALANCE (New for Multi-Objective)
-    # Check if any objective is being completely ignored (very low correlation with reward)
-    # For now, we'll return a placeholder based on session diversity
-    scores['balance_score'] = 7.5 # Target: 7.5 baseline
+    # 7. OBJECTIVE BALANCE (real, not a placeholder)
+    # A system where one objective dominates tends to collapse reward feedback
+    # toward a single mode. We measure the entropy of the reward distribution
+    # (5 bins over the [-1, 1] signal range): high entropy = balanced signals,
+    # low entropy = one mode is dominating (2026-09-27).
+    rewards = np.array([s.reward for s in sessions if s.reward is not None], dtype=float)
+    if len(rewards) >= 5:
+        bins = np.histogram(rewards, bins=5, range=(-1.0, 1.0))[0].astype(float)
+        bins = bins[bins > 0]
+        probs = bins / bins.sum()
+        entropy = -sum(p * log(p) for p in probs)
+        max_entropy = log(5)
+        balance_score = (entropy / max_entropy) * 10.0 if max_entropy > 0 else 5.0
+    else:
+        balance_score = 5.0
+    scores['balance_score'] = min(max(balance_score, 0.0), 10.0)
 
     # Final Neural Score (Weighted with new dimensions)
     final_score = (

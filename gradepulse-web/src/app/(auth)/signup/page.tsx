@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
@@ -11,8 +12,12 @@ export default function SignupPage() {
   const [schoolName, setSchoolName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signup } = useAuth();
+  const { user, loading: authLoading, signup } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && user) router.replace("/dashboard");
+  }, [authLoading, router, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +29,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       await signup(email, password, schoolName || "My School");
-      router.push("/dashboard");
+      router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {
@@ -50,7 +55,7 @@ export default function SignupPage() {
           <div className="max-w-md text-center">
             {/* Logo */}
             <div className="flex items-center justify-center gap-3 mb-8">
-              <img src="/logo.png" alt="GradePulse" className="w-14 h-14 rounded-2xl shadow-lg" />
+              <Image src="/logo.png" alt="GradePulse" width={56} height={56} className="w-14 h-14 rounded-2xl shadow-lg" />
               <span className="text-4xl font-extrabold tracking-tight">GradePulse</span>
             </div>
 
@@ -90,7 +95,7 @@ export default function SignupPage() {
         <div className="w-full max-w-[400px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-2.5 mb-10">
-            <img src="/logo.png" alt="GradePulse" className="w-9 h-9 rounded-xl" />
+            <Image src="/logo.png" alt="GradePulse" width={36} height={36} className="w-9 h-9 rounded-xl" />
             <span className="text-xl font-bold text-navy">GradePulse</span>
           </div>
 
@@ -102,7 +107,7 @@ export default function SignupPage() {
 
           {/* Error */}
           {error && (
-            <div className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm mb-6 flex items-center gap-2">
+             <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm mb-6 flex items-center gap-2">
               <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
@@ -115,10 +120,13 @@ export default function SignupPage() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="input-group">
-              <label className="input-label">School Name</label>
-              <input
-                type="text"
-                value={schoolName}
+               <label className="input-label" htmlFor="signup-school">School Name</label>
+               <input
+                 id="signup-school"
+                 name="school"
+                 type="text"
+                 autoComplete="organization"
+                 value={schoolName}
                 onChange={(e) => setSchoolName(e.target.value)}
                 className="input"
                 placeholder="Lagos Model School"
@@ -127,10 +135,13 @@ export default function SignupPage() {
             </div>
 
             <div className="input-group">
-              <label className="input-label">Email</label>
-              <input
-                type="email"
-                value={email}
+               <label className="input-label" htmlFor="signup-email">Email</label>
+               <input
+                 id="signup-email"
+                 name="email"
+                 type="email"
+                 autoComplete="email"
+                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="input"
@@ -139,24 +150,29 @@ export default function SignupPage() {
             </div>
 
             <div className="input-group">
-              <label className="input-label">Password</label>
-              <input
-                type="password"
-                value={password}
+               <label className="input-label" htmlFor="signup-password">Password</label>
+               <input
+                 id="signup-password"
+                 name="password"
+                 type="password"
+                 autoComplete="new-password"
+                 aria-describedby="signup-password-hint"
+                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="input"
                 placeholder="At least 6 characters"
               />
               {password.length > 0 && password.length < 6 && (
-                <span className="text-xs text-danger mt-1">Password must be at least 6 characters</span>
+                 <span id="signup-password-hint" className="text-xs text-danger mt-1">Password must be at least 6 characters</span>
               )}
             </div>
 
             <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary btn-lg w-full"
+               type="submit"
+               disabled={loading}
+               aria-busy={loading}
+               className="btn btn-primary btn-lg w-full"
             >
               {loading ? (
                 <>
