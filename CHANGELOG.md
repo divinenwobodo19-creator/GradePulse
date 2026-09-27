@@ -4,6 +4,31 @@ All notable changes to GradePulse will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.0] - Unreleased
+
+### Added
+
+- **Phase 2 security:** school-ownership scoping across all data endpoints (schools, classes, students, recommend, update, bulk-update, triage, ingest); unclaimed students visible to any authenticated user until claimed.
+- **JWT hardening:** `iss`/`aud`/`iat`/`jti` claims, future-clock rejection, and production **fail-fast** — the server refuses to boot on a missing/placeholder/weak `JWT_SECRET` when `GRADEPULPE_ENV=production`.
+- **Auth rate limiting:** dependency-free sliding-window limiter — login 30/min per host|email + 120/min per host, signup 30/min per host (HTTP 429).
+- **`tests/test_security.py`** — 13 security regression tests (cross-school 403s, scoped triage, ingest isolation, token claims, fail-fast).
+- **Deployment hardening:** backups now include the user/account DB (SQLite + WAL sidecars); uvicorn honors `HOST`/`PORT`/`WEB_CONCURRENCY`/`LOG_LEVEL`; CI installs `pytest`; updated production runbook.
+
+### Changed
+
+- `/recommend` **always returns a JSON array** (was a bare object at `top_n=1`). Normalised at the HTTP boundary; `Brain.recommend()` unchanged for ML callers.
+- Hybrid recommend now delegates every round to the vectorized `select()` path, so `top_n` no longer changes which scoring (recency penalty + noise) applies.
+- School/class/student CRUD is server-derived: a request's school is the authenticated user's school; cross-school requests return **403**.
+- Runtime state files (`brain_state.json*`, `class_config.json`, `gradepulse_users.db*`, `backups/`) are no longer committed.
+
+### Fixed
+
+- `POST /ingest` returned HTTP 500 (relative import of the top-level `ingest.py` module).
+- Signup lost the newly-created school (registry saved from a stale disk copy).
+- `FileLock` closures raced under concurrency, letting unsynchronized writers corrupt state.
+- Ingest handler's blanket `except Exception` swallowed `HTTPException`s into 500s.
+- Pre-existing JWTs (pre-claims) now decode-fail → all users must log in once after upgrading.
+
 ## [0.1.0] - 2026-08-31
 
 ### Added

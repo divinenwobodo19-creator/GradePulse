@@ -1,149 +1,81 @@
-# Release Checklist — v0.1.0
+# Release Checklist — v0.2.0 (Production MVP)
 
-Pre-release verification steps for all agents. Complete every item before tagging v0.1.0.
-
----
-
-## For All Agents
-
-- [ ] Read `CHANGELOG.md` — verify your contributions are listed accurately
-- [ ] Read `README.md` — verify Quick Start works for your component
-- [ ] Run `git status` — ensure no uncommitted changes in your scope
-- [ ] Check `Decision Log` in `TEAM_HANDBOOK.md` — all your decisions are logged
+Pre-release gate. Every item must be complete before tagging `v0.2.0`. Owners: **Backend Engineer (opencode)** owns all backend/QA/docs/infra items; the Frontend Engineer (other agent) owns the frontend items; Divine signs off.
 
 ---
 
-## Sam (AI/ML Engineer)
+## Backend Engineer (opencode) — Engine, API, Security, Tests
 
-- [ ] Core engine tests pass: `PYTHONPATH=. pytest tests/test_brain.py tests/test_linucb.py tests/test_hybrid.py -v`
-- [ ] Neural Score tests pass: `PYTHONPATH=. pytest tests/test_neural_score.py -v`
-- [ ] Anti-gaming tests pass: `PYTHONPATH=. pytest tests/test_anti_gaming.py -v`
-- [ ] Adaptive gamma tests pass: `PYTHONPATH=. pytest tests/test_adaptive_gamma.py -v`
-- [ ] `brain_state.json` loads correctly with demo data
-- [ ] `SAM_TECHNICAL_HANDOFF.md` reflects current API (29 endpoints, not 16)
-- [ ] `SAM_UNDERSTANDING.md` reflects current test count (179)
+- [x] Core engine green: `python -m pytest tests/test_brain.py tests/test_linucb.py tests/test_hybrid.py tests/test_adaptive_gamma.py -q`
+- [x] Neural Score, anti-gaming, sync, backup suites green
+- [x] Phase 1 contract frozen: `/recommend` always returns a JSON array; `times_recommended` surfaced
+- [x] Phase 2 security: school-ownership scoping, JWT claims, rate limiting, `tests/test_security.py`
+- [x] Full suite: **360 passed** (fresh single-process run, exact CI command)
+- [x] Live suite against a real server on `:8000`: **37 passed**
+- [x] Runtime state untracked: `brain_state.json*`, `class_config.json`, `gradepulse_users.db*`, `backups/` gitignored
+- [x] `requirements.txt` fully pinned (no `>=` ranges)
+- [x] Backups include the user DB (accounts) + WAL sidecars, not just model + registry
+- [x] JWT fail-fast verified in the container: production refuses placeholder/weak secrets
 
----
+## Backend Engineer — Infra / Deploy (was Ali)
 
-## Mia (UI/UX Designer)
+- [x] `docker build --target backend` succeeds; image smoke-tested (signup → login → summary in prod mode)
+- [x] uvicorn honors `HOST`/`PORT`/`WEB_CONCURRENCY`/`LOG_LEVEL` envs (Dockerfile `CMD` now shell-form)
+- [x] Health check passes: `curl http://localhost:8000/health` → `engine:"GradePulse"`
+- [x] `.env.example` complete: `GRADEPULPE_ENV`, `JWT_SECRET`, `FRONTEND_URL`, `LOG_LEVEL` documented
+- [x] `docker-compose.yml` passes `JWT_SECRET`/`GRADEPULPE_ENV` into the API; default `WEB_CONCURRENCY=1`
+- [x] CI `ci.yml` installs `pytest` (test job would otherwise fail); runs `npm run check` for web
+- [x] `DEPLOYMENT.md` accurate: correct repo URL, token key (`token`), HTTPS, backups/restore, rollback
 
-- [ ] Next.js frontend builds: `cd gradepulse-web && npm run build`
-- [ ] All 15 pages render without errors
-- [ ] Login/Signup flow works end-to-end
-- [ ] Design system tokens consistent across all pages
-- [ ] Topic normalization matches backend (uppercase subjects)
+## Frontend Engineer (other agent)
 
----
-
-## Ali (Infrastructure)
-
-- [ ] Docker builds: `docker compose build`
-- [ ] Docker starts: `docker compose up -d`
-- [ ] Health check passes: `curl http://localhost:8000/health`
-- [ ] Multi-worker sync works (test with `WEB_CONCURRENCY=2`)
-- [ ] Backup system works (create + list + restore)
-- [ ] `.env.example` has all required variables
-- [ ] `DEPLOYMENT.md` is accurate and complete
-
----
-
-## Bob (Data Engineer)
-
-- [ ] Ingestion CLI works: `PYTHONPATH=. python3 ingest.py sample_data/sample_students.csv --school-name "Test School"`
-- [ ] Ingestion API works: `POST /ingest` with CSV upload
-- [ ] Context vector validates (17-dim)
-- [ ] `sample_data/` files are valid and parseable
-- [ ] `generate_pilot_data.py` produces valid output
-
----
-
-## David (QA)
-
-- [ ] Full test suite passes (or document known failures)
-- [ ] Load tests pass (if server running)
-- [ ] Backup API tests pass
-- [ ] Ingestion tests pass
-- [ ] Test count documented accurately (339 total)
-- [ ] `QA AUDIT REPORT.md` is up to date
-
----
-
-## Alice (Documentation)
-
-- [ ] `README.md` is release-ready (v0.1.0, all sections complete)
-- [ ] `PROJECT_INDEX.md` matches actual file structure
-- [ ] `CHANGELOG.md` lists all features and deferrals
-- [ ] `RELEASE_CHECKLIST.md` (this file) is complete
-- [ ] API reference documents all 29 endpoints
-- [ ] Decision Log is summarized (not unbounded)
-- [ ] `INVESTOR_CHECKLIST.md` reflects current state
-
----
+- [ ] `cd gradepulse-web && npm run check` passes (lint → typecheck → vitest → build)
+- [ ] Builds against the real API (`API_URL`) — server-side proxy `/api/*`
+- [ ] All pages render; login/signup + dashboards work end-to-end against `:8000`
+- [ ] Handles 401 (logged out / re-login) and 403/429 gracefully
+- [ ] `npm run check` green in CI (`ci.yml` frontend job)
 
 ## Divine (Founder)
 
 - [ ] Pricing model confirmed (Freemium: Free ₦0 / Starter ₦5,000/mo / School ₦15,000/mo)
 - [ ] Pilot school(s) selected
 - [ ] Legal/compliance reviewed (FERPA or equivalent)
-- [ ] Investor deck updated with current screenshots
-- [ ] Release announcement prepared
+- [ ] `LICENSE` file committed (repo metadata already says MIT)
+- [ ] Investor deck + release announcement prepared
 
 ---
 
-## Pre-Release Verification
-
-Run this before tagging:
+## Pre-Release Verification (run exactly like CI)
 
 ```bash
-# 1. Run full test suite
-PYTHONPATH=. pytest tests/ -v --tb=short
+# Backend: full offline suite (no server needed)
+PYTHONPATH=. python -m pytest tests/ -q --tb=short
 
-# 2. Start API and verify health
-PYTHONPATH=. uvicorn linucb_brain.api.app:app --port 8000 &
-curl http://localhost:8000/health
+# Live suite (needs the API running on :8000)
+PYTHONPATH=. python -m pytest tests/test_load.py tests/test_backup_api.py tests/test_ingest_api.py -q
 
-# 3. Test signup and login
-curl -X POST http://localhost:8000/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@test.com", "password": "test123"}'
+# Production-mode boot check (must refuse weak secrets)
+GRADEPULPE_ENV=production JWT_SECRET="short" pip-run uvicorn ...   # expect abort
 
-# 4. Test recommendation
-curl -X POST http://localhost:8000/recommend \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"student_id": "608041", "top_n": 1}'
+# Docker
+docker build --target backend -t gradepulse-api:test .
 
-# 5. Test triage
-curl -X POST http://localhost:8000/triage \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"subject": "MATH"}'
-
-# 6. Verify Docker builds
-docker compose build
-
-# 7. Verify frontend builds
-cd gradepulse-web && npm run build
+# Frontend
+cd gradepulse-web && npm run check
 ```
 
 ---
 
 ## Release Steps
 
-1. All agents complete their checklist items
-2. Divine approves release
-3. Update version in `pyproject.toml` to `0.1.0`
-4. Commit: `git commit -m "release: v0.1.0"`
-5. Tag: `git tag v0.1.0`
-6. Push: `git push origin main --tags`
-7. GitHub Actions builds Docker images automatically
-8. Announce release
-
----
-
-## Post-Release
-
-- Monitor GitHub Issues for bug reports
-- Track Neural Score over time
-- Collect teacher feedback
-- Plan v0.2 based on real-world usage
+1. All items above are checked, frontend agent green, Divine approves
+2. Bump version in `pyproject.toml` (→ `0.2.0`) and `CHANGELOG.md`
+3. Commit: `git commit -m "release: v0.2.0"`
+4. Tag + push (triggers GHCR image publish via `docker.yml`):
+   ```bash
+   git tag v0.2.0
+   git push origin main --tags
+   ```
+5. GitHub Actions builds + pushes `ghcr.io/...-api` and `...-web` images
+6. Deploy per `DEPLOYMENT.md` (VPS: clone → `.env` → `docker compose up -d --build` → HTTPS)
+7. Announce release

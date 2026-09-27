@@ -27,20 +27,22 @@ USER gradepulse
 ENV PYTHONPATH=/app \
     HOST=0.0.0.0 \
     PORT=8000 \
-    WEB_CONCURRENCY=2 \
+    WEB_CONCURRENCY=1 \
     BRAIN_STATE_PATH=/data/brain_state.json \
     CONFIG_PATH=/data/class_config.json \
     USER_DB_PATH=/data/gradepulse_users.db \
     BACKUP_DIR=/data/backups \
     BACKUP_ENABLED=true \
-    LOG_LEVEL=INFO
+    LOG_LEVEL=info
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["uvicorn", "linucb_brain.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# ENV values are honored at runtime: HOST/PORT/WEB_CONCURRENCY/LOG_LEVEL.
+# Multi-worker (>1) is safe — BrainSynchronizer provides file locking (sync.py).
+CMD ["sh", "-c", "exec uvicorn linucb_brain.api.app:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --log-level ${LOG_LEVEL:-info}"]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Stage 2: Frontend (Node.js / Next.js)

@@ -14,20 +14,24 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 DEV_SECRET = "gradepulse-dev-secret-change-in-production"
+PLACEHOLDER_SECRETS = {
+    DEV_SECRET,
+    "change-this-to-a-strong-random-secret-in-production",
+}
 ENV = os.getenv("GRADEPULPE_ENV", os.getenv("ENV", "development")).strip().lower()
 SECRET_KEY = os.getenv("JWT_SECRET", DEV_SECRET)
 
 # Fail fast: never boot a production process on a known/absent signing secret.
 if ENV in ("production", "prod"):
-    if not SECRET_KEY or SECRET_KEY == DEV_SECRET or len(SECRET_KEY) < 32:
+    if not SECRET_KEY or SECRET_KEY in PLACEHOLDER_SECRETS or len(SECRET_KEY) < 32:
         raise RuntimeError(
             "Refusing to start in production: set JWT_SECRET to a strong "
             "random value of at least 32 characters (see .env.example)."
         )
-elif SECRET_KEY == DEV_SECRET:
+elif SECRET_KEY in PLACEHOLDER_SECRETS:
     print(
-        "WARNING: using the development JWT secret. Set JWT_SECRET before "
-        "sharing this deployment (see .env.example).",
+        "WARNING: using a development/placeholder JWT secret. Set JWT_SECRET "
+        "before sharing this deployment (see .env.example).",
         file=sys.stderr,
     )
 

@@ -1,16 +1,33 @@
 # GradePulse — Deployment Runbook
 
 Audience: Anyone deploying or operating GradePulse in production.
-Last updated: 2026-08-31
+Last updated: 2026-09-27 (Phase 3 — production deploy)
+
+---
+
+## Overview
+
+Two services run together:
+
+| Service | Tech | Container port | Host port |
+|---|---|---|---|
+| API (backend engine) | FastAPI + uvicorn | 8000 | `${PORT:-8000}` |
+| Web (Next.js SPA) | Node 20 | 3000 | `${WEB_PORT:-3000}` |
+
+The browser talks to the web app, which **server-side proxies** `/api/*` to the API container; the API host is never exposed to browsers. Both persist data in the `gradepulse-data` Docker volume at `/data`:
+
+- `brain_state.json` — the model (LinUCB parameters, students, sessions)
+- `class_config.json` — school/class registry
+- `gradepulse_users.db` — accounts (SQLite, WAL mode)
+- `backups/` — automated backups (all three of the above)
 
 ---
 
 ## Prerequisites
 
-- A Linux VPS (Ubuntu 22.04+ recommended, 2GB+ RAM, 20GB+ disk)
-- Docker and Docker Compose installed
-- A domain name pointed at your VPS I
-P (for HTTPS)
+- Linux VPS (Ubuntu 22.04+ recommended, 2 GB+ RAM, 20 GB+ disk)
+- Docker + Docker Compose (plugin) installed
+- A domain (or two) pointed at the VPS for HTTPS
 - SSH access to the VPS
 
 ---
@@ -20,91 +37,81 @@ P (for HTTPS)
 ### 1.1 Prepare the VPS
 
 ```bash
-# SSH into your VPS
 ssh root@your-server-ip
 
-# Install Docker (if not already installed)
+# Install Docker + Compose plugin
 curl -fsSL https://get.docker.com | sh
+apt install -y docker-compose-plugin
 systemctl enable --now docker
 
-# Install Docker Compose plugin
-apt install -y docker-compose-plugin
-
-# Create a deploy user (optional but recommended)
+# Create a deploy user (recommended)
 adduser --disabled-password --gecos "" deploy
 usermod -aG docker deploy
 su - deploy
 ```
 
-### 1.2 Clone and Configure
+### 1.2 Clone and configure
 
 ```bash
-git clone https://github.com/divinenwobodo19-creator/Contextual-Band-Algorithm.git gradepulse
+git clone https://github.com/divinenwobodo19-creator/GradePulse.git gradepulse
 cd gradepulse
 
-# Create your .env from the template
 cp .env.example .env
-
-# Edit .env — set these at minimum:
-#   JWT_SECRET=<generate a strong random secret>
-#   BACKUP_ENABLED=true
-#   LOG_LEVEL=INFO
-nano .env
+nano .env   # must-haves below
 ```
 
-Generate a JWT secret:
+Set in `.env`:
+
+```dotenv
+GRADEPULPE_ENV=production
+JWT_SECRET=<generate below>
+FRONTEND_URL=https://your-web-domain.com
+WEB_CONCURRENCY=1
+LOG_LEVEL=info
+```
+
+Generate a strong JWT secret:
+
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-### 1.3 Start the Services
+> **Fail-fast guarantee:** the API refuses to boot in production unless `JWT_SECRET` is a non-placeholder value ≥ 32 chars. Never use the example secret.
+
+### 1.3 Start the services
 
 ```bash
 docker compose up -d --build
+docker compose ps            # both should be Up (healthy)
+curl http://localhost:8000/health
 ```
 
-This starts:
-- **API** on port 8000 (FastAPI + brain engine)
-- **Frontend** on port 3000 (Next.js)
+`/health` should return `{"status":"alive","engine":"GradePulse", ...}`. The web app is at `http://<vps-ip>:3000`.
 
-Verify:
-```bash
-docker compose ps                    # both services should be "running"
-curl http://localhost:8000/health     # should return JSON with status
-```
+### 1.4 HTTPS
 
-### 1.4 Set Up HTTPS (Required for Production)
-
-Install Nginx as a reverse proxy with Let's Encrypt SSL:
+Use Nginx as a reverse proxy; certbot issues Let's Encrypt certs.
 
 ```bash
 apt install -y nginx certbot python3-certbot-nginx
 ```
 
-Create the Nginx config:
-
-```bash
-nano /etc/nginx/sites-available/gradepulse
-```
-
-Paste:
+`/etc/nginx/sites-available/gradepulse`:
 
 ```nginx
-# HTTP → redirect to HTTPS
+# HTTP → HTTPS
 server {
     listen 80;
-    server_name api.yourdomain.com;
+    server_name api.yourdomain.com web.yourdomain.com;
     return 301 https://$host$request_uri;
 }
 
-# API (backend)
+# API
 server {
     listen 443 ssl;
     server_name api.yourdomain.com;
-
-    ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
-
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
     client_max_body_size 50M;
 
     location / {
@@ -114,34 +121,34 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+}
 
-    location /ws/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+# Web (Next.js)
+server {
+    listen 443 ssl;
+    server_name web.yourdomain.com;
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-Create a second config for the frontend (or use a single server block with paths):
-
 ```bash
-# Enable the site
 ln -s /etc/nginx/sites-available/gradepulse /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
-
-# Get SSL certificate
-certbot --nginx -d api.yourdomain.com
+certbot --nginx -d api.yourdomain.com -d web.yourdomain.com
 ```
 
-Repeat for the frontend domain if deploying separately.
-
-### 1.5 Update Firewall
+### 1.5 Firewall
 
 ```bash
 ufw allow 22/tcp    # SSH
-ufw allow 80/tcp    # HTTP (redirect)
+ufw allow 80/tcp    # HTTP redirect
 ufw allow 443/tcp   # HTTPS
 ufw enable
 ```
@@ -150,175 +157,105 @@ ufw enable
 
 ## 2. Daily Operations
 
-### Check Service Health
-
 ```bash
 docker compose ps
 curl -s http://localhost:8000/health | python3 -m json.tool
+docker compose logs -f api
+docker compose logs --tail=100 web
+docker compose restart api
 ```
 
-### View Logs
-
-```bash
-docker compose logs -f api          # follow API logs
-docker compose logs --tail=100 web  # last 100 lines of frontend
-docker compose logs --since=1h api  # logs from last hour
-```
-
-### Restart a Service
-
-```bash
-docker compose restart api          # restart API only
-docker compose restart              # restart all
-```
+The API container restarts automatically on crash/reboot (`restart: unless-stopped`).
 
 ---
 
 ## 3. Backups
 
-### What Gets Backed Up
+### What gets backed up
 
-The automated backup system saves:
-- `brain_state.json` (model state — the learned parameters)
-- `class_config.json` (school/class registry)
+Automatically (every 6 hours, keeps the last 24): `brain_state.json`, `class_config.json`, **and `gradepulse_users.db`** (+ its SQLite WAL sidecars). Stored in the volume at `/data/backups/`.
 
-Backups are stored in the Docker volume at `/data/backups/` and also accessible via API.
-
-### Automatic Backups
-
-Enabled by default (`BACKUP_ENABLED=true`). Runs every 6 hours. Keeps last 24 backups.
-
-### Manual Backup (via API)
+### Manual backup via API
 
 ```bash
-# Get an auth token first
 TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"your@email.com","password":"yourpassword"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"email":"your@email.com","password":"yourpassword"}' | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-# Create backup
-curl -X POST http://localhost:8000/backup \
-  -H "Authorization: Bearer $TOKEN"
-
-# List backups
-curl http://localhost:8000/backups \
-  -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:8000/backup -H "Authorization: Bearer $TOKEN"     # create
+curl http://localhost:8000/backups -H "Authorization: Bearer $TOKEN"           # list
 ```
 
-### Manual Backup (from host)
+### Backup from the host
 
 ```bash
-# Copy backup data out of the Docker volume
-docker compose exec api ls /data/backups/
 docker cp $(docker compose ps -q api):/data/backups ./local-backups
 ```
 
-### Restore from Backup
+### Restore
+
+> **Maintenance window required.** Restore overwrites the live model + registry + user DB. Stop writes first, restore, then restart.
 
 ```bash
-# Via API
-curl -X POST http://localhost:8000/backup/restore \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/data/backups/20260831_120000_123456"}'
-
-# Then restart to reload state
+curl -X POST "http://localhost:8000/backup/restore?backup_path=/data/backups/20260927_100000_123456" \
+  -H "Authorization: Bearer $TOKEN"
 docker compose restart api
+```
+
+For a full-volume restore from a host copy:
+
+```bash
+docker compose down
+# replace the three files under the volume, e.g. via a temp container:
+docker run --rm -v gradepulse-data:/data -v $PWD/local-backups:/in alpine \
+  sh -c "cp /in/*/ /data/ 2>/dev/null; ls /data"
+docker compose up -d
 ```
 
 ---
 
 ## 4. Upgrades
 
-### Pull New Code
-
 ```bash
 cd ~/gradepulse
 git pull origin main
+docker compose up -d --build api
+docker compose up -d --build web      # when the frontend changed
+curl -s http://localhost:8000/health
 ```
 
-### Rebuild and Restart
+Data persists in `gradepulse-data` across rebuilds. **Rollback** to a previous release:
 
 ```bash
-docker compose up -d --build api    # rebuild only the API
-docker compose up -d --build        # rebuild everything
-```
-
-The brain state persists in the `gradepulse-data` volume — it survives rebuilds.
-
-### Verify
-
-```bash
-docker compose ps
-curl -s http://localhost:8000/health | python3 -m json.tool
-docker compose logs --tail=20 api
+git log --oneline -5                  # find the last good commit/tag
+git checkout <release-tag>            # e.g. v0.2.0
+docker compose up -d --build
 ```
 
 ---
 
 ## 5. Troubleshooting
 
-### API won't start
-
-```bash
-docker compose logs api | tail -30
-```
-
-Common causes:
-- **Port 8000 already in use:** `lsof -i :8000` → kill the process, or change `PORT` in `.env`
-- **Corrupt brain state:** Delete `brain_state.json` from the volume and restart (model re-initializes)
-- **Missing .env:** Ensure `.env` exists in the project root
-
-### Brain state is empty after restore
-
-The model re-seeds demo data on startup if `brain_state.json` is empty. If you restored a backup but the state is still empty, check:
-```bash
-docker compose exec api cat /data/brain_state.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Students: {len(d.get(\"students\", {}))}')"
-```
-
-### Frontend can't reach the API
-
-1. Check `NEXT_PUBLIC_API_URL` in `.env` — should be `http://localhost:8000` for Docker, or your public API URL
-2. Check CORS: `FRONTEND_URL` in `.env` must match the frontend domain
-3. If using Nginx, ensure the proxy pass is correct
-
-### Container keeps restarting
-
-```bash
-docker compose ps                     # check restart count
-docker compose logs --since=5m api    # check recent logs
-docker compose exec api sh            # shell into the container
-```
-
-### Out of disk space
-
-```bash
-docker system prune -a                # remove unused images/containers
-docker volume prune                   # remove unused volumes (NOT gradepulse-data)
-docker compose exec api ls /data/backups/ | wc -l  # check backup count
-```
+| Symptom | Fix |
+|---|---|
+| Container exits immediately | Check `docker compose logs api` — in `GRADEPULPE_ENV=production` a weak/missing `JWT_SECRET` aborts deliberately at boot. |
+| Port 8000 busy | `lsof -i :8000` and kill, or change `PORT` in `.env`. |
+| API recovers with empty model | Fresh deployment seeds demo data when `brain_state.json` is absent. Restore from `/data/backups/` if needed. |
+| Web can't reach the API | `API_URL=http://api:8000` is set in `docker-compose.yml`; only override via the `API_URL` build ARG/env. Browsers must call `/api/*` same-origin. |
+| Out of disk | `docker system prune -a`, `docker volume prune` (never the `gradepulse-data` volume), trim `/data/backups/`. |
+| 429 Too Many Requests | Signup/login rate limit (30/min per address, 120/min per host) — legitimate users just wait. |
+| 403 on cross-school ops | School-ownership scoping (Phase 2): the caller's token isn't attached to that student/school. Re-login if the token predates the Phase 2 deploy. |
 
 ---
 
-## 6. Monitoring (Manual)
-
-Until a proper monitoring stack is set up, use these manual checks:
+## 6. Monitoring (manual until a stack is wired up)
 
 ```bash
-# API responding?
 curl -s http://localhost:8000/health
-
-# Brain state size (grows with students/interactions)
 docker compose exec api ls -lh /data/brain_state.json
-
-# Backup count
 docker compose exec api ls /data/backups/ | wc -l
-
-# Disk usage
-df -h
-docker system df
-
-# Container resource usage
+df -h && docker system df
 docker stats --no-stream
 ```
 
@@ -326,25 +263,16 @@ docker stats --no-stream
 
 ## 7. Emergency Procedures
 
-### Complete data loss (brain state gone)
+### Data loss
+1. List backups: `docker compose exec api ls /data/backups/`
+2. Restore via Section 3 (API or volume copy).
+3. If nothing survived, the engine re-seeds demo data; learned parameters are lost.
 
-1. Check backups: `docker compose exec api ls /data/backups/`
-2. Restore the most recent: use the restore procedure in Section 3
-3. If no backups exist: the model re-seeds demo data on startup. The learned parameters are lost, but the system recovers.
+### Compromise
+1. `docker compose down`
+2. Snapshot the volume: `docker run --rm -v gradepulse-data:/data -v $PWD:/out alpine sh -c "cp -r /data /out/forensic-$(date +%s)"`
+3. Rotate `JWT_SECRET` in `.env`.
+4. Re-deploy from a clean clone on a fresh VPS; restore the latest backup; then rotate the secret again.
 
-### Server compromised
-
-1. `docker compose down` — stop everything immediately
-2. Take a forensic snapshot of the volume
-3. Rotate `JWT_SECRET` in `.env`
-4. Re-deploy from a clean clone on a new VPS
-5. Restore from the latest backup
-
-### High memory usage
-
-```bash
-docker stats --no-stream              # check per-container memory
-free -h                               # system memory
-```
-
-If the API is using too much memory, reduce `WEB_CONCURRENCY` in `.env` (default 2).
+### Memory pressure
+`docker stats --no-stream`, `free -h`. Drop `WEB_CONCURRENCY` to 1 (default) or shrink the model. Upgrade RAM if `brain_state.json` growth (more schools/students/sessions) is sustained.

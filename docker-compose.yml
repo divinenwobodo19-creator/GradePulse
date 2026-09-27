@@ -26,14 +26,15 @@ services:
     env_file:
       - .env
     environment:
-      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       - JWT_SECRET=${JWT_SECRET:-gradepulse-dev-secret-change-in-production}
+      - GRADEPULPE_ENV=${GRADEPULPE_ENV:-development}
       - BRAIN_STATE_PATH=/data/brain_state.json
       - CONFIG_PATH=/data/class_config.json
       - USER_DB_PATH=/data/gradepulse_users.db
       - BACKUP_DIR=/data/backups
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - gradepulse-data:/data
     healthcheck:

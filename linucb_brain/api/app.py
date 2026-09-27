@@ -35,6 +35,7 @@ from .schemas import (
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "class_config.json")
+USER_DB_PATH = os.getenv("USER_DB_PATH", "gradepulse_users.db")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # Auto-save every 30 seconds to keep workers synchronized
@@ -221,9 +222,16 @@ async def lifespan(app: FastAPI):
             max_backups=BACKUP_MAX_COUNT,
             backup_interval=BACKUP_INTERVAL,
         )
-        # Register files for backup
+        # Register files for backup (brain, school/class registry, AND the
+        # user/account DB — a restore must not lose signups or school ties).
         backup_manager.register_file(BRAIN_STATE_PATH)
         backup_manager.register_file(CONFIG_PATH)
+        if USER_DB_PATH:
+            backup_manager.register_file(USER_DB_PATH)
+            # SQLite WAL-mode sidecars carry uncheckpointed writes.
+            for suffix in ("-wal", "-shm"):
+                if os.path.exists(USER_DB_PATH + suffix):
+                    backup_manager.register_file(USER_DB_PATH + suffix)
         # Create initial backup
         backup_manager.create_backup("startup")
         # Start periodic backups

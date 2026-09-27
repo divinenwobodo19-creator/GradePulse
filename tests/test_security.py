@@ -169,10 +169,14 @@ def test_token_with_future_iat_rejected():
     assert auth.decode_token(token) is None
 
 
-def test_jwt_secret_failfast_in_production():
+@pytest.mark.parametrize("bad_secret", [None, "gradepulse-dev-secret-change-in-production", "change-this-to-a-strong-random-secret-in-production"])
+def test_jwt_secret_failfast_in_production(bad_secret):
     env = dict(os.environ)
     env["GRADEPULPE_ENV"] = "production"
-    env.pop("JWT_SECRET", None)
+    if bad_secret is None:
+        env.pop("JWT_SECRET", None)
+    else:
+        env["JWT_SECRET"] = bad_secret
     r = subprocess.run(
         [sys.executable, "-c", "import linucb_brain.api.auth"],
         capture_output=True, text=True, env=env, cwd=PROJECT_ROOT,
@@ -191,10 +195,10 @@ def test_login_rate_limited_after_burst(client):
     assert 401 in seen  # the legitimate first attempts still returned 401
 
 
-def test_dev_default_secret_warns_but_boots():
+def test_dev_placeholder_secret_warns_but_boots():
     env = dict(os.environ)
     env["GRADEPULPE_ENV"] = "development"
-    env["JWT_SECRET"] = auth.DEV_SECRET
+    env["JWT_SECRET"] = "change-this-to-a-strong-random-secret-in-production"
     r = subprocess.run(
         [sys.executable, "-c", "import linucb_brain.api.auth; print('OK')"],
         capture_output=True, text=True, env=env, cwd=PROJECT_ROOT,

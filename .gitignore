@@ -183,8 +183,9 @@ oulad_brain_state.json
 demo_brain_state.json
 
 # Runtime files (generated, not source)
-gradepulse_users.db
+gradepulse_users.db*
 brain_state.json.lock
+class_config.json.lock
 
 backups/
 brain_state.json.bak
