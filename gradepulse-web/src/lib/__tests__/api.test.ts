@@ -108,26 +108,7 @@ describe("api client", () => {
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("normalizes the top_n=1 object response into a list", async () => {
-    const single = {
-      content_id: "C1",
-      title: "Fractions fundamentals",
-      topic: "MATH",
-      difficulty: 2,
-      content_type: "video",
-    };
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(single)) as unknown as typeof fetch;
-
-    const result = await api.recommend("S001", 1);
-
-    expect(Array.isArray(result)).toBe(true);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ content_id: "C1", difficulty: 2 });
-  });
-
-  it("passes an array response through unchanged when top_n>1", async () => {
+  it("sends top_n and returns the array the backend sends", async () => {
     const many = [
       { content_id: "C1", title: "A", topic: "MATH", difficulty: 1, content_type: "video" },
       { content_id: "C2", title: "B", topic: "MATH", difficulty: 3, content_type: "quiz" },
@@ -136,18 +117,22 @@ describe("api client", () => {
       .fn()
       .mockResolvedValue(jsonResponse(many)) as unknown as typeof fetch;
 
-    const result = await api.recommend("S001", 3);
+    const result = await api.recommend("S001", 2);
 
     expect(result).toHaveLength(2);
     expect(result.map((r) => r.content_id)).toEqual(["C1", "C2"]);
+    const body = JSON.parse(
+      (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body
+    );
+    expect(body).toMatchObject({ student_id: "S001", top_n: 2 });
   });
 
   it("returns an empty list when the engine has nothing to recommend", async () => {
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(jsonResponse({})) as unknown as typeof fetch;
+      .mockResolvedValue(jsonResponse([])) as unknown as typeof fetch;
 
-    expect(await api.recommend("S001", 1)).toEqual([]);
+    expect(await api.recommend("S001", 3)).toEqual([]);
   });
 
   it("clears the stored token on logout", () => {
