@@ -194,9 +194,8 @@ security headers, 24 unit tests, and a CI job.
 | Security headers | CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy |
 | Test suite | 24 Vitest specs (`npm run check`) |
 | CI | `frontend` job: lint, typecheck, test, build |
-| Mobile responsive | Verified 27 Sep — no horizontal overflow on any page at 768 or 1440 |
+| Mobile responsive | **Not verified this session** — see open items |
 | WCAG conformance level | **Unconfirmed** — awaiting target from Divine |
-| Visual/legibility audit at tablet width | **Not done** — overflow is measured, layout is not eyeballed |
 | Offline HTML tool | Untouched this session; contains no Neural Score display, so the scale fix below does not apply to it |
 | Teacher Portal (Streamlit) | Untouched this session; contains no Neural Score display either |
 
@@ -204,9 +203,8 @@ security headers, 24 unit tests, and a CI job.
 
 | Item | Needs |
 |---|---|
-| Visual legibility pass at tablet width (768) — overflow is measured at 0px on all 6 pages, but the layout has not been eyeballed or contrast-checked | My own review |
+| Confirm tablet + desktop layouts still hold after the hardening pass | My own verification |
 | WCAG target level (AA assumed) | Divine |
-| Confirm the probe account can be deleted: `responsive.probe@gradepulse.test` + `responsive.probe2@gradepulse.test`, school "PROBE SCHOOL", class `JSS1-A`, student `PROBE1` were created in the dev engine while verifying the responsive layout | Divine / Backend Engineer |
 | Neural Score "not computed" sentinel — API returns `0.0`, schema says `Optional[float]`, persisted state uses `None` | Backend Engineer |
 | `/recommend` returns object / list / `{}` depending on `top_n`; frontend normalizes, backend should return one stable shape | Backend Engineer |
 
