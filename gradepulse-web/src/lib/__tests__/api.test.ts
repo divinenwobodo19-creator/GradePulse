@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, UNAUTHORIZED_EVENT } from "../api";
+import { api, ApiError, UNAUTHORIZED_EVENT } from "../api";
 
 const originalFetch = globalThis.fetch;
 
@@ -143,5 +143,59 @@ describe("api client", () => {
 
     expect(localStorage.getItem("gradepulse_token")).toBeNull();
     expect(api.getToken()).toBeNull();
+  });
+
+  it("keeps the status on 429 and preserves the server's guidance", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ detail: "Too many login attempts for this account — try again later" }, { status: 429 })
+      ) as unknown as typeof fetch;
+
+    const error = await api.login("teacher@school.test", "pw").catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(429);
+    expect((error as ApiError).message).toBe(
+      "Too many login attempts for this account — try again later"
+    );
+  });
+
+  it("falls back to guidance when a 429 carries no detail", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({}, { status: 429 })) as unknown as typeof fetch;
+
+    const error = await api.summary().catch((e: unknown) => e);
+
+    expect((error as ApiError).status).toBe(429);
+    expect((error as ApiError).message).toMatch(/wait about a minute/i);
+  });
+
+  it("explains a 403 instead of echoing the raw API detail", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ detail: "Not authorized for this school" }, { status: 403 })
+      ) as unknown as typeof fetch;
+
+    const error = await api.getStudents("OTHER-SCHOOL").catch((e: unknown) => e);
+
+    expect((error as ApiError).status).toBe(403);
+    expect((error as ApiError).message).toMatch(/don't have access/i);
+  });
+
+  it("does not leak a non-string detail into the message", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ detail: [{ msg: "Field required", loc: ["body", "subject"] }] }, { status: 422 })
+      ) as unknown as typeof fetch;
+
+    const error = await api.triage("MATH").catch((e: unknown) => e);
+
+    expect((error as ApiError).status).toBe(422);
+    expect((error as ApiError).message).not.toContain("[object");
+    expect((error as ApiError).message).not.toContain("Field required");
   });
 });
