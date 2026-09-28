@@ -1,0 +1,9 @@
+content_id,title,topic,difficulty,content_type
+CONT001,Algebra Basics,Math,2,video
+CONT002,Quadratic Equations Quiz,Math,3,quiz
+CONT003,Cell Structure Reading,Science,2,reading
+CONT004,Physics Lab Exercise,Science,4,exercise
+CONT005,Grammar Fundamentals,English,1,video
+CONT006,Creative Writing Practice,English,3,exercise
+CONT007,Nigerian History Overview,History,2,reading
+CONT008,Past Questions Quiz,History,4,quiz

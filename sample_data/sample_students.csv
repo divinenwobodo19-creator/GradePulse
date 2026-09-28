@@ -1,0 +1,6 @@
+student_id,name,class_label,school_name,performance_score,session_count,current_topic,education_level,age_band,credits_studied,imd_band,region_code,grade_history_math,grade_history_science,grade_history_english,grade_history_history
+STU001,Adebayo Olawale,JSS1A,LAGOS MODEL SCHOOL,0.65,12,Math,1.0,2.0,5.0,0.4,1.0,0.55;0.60;0.65,,,
+STU002,Chidinma Eze,JSS1A,LAGOS MODEL SCHOOL,0.78,15,Science,1.0,2.0,5.0,0.3,1.0,,0.70;0.75;0.78,,
+STU003,Fatima Abubakar,JSS2B,LAGOS MODEL SCHOOL,0.42,8,English,2.0,3.0,10.0,0.6,2.0,,,0.35;0.38;0.42,
+STU004,Emeka Nnamdi,SSS1A,ABUJA PREP ACADEMY,0.88,20,Math,4.0,4.0,20.0,0.2,3.0,0.82;0.85;0.88,,,
+STU005,Grace Okonkwo,SSS2A,ABUJA PREP ACADEMY,0.55,10,History,5.0,5.0,25.0,0.5,3.0,,,,0.48;0.52;0.55

@@ -160,6 +160,10 @@ cython_debug/
 # Data and large files
 data/
 *.csv
+# ...but the generated sample_data fixtures ARE tracked: tests assert against
+# them (row counts, school names, edge cases) and a fresh clone without them
+# fails ~15 tests. Synthetic only - no real student rosters.
+!sample_data/**/*.csv
 *.zip
 *.gz
 *.7z

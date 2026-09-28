@@ -1,0 +1,41 @@
+content_id,title,topic,difficulty,content_type
+PC001,Number Operations,Math,1,video
+PC002,Fractions and Decimals,Math,2,reading
+PC003,Algebraic Expressions,Math,3,exercise
+PC004,Quadratic Equations,Math,4,quiz
+PC005,Trigonometry Fundamentals,Math,3,video
+PC006,Statistics and Probability,Math,2,quiz
+PC007,Geometry Proofs,Math,5,exercise
+PC008,Matrices and Determinants,Math,4,reading
+PC009,Calculus Introduction,Math,5,video
+PC010,Logarithms and Indices,Math,3,quiz
+PC011,Cell Biology Basics,Science,1,video
+PC012,Chemical Bonding,Science,2,reading
+PC013,Newton's Laws of Motion,Science,3,exercise
+PC014,Acids and Bases,Science,2,quiz
+PC015,Electromagnetic Waves,Science,4,video
+PC016,Organic Chemistry,Science,5,reading
+PC017,Ecology and Ecosystems,Science,2,exercise
+PC018,Genetics and Heredity,Science,4,quiz
+PC019,Energy Transformations,Science,3,video
+PC020,Lab Safety Procedures,Science,1,reading
+PC021,Parts of Speech,English,1,video
+PC022,Sentence Construction,English,2,exercise
+PC023,Comprehension Strategies,English,3,quiz
+PC024,Essay Writing Structure,English,4,reading
+PC025,Figurative Language,English,3,video
+PC026,Grammar and Punctuation,English,2,quiz
+PC027,Literary Devices,English,4,exercise
+PC028,Summary Writing,English,2,reading
+PC029,Formal Letter Writing,English,3,video
+PC030,Debate and Argumentation,English,5,exercise
+PC031,Pre-Colonial Nigeria,History,1,reading
+PC032,The Sokoto Caliphate,History,2,video
+PC033,British Colonial Rule,History,3,quiz
+PC034,Nigerian Independence,History,2,exercise
+PC035,First Republic and Civil War,History,4,reading
+PC036,Modern Nigerian Democracy,History,3,video
+PC037,West African Trade Routes,History,2,reading
+PC038,Ancient Benin Kingdom,History,3,video
+PC039,Women in Nigerian History,History,4,exercise
+PC040,Pan-Africanism Movement,History,5,quiz

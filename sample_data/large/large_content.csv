@@ -1,0 +1,25 @@
+content_id,title,topic,difficulty,content_type
+CONT001,Algebra Fundamentals,Math,2,video
+CONT002,Quadratic Equations,Math,3,quiz
+CONT003,Geometry Basics,Math,2,reading
+CONT004,Trigonometry Practice,Math,4,exercise
+CONT005,Statistics Intro,Math,3,video
+CONT006,Calculus Preview,Math,5,quiz
+CONT007,Number Theory,Math,3,reading
+CONT008,Cell Biology,Science,2,video
+CONT009,Chemical Reactions,Science,3,quiz
+CONT010,Physics Motion,Science,3,exercise
+CONT011,Ecology Systems,Science,2,reading
+CONT012,Lab Safety,Science,1,video
+CONT013,Genetics Basics,Science,4,quiz
+CONT014,Grammar Rules,English,1,video
+CONT015,Essay Writing,English,3,exercise
+CONT016,Literature Analysis,English,4,reading
+CONT017,Comprehension Practice,English,2,quiz
+CONT018,Vocabulary Builder,English,2,video
+CONT019,Poetry Appreciation,English,3,reading
+CONT020,Nigerian Independence,History,2,reading
+CONT021,West African Empires,History,3,video
+CONT022,Colonial Period,History,3,quiz
+CONT023,Modern Nigeria,History,2,exercise
+CONT024,World Wars Impact,History,4,reading
