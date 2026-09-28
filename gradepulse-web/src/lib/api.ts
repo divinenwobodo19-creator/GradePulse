@@ -12,6 +12,27 @@ const REQUEST_TIMEOUT_MS = 15000;
 
 export const UNAUTHORIZED_EVENT = "gradepulse:unauthorized";
 
+const RATE_LIMIT_MESSAGE =
+  "Too many attempts just now. Wait about a minute, then try again.";
+const FORBIDDEN_MESSAGE =
+  "You don't have access to that. If this keeps happening, your account may not be linked to the right school.";
+
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, detail: string) {
+    super(ApiError.describe(status, detail));
+    this.name = "ApiError";
+    this.status = status;
+  }
+
+  private static describe(status: number, detail: string): string {
+    if (status === 429) return detail || RATE_LIMIT_MESSAGE;
+    if (status === 403) return FORBIDDEN_MESSAGE;
+    return detail || `Request failed (${status}). Please try again.`;
+  }
+}
+
 export interface Recommendation {
   content_id: string;
   title: string;
@@ -82,8 +103,10 @@ class ApiClient {
       }
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || `API error ${res.status}`);
+        const body = await res.json().catch(() => null);
+        const detail =
+          typeof body?.detail === "string" ? body.detail : res.statusText;
+        throw new ApiError(res.status, detail);
       }
 
       return res.json();
