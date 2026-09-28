@@ -10,10 +10,10 @@ Pre-release gate. Every item must be complete before tagging `v0.2.0`. Owners: *
 - [x] Neural Score, anti-gaming, sync, backup suites green
 - [x] Phase 1 contract frozen: `/recommend` always returns a JSON array; `times_recommended` surfaced
 - [x] Phase 2 security: school-ownership scoping, JWT claims, rate limiting, `tests/test_security.py`
-- [x] Full suite: **360 passed** (fresh single-process run, exact CI command)
+- [x] Full suite: **360 passed** — verified locally 28 Sep and green in CI 28 Sep after the fixes below. Note the earlier "exact CI command" claim was not accurate: the CI test job had never run to completion before 28 Sep (missing pytest, then a missing starlette/httpx pin), so 360 had only ever been observed on a dev machine.
 - [x] Live suite against a real server on `:8000`: **37 passed**
-- [x] Runtime state untracked: `brain_state.json*`, `class_config.json`, `gradepulse_users.db*`, `backups/` gitignored
-- [x] `requirements.txt` fully pinned (no `>=` ranges)
+- [x] Runtime state untracked: `brain_state.json*`, `class_config.json`, `gradepulse_users.db*`, `backups/` gitignored — note `*.csv` was also narrowed 28 Sep so the generated `sample_data/` fixtures are tracked; a fresh clone previously lacked them and ~15 integrity tests failed
+- [x] `requirements.txt` fully pinned (no `>=` ranges) — completed 28 Sep: `starlette==1.0.0` and `httpx==0.28.1` were missing entirely, so CI floated to starlette 1.7 and 3 API test files failed to collect. Added both.
 - [x] Backups include the user DB (accounts) + WAL sidecars, not just model + registry
 - [x] JWT fail-fast verified in the container: production refuses placeholder/weak secrets
 
@@ -24,23 +24,23 @@ Pre-release gate. Every item must be complete before tagging `v0.2.0`. Owners: *
 - [x] Health check passes: `curl http://localhost:8000/health` → `engine:"GradePulse"`
 - [x] `.env.example` complete: `GRADEPULPE_ENV`, `JWT_SECRET`, `FRONTEND_URL`, `LOG_LEVEL` documented
 - [x] `docker-compose.yml` passes `JWT_SECRET`/`GRADEPULPE_ENV` into the API; default `WEB_CONCURRENCY=1`
-- [x] CI `ci.yml` installs `pytest` (test job would otherwise fail); runs `npm run check` for web
+- [x] CI `ci.yml` installs `pytest` (test job would otherwise fail); runs `npm run check` for web — first fully green run 28 Sep
 - [x] `DEPLOYMENT.md` accurate: correct repo URL, token key (`token`), HTTPS, backups/restore, rollback
 
 ## Frontend Engineer (other agent)
 
-- [ ] `cd gradepulse-web && npm run check` passes (lint → typecheck → vitest → build)
-- [ ] Builds against the real API (`API_URL`) — server-side proxy `/api/*`
-- [ ] All pages render; login/signup + dashboards work end-to-end against `:8000`
-- [ ] Handles 401 (logged out / re-login) and 403/429 gracefully
-- [ ] `npm run check` green in CI (`ci.yml` frontend job)
+- [x] `cd gradepulse-web && npm run check` passes (lint → typecheck → vitest → build) — verified 28 Sep, 27 tests
+- [x] Builds against the real API (`API_URL`) — server-side proxy `/api/*`; `docker build --target frontend` succeeds and the container serves `:3000` and reaches `:8000` through the proxy (`engine: "GradePulse"`)
+- [x] All pages render; login/signup + dashboards work end-to-end against `:8000` — verified 28 Sep: fresh signup → login, 6/6 routes HTTP 200 with 0 console errors and 0px overflow at 1440 and 768, every proxied `/api` call 200
+- [x] Handles 401 (logged out / re-login) and 403/429 gracefully — `ApiError` carries the status (`gradepulse-web/src/lib/api.ts`); 401 re-login, 403 explains the school-link cause, 429 keeps the server wording
+- [x] `npm run check` green in CI (`ci.yml` frontend job) — verified 28 Sep (PR #2)
 
 ## Divine (Founder)
 
 - [ ] Pricing model confirmed (Freemium: Free ₦0 / Starter ₦5,000/mo / School ₦15,000/mo)
 - [ ] Pilot school(s) selected
 - [ ] Legal/compliance reviewed (FERPA or equivalent)
-- [ ] `LICENSE` file committed (repo metadata already says MIT)
+- [x] `LICENSE` file committed (repo metadata already says MIT) — MIT text added 28 Sep
 - [ ] Investor deck + release announcement prepared
 
 ---
