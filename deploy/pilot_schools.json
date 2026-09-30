@@ -1,0 +1,47 @@
+{
+  "content_csv": "../sample_data/pilot_grade/pilot_content.csv",
+  "schools": [
+    {
+      "name": "FAMILY MUSIC SCHOOL",
+      "email": "music.admin@gradepulse.demo",
+      "password": "ChangeMe-Music-Pilot",
+      "students": [
+        {"id": "MS001", "name": "Ada Obi", "class": "JSS1A", "perf": 0.82, "topic": "Math", "sessions": 14, "history": [0.78, 0.80, 0.82]},
+        {"id": "MS002", "name": "Tobi Ade", "class": "JSS1A", "perf": 0.61, "topic": "English", "sessions": 9, "history": [0.55, 0.58, 0.61]},
+        {"id": "MS003", "name": "Ngozi Eze", "class": "JSS1A", "perf": 0.45, "topic": "Science", "sessions": 7, "history": [0.52, 0.48, 0.45]},
+        {"id": "MS004", "name": "Emeka Nwosu", "class": "JSS1A", "perf": 0.73, "topic": "Math", "sessions": 12, "history": [0.68, 0.71, 0.73]},
+        {"id": "MS005", "name": "Yemi Bello", "class": "JSS1A", "perf": 0.55, "topic": "History", "sessions": 6, "history": [0.60, 0.57, 0.55]},
+        {"id": "MS006", "name": "Chidinma Okafor", "class": "JSS1A", "perf": 0.88, "topic": "Science", "sessions": 16, "history": [0.84, 0.86, 0.88]},
+        {"id": "MS007", "name": "Kunle Adeyemi", "class": "JSS1A", "perf": 0.38, "topic": "Math", "sessions": 5, "history": [0.44, 0.41, 0.38]},
+        {"id": "MS008", "name": "Funke Lawal", "class": "JSS1A", "perf": 0.67, "topic": "English", "sessions": 11, "history": [0.62, 0.65, 0.67]},
+        {"id": "MS009", "name": "David Igwe", "class": "JSS2A", "perf": 0.72, "topic": "Math", "sessions": 15, "history": [0.66, 0.69, 0.72]},
+        {"id": "MS010", "name": "Zainab Musa", "class": "JSS2A", "perf": 0.49, "topic": "Science", "sessions": 8, "history": [0.55, 0.51, 0.49]},
+        {"id": "MS011", "name": "Oluwaseun Akin", "class": "JSS2A", "perf": 0.79, "topic": "English", "sessions": 13, "history": [0.74, 0.77, 0.79]},
+        {"id": "MS012", "name": "Amara Chukwu", "class": "JSS2A", "perf": 0.42, "topic": "History", "sessions": 4, "history": [0.48, 0.45, 0.42]},
+        {"id": "MS013", "name": "Kelechi Nnamdi", "class": "JSS2A", "perf": 0.58, "topic": "Math", "sessions": 10, "history": [0.53, 0.56, 0.58]},
+        {"id": "MS014", "name": "Ifeoma Ani", "class": "JSS2A", "perf": 0.91, "topic": "Science", "sessions": 18, "history": [0.87, 0.89, 0.91]}
+      ]
+    },
+    {
+      "name": "LOCAL COMMUNITY PRIMARY",
+      "email": "school.admin@gradepulse.demo",
+      "password": "ChangeMe-School-Pilot",
+      "students": [
+        {"id": "LC001", "name": "Bola Ade", "class": "JSS1A", "perf": 0.65, "topic": "Math", "sessions": 10, "history": [0.60, 0.63, 0.65]},
+        {"id": "LC002", "name": "Sade Okon", "class": "JSS1A", "perf": 0.51, "topic": "English", "sessions": 7, "history": [0.56, 0.53, 0.51]},
+        {"id": "LC003", "name": "Ibrahim Sule", "class": "JSS1A", "perf": 0.74, "topic": "Science", "sessions": 12, "history": [0.69, 0.72, 0.74]},
+        {"id": "LC004", "name": "Grace Adamu", "class": "JSS1A", "perf": 0.40, "topic": "Math", "sessions": 5, "history": [0.46, 0.43, 0.40]},
+        {"id": "LC005", "name": "Peter Obi", "class": "JSS1A", "perf": 0.68, "topic": "History", "sessions": 11, "history": [0.63, 0.66, 0.68]},
+        {"id": "LC006", "name": "Nneka Okafor", "class": "JSS2B", "perf": 0.57, "topic": "English", "sessions": 9, "history": [0.52, 0.55, 0.57]},
+        {"id": "LC007", "name": "Musa Danjuma", "class": "JSS2B", "perf": 0.83, "topic": "Math", "sessions": 15, "history": [0.78, 0.81, 0.83]},
+        {"id": "LC008", "name": "Chiamaka Eze", "class": "JSS2B", "perf": 0.47, "topic": "Science", "sessions": 6, "history": [0.53, 0.50, 0.47]},
+        {"id": "LC009", "name": "Tunde Bakare", "class": "JSS2B", "perf": 0.70, "topic": "Math", "sessions": 12, "history": [0.65, 0.68, 0.70]},
+        {"id": "LC010", "name": "Hauwa Yusuf", "class": "JSS2B", "perf": 0.36, "topic": "English", "sessions": 4, "history": [0.42, 0.39, 0.36]},
+        {"id": "LC011", "name": "Obinna Uche", "class": "JSS3A", "perf": 0.62, "topic": "History", "sessions": 10, "history": [0.57, 0.60, 0.62]},
+        {"id": "LC012", "name": "Blessing John", "class": "JSS3A", "perf": 0.77, "topic": "Science", "sessions": 14, "history": [0.72, 0.75, 0.77]},
+        {"id": "LC013", "name": "Samuel Adebayo", "class": "JSS3A", "perf": 0.53, "topic": "Math", "sessions": 8, "history": [0.48, 0.51, 0.53]},
+        {"id": "LC014", "name": "Rita Chinedu", "class": "JSS3A", "perf": 0.88, "topic": "English", "sessions": 17, "history": [0.84, 0.86, 0.88]}
+      ]
+    }
+  ]
+}

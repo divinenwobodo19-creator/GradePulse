@@ -155,9 +155,19 @@ def _get_class_students(school_id: str = "", class_id: str = "") -> list:
 # caller's authenticated user (users DB), not trusted from request bodies or
 # query strings. Students with an EMPTY school_id are unclaimed/legacy and stay
 # accessible to any authenticated user until a school claims them.
-LOGIN_LIMITER = SlidingWindowLimiter(max_requests=30, window_seconds=60)
-LOGIN_HOST_LIMITER = SlidingWindowLimiter(max_requests=120, window_seconds=60)
-SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=30, window_seconds=60)
+# Caps are env-tunable (RATE_LIMIT_*) so a pilot/demo instance can open the
+# throttle (one shared classroom IP fires many logins); production defaults are
+# unchanged when the env vars are absent.
+def _limit_from_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+LOGIN_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_LOGIN_EMAIL", 30), window_seconds=60)
+LOGIN_HOST_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_LOGIN_HOST", 120), window_seconds=60)
+SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_SIGNUP_HOST", 30), window_seconds=60)
 
 
 def _client_host(request: Request) -> str:

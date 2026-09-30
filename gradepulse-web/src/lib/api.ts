@@ -8,7 +8,9 @@ import type {
 const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
 const API_URL = configuredApiUrl ? configuredApiUrl.replace(/\/+$/, "") : "";
 const API_PREFIX = API_URL ? "" : "/api";
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = Number(
+  process.env.NEXT_PUBLIC_GRADEPULSE_API_TIMEOUT_MS || 15000
+);
 
 export const UNAUTHORIZED_EVENT = "gradepulse:unauthorized";
 

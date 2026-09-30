@@ -1,0 +1,66 @@
+# GradePulse — Offline demo bundle (laptop / projector)
+# -------------------------------------------------------
+# Runs the SAME published images on one machine for school demos with no
+# internet at the venue. Data lives in its own volume (isolated from prod).
+#
+#   docker compose -f deploy/demo/docker-compose.demo.yml build   # prep (home, online)
+#   docker compose -f deploy/demo/docker-compose.demo.yml up -d   # venue (offline)
+#   python3 deploy/pilot_seed.py --api http://localhost:8000 --scores
+#
+services:
+  api:
+    image: ghcr.io/divinenwobodo19-creator/gradepulse-api:0.2.1
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: backend
+    container_name: gradepulse-demo-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GRADEPULPE_ENV=development
+      - JWT_SECRET=gradepulse-demo-secret-8f2e9a4c1b7d3e5f6a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f
+      - WEB_CONCURRENCY=1
+      - RATE_LIMIT_LOGIN_EMAIL=1000
+      - RATE_LIMIT_LOGIN_HOST=5000
+      - RATE_LIMIT_SIGNUP_HOST=1000
+      - BRAIN_STATE_PATH=/data/brain_state.json
+      - CONFIG_PATH=/data/class_config.json
+      - USER_DB_PATH=/data/gradepulse_users.db
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENABLED=false
+      - LOG_LEVEL=info
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - gradepulse-demo-data:/data
+    networks:
+      - gradepulse-demo
+
+  web:
+    image: ghcr.io/divinenwobodo19-creator/gradepulse-web:0.2.1
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: frontend
+      args:
+        API_URL: http://api:8000
+        NEXT_PUBLIC_GRADEPULSE_API_TIMEOUT_MS: "30000"
+    container_name: gradepulse-demo-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - gradepulse-demo
+
+volumes:
+  gradepulse-demo-data:
+    driver: local
+
+networks:
+  gradepulse-demo:
+    driver: bridge
