@@ -4,6 +4,18 @@ All notable changes to GradePulse will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.1] - 2026-09-30
+
+### Added
+
+- **Offline demo bundle** (`deploy/demo/`): `docker-compose.demo.yml` + `run-demo.sh` run the published images on one laptop with an isolated data volume, so the school demos work with no internet at the venue. Full-device build target; the two demo images are also pulled straight from GHCR when online.
+- **Pilot seed tooling** (`deploy/pilot_seed.py`, `deploy/pilot_schools.json`): creates the two pilot school accounts, ingests their 28-student rosters and the pilot content catalog via `/ingest`, and optionally runs recommend→update rounds so `recommend` is non-cold-start at demo time.
+
+### Changed
+
+- **Rate-limits are now env-tunable** — `RATE_LIMIT_LOGIN_EMAIL` (default 30), `RATE_LIMIT_LOGIN_HOST` (120), `RATE_LIMIT_SIGNUP_HOST` (30). Production defaults are unchanged when the vars are absent; the demo stack opens them for a classroom sharing one public IP.
+- **Frontend request timeout is env-tunable** — `NEXT_PUBLIC_GRADEPULSE_API_TIMEOUT_MS` (default `15000`), baked via a new `Dockerfile` build arg. Base behaviour at production defaults is unchanged; the demo build raises it to `30000` for slow school WiFi.
+
 ## [0.2.0] - 2026-09-28
 
 ### Added
