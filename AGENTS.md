@@ -2,6 +2,8 @@
 
 Shared workspace rules so the **Backend Engineer (opencode)** and the **Frontend Engineer (other agent)** never clobber each other.
 
+> **People note (2026-10-02):** Divine owns the product. Agents are the lead engineers. **Dan-BOY72** (GitHub) assists on frontend and other areas but is not an owner — he works under these coordination rules, goes through the same branch-with-PR flow, and the relevant agent keeps directional ownership of each area.
+
 ## Agent map
 
 | Side | Owner |
