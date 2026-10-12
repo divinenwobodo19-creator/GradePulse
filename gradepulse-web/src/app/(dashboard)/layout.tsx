@@ -77,6 +77,18 @@ const NAV_ITEMS = [
     ),
   },
   {
+    label: "Reports",
+    href: "/reports",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M8 13h8" />
+        <path d="M8 17h5" />
+      </svg>
+    ),
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: (
@@ -134,7 +146,7 @@ export default function DashboardLayout({
       >
         Skip to main content
       </a>
-      <div className="flex min-h-screen bg-[#f6f7f9]">
+      <div className="app-frame flex min-h-screen bg-[#f6f7f9]">
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div
@@ -145,7 +157,7 @@ export default function DashboardLayout({
       )}
 
       {/* Sidebar */}
-      <aside id="app-sidebar" aria-label="Application sidebar" className={`
+      <aside id="app-sidebar" aria-label="Application sidebar" className={`no-print
         fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-navy flex flex-col no-print
         transform transition-transform duration-200 ease-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -214,7 +226,7 @@ export default function DashboardLayout({
       {/* Main Content */}
       <main id="main-content" className="flex-1 min-w-0">
         {/* Mobile Top Bar */}
-        <div className="lg:hidden sticky top-0 z-30 bg-white border-b border-border px-4 py-3 flex items-center gap-3">
+        <div className="no-print lg:hidden sticky top-0 z-30 bg-white border-b border-border px-4 py-3 flex items-center gap-3">
            <button
              type="button"
              onClick={() => setSidebarOpen(true)}
