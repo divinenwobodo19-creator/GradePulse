@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
+from linucb_brain.api import app as app_module
 from linucb_brain.api.app import app
 from linucb_brain.api import auth
 
@@ -22,6 +23,16 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def client():
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    # Every test here signs up from the same test host. On a fast machine the
+    # whole module fits inside one rate-limit window, so start each test with
+    # a clean budget (the rate-limit tests below fill it themselves).
+    for limiter in (app_module.SIGNUP_LIMITER, app_module.LOGIN_LIMITER, app_module.LOGIN_HOST_LIMITER):
+        limiter.reset()
+    yield
 
 
 def _signup(client, prefix: str):
