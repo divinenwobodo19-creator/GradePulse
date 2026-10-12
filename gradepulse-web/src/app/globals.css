@@ -680,3 +680,12 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* The component classes in this file are not in a cascade layer, so Tailwind
+   utilities (which are) cannot override them. These restore the handful of
+   overrides the pages rely on. */
+.input.w-auto { width: auto; }
+.input.w-24 { width: 6rem; }
+.input.w-40 { width: 10rem; }
+.input.pl-10 { padding-left: 2.5rem; }
+.data-table th.text-right { text-align: right; }
