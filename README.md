@@ -186,17 +186,19 @@ PYTHONPATH=. python3 ingest.py sample_data/sample_students.csv --school-name "La
 ### Backups
 
 ```bash
+# Backups need the deployment's operator key (OPERATOR_KEY), not a school login.
+
 # Create a backup
 curl -X POST http://localhost:8000/backup \
-  -H "Authorization: Bearer <token>"
+  -H "X-Operator-Key: <operator-key>"
 
 # List backups
 curl http://localhost:8000/backups \
-  -H "Authorization: Bearer <token>"
+  -H "X-Operator-Key: <operator-key>"
 
 # Restore from backup
 curl -X POST "http://localhost:8000/backup/restore?backup_path=/path/to/backup" \
-  -H "Authorization: Bearer <token>"
+  -H "X-Operator-Key: <operator-key>"
 ```
 
 ## Neural Score — Built-in Diagnostics

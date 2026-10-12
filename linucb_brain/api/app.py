@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Depends, Query, Request, UploadFile,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional
+import hmac
 import os
 import glob
 import uuid
@@ -24,6 +25,8 @@ from ..registry import (
 from .auth import (
     create_user, authenticate_user, create_access_token,
     get_current_user, optional_user, update_user_school, get_user_by_id,
+    require_admin, create_invite, list_pending_invites, revoke_invite,
+    get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
 )
 from .ratelimit import SlidingWindowLimiter
 from .schemas import (
@@ -31,7 +34,7 @@ from .schemas import (
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
-    UpdateStudentRequest, IngestResponse,
+    UpdateStudentRequest, IngestResponse, InviteResponse,
 )
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
@@ -175,6 +178,17 @@ def _client_host(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# Backups and restore act on EVERY school's data at once, so they belong to
+# whoever runs the deployment, not to any school account. Unset key = disabled.
+OPERATOR_KEY = os.getenv("OPERATOR_KEY", "")
+
+
+def require_operator(request: Request):
+    supplied = request.headers.get("X-Operator-Key", "")
+    if not OPERATOR_KEY or not hmac.compare_digest(supplied.encode(), OPERATOR_KEY.encode()):
+        raise HTTPException(status_code=403, detail="Operator key required")
+
+
 def _require_school_access(user: dict, school_id: str) -> str:
     user_school = user.get("school_id", "")
     if not user_school or user_school != school_id:
@@ -287,17 +301,30 @@ async def global_exception_handler(request: Request, exc: Exception):
 def signup(request: Request, signup_request: SignupRequest):
     if not SIGNUP_LIMITER.allow(_client_host(request)):
         raise HTTPException(status_code=429, detail="Too many signups from this address — try again later")
-    user = create_user(signup_request.email, signup_request.password)
     registry = _get_registry()
-    # Signup always creates the caller's OWN school. Matching an existing
-    # school by name used to attach the new account to it, which let anyone
-    # who knew a school's name read its students.
-    school = registry_create_school(registry, signup_request.school_name or "MY SCHOOL")
-    update_user_school(user["id"], school["school_id"])
-    _save_registry(registry)
+    invite_code = (signup_request.invite_code or "").strip()
+    if invite_code:
+        # Joining an existing school is only possible with an admin's invite.
+        invite = get_usable_invite(invite_code)
+        school = get_school_by_id(registry, invite["school_id"]) if invite else None
+        if not school:
+            raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
+        user = create_user(signup_request.email, signup_request.password)
+        if not redeem_invite(invite_code, user["id"]):
+            raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
+        role = ROLE_TEACHER
+    else:
+        user = create_user(signup_request.email, signup_request.password)
+        # Without an invite, signup always creates the caller's OWN school.
+        # Matching an existing school by name used to attach the new account
+        # to it, which let anyone who knew a school's name read its students.
+        school = registry_create_school(registry, signup_request.school_name or "MY SCHOOL")
+        _save_registry(registry)
+        role = ROLE_ADMIN
+    update_user_school(user["id"], school["school_id"], role=role)
     token = create_access_token({"sub": user["id"]})
     return {"id": user["id"], "email": user["email"], "school_id": school["school_id"],
-            "school_name": school["name"], "token": token}
+            "school_name": school["name"], "role": role, "token": token}
 
 
 @app.post("/auth/login", response_model=UserResponse)
@@ -316,6 +343,7 @@ def login(request: Request, login_request: LoginRequest):
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
             "school_name": school["name"] if school else "",
+            "role": user.get("role", ROLE_ADMIN),
             "token": token}
 
 
@@ -326,7 +354,36 @@ def me(user: dict = Depends(get_current_user)):
         school = get_school_by_id(_get_registry(), user["school_id"])
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
-            "school_name": school["name"] if school else ""}
+            "school_name": school["name"] if school else "",
+            "role": user.get("role", ROLE_ADMIN)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INVITES (admin only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _admin_school(user: dict) -> str:
+    school_id = user.get("school_id", "")
+    if not school_id:
+        raise HTTPException(status_code=403, detail="User has no school — create a school first")
+    return school_id
+
+
+@app.post("/invites", response_model=InviteResponse)
+def create_school_invite(user: dict = Depends(require_admin)):
+    return create_invite(_admin_school(user), user["id"])
+
+
+@app.get("/invites", response_model=List[InviteResponse])
+def list_school_invites(user: dict = Depends(require_admin)):
+    return list_pending_invites(_admin_school(user))
+
+
+@app.delete("/invites/{code}")
+def revoke_school_invite(code: str, user: dict = Depends(require_admin)):
+    if not revoke_invite(code, _admin_school(user)):
+        raise HTTPException(status_code=404, detail="Invite not found")
+    return {"status": "revoked"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -348,12 +405,12 @@ def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current
     school = registry_create_school(registry, request.name)
     _save_registry(registry)
     if not user.get("school_id"):
-        update_user_school(user["id"], school["school_id"])
+        update_user_school(user["id"], school["school_id"], role=ROLE_ADMIN)
     return school
 
 
 @app.put("/schools/{school_id}", response_model=SchoolResponse)
-def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Depends(get_current_user)):
+def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
     registry = _get_registry()
     school = get_school_by_id(registry, school_id)
@@ -365,7 +422,7 @@ def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Dep
 
 
 @app.delete("/schools/{school_id}")
-def delete_school(school_id: str, user: dict = Depends(get_current_user)):
+def delete_school(school_id: str, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
     registry = _get_registry()
     school = get_school_by_id(registry, school_id)
@@ -417,7 +474,7 @@ def update_class(school_id: str, class_id: str, request: CreateClassRequest, use
 
 
 @app.delete("/classes/{school_id}/{class_id}")
-def delete_class(school_id: str, class_id: str, user: dict = Depends(get_current_user)):
+def delete_class(school_id: str, class_id: str, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
     registry = _get_registry()
     cls = get_class_by_id(registry, class_id, school_id)
@@ -619,7 +676,7 @@ def save_brain_state(user: dict = Depends(get_current_user)):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/backup")
-def create_backup(user: dict = Depends(get_current_user)):
+def create_backup(_: None = Depends(require_operator)):
     """Create an immediate backup of brain state and config."""
     if backup_manager is None:
         raise HTTPException(status_code=503, detail="Backup system not enabled")
@@ -638,7 +695,7 @@ def create_backup(user: dict = Depends(get_current_user)):
 
 
 @app.get("/backups")
-def list_backups(user: dict = Depends(get_current_user)):
+def list_backups(_: None = Depends(require_operator)):
     """List all available backups."""
     if backup_manager is None:
         raise HTTPException(status_code=503, detail="Backup system not enabled")
@@ -659,7 +716,7 @@ def list_backups(user: dict = Depends(get_current_user)):
 
 
 @app.post("/backup/restore")
-def restore_backup(backup_path: str, user: dict = Depends(get_current_user)):
+def restore_backup(backup_path: str, _: None = Depends(require_operator)):
     """Restore brain state from a backup. Requires server restart after."""
     if backup_manager is None:
         raise HTTPException(status_code=503, detail="Backup system not enabled")
@@ -771,7 +828,7 @@ async def ingest_data(
                     dry_run=dry_run,
                 )
                 if not dry_run:
-                    update_user_school(user["id"], new_school["school_id"])
+                    update_user_school(user["id"], new_school["school_id"], role=ROLE_ADMIN)
         else:
             report = ingest_content(
                 tmp_path, brain_instance.contents,

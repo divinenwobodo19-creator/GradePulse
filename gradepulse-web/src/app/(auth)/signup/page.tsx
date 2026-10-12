@@ -1,18 +1,30 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 
 // Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
 const PASSWORD_MIN_LENGTH = 8;
 
+// useSearchParams needs a Suspense boundary to prerender.
 export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [schoolName, setSchoolName] = useState("");
+  // An admin's invite link is /signup?invite=CODE.
+  const searchParams = useSearchParams();
+  const [inviteCode, setInviteCode] = useState(() => searchParams.get("invite") ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { user, loading: authLoading, signup } = useAuth();
@@ -21,6 +33,8 @@ export default function SignupPage() {
   useEffect(() => {
     if (!authLoading && user) router.replace("/dashboard");
   }, [authLoading, router, user]);
+
+  const joining = inviteCode.trim().length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +45,7 @@ export default function SignupPage() {
     }
     setLoading(true);
     try {
-      await signup(email, password, schoolName || "My School");
+      await signup(email, password, schoolName || "My School", inviteCode.trim() || undefined);
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
@@ -122,19 +136,38 @@ export default function SignupPage() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
+            {!joining && (
+              <div className="input-group">
+                <label className="input-label" htmlFor="signup-school">School Name</label>
+                <input
+                  id="signup-school"
+                  name="school"
+                  type="text"
+                  autoComplete="organization"
+                  value={schoolName}
+                  onChange={(e) => setSchoolName(e.target.value)}
+                  className="input"
+                  placeholder="Lagos Model School"
+                />
+                <span className="input-hint">Creates a new school with you as its admin</span>
+              </div>
+            )}
+
             <div className="input-group">
-               <label className="input-label" htmlFor="signup-school">School Name</label>
-               <input
-                 id="signup-school"
-                 name="school"
-                 type="text"
-                 autoComplete="organization"
-                 value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
-                className="input"
-                placeholder="Lagos Model School"
+              <label className="input-label" htmlFor="signup-invite">Invite Code</label>
+              <input
+                id="signup-invite"
+                name="invite_code"
+                type="text"
+                autoComplete="off"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                className="input font-mono"
+                placeholder="Only if your school admin sent you one"
               />
-              <span className="input-hint">Optional - can be added later</span>
+              <span className="input-hint">
+                {joining ? "You will join your school as a teacher" : "Leave blank to set up a new school"}
+              </span>
             </div>
 
             <div className="input-group">

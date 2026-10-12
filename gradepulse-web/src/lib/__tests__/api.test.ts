@@ -198,4 +198,28 @@ describe("api client", () => {
     expect((error as ApiError).message).not.toContain("[object");
     expect((error as ApiError).message).not.toContain("Field required");
   });
+
+  it("sends an invite code on signup only when one is given", async () => {
+    const account = { id: "u1", email: "t@s.ng", school_id: "SCH", school_name: "S", role: "teacher", token: "tok" };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(account)));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await api.signup("t@s.ng", "Passw0rd!", "My School", "CODE-123");
+    await api.signup("a@s.ng", "Passw0rd!", "My School");
+
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+    expect(bodies[0]).toMatchObject({ school_name: "My School", invite_code: "CODE-123" });
+    expect(bodies[1]).not.toHaveProperty("invite_code");
+  });
+
+  it("revokes an invite by its URL-encoded code", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "revoked" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await api.revokeInvite("a/b c");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/invites/a%2Fb%20c");
+    expect(init.method).toBe("DELETE");
+  });
 });

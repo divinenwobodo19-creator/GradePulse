@@ -1,5 +1,7 @@
 import type {
+  AuthResponse,
   BrainSummary,
+  Invite,
   SchoolClass,
   Student,
   TriageResult,
@@ -122,37 +124,40 @@ class ApiClient {
   }
 
   // ─── Auth ───
-  async signup(email: string, password: string, schoolName: string) {
-    const data = await this.request<{
-      id: string;
-      email: string;
-      school_id: string;
-      school_name: string;
-      token: string;
-    }>("POST", "/auth/signup", { email, password, school_name: schoolName });
+  // With an invite code the account joins that school as a teacher and
+  // schoolName is ignored; without one it creates a new school as its admin.
+  async signup(email: string, password: string, schoolName: string, inviteCode?: string) {
+    const data = await this.request<AuthResponse>("POST", "/auth/signup", {
+      email,
+      password,
+      school_name: schoolName,
+      ...(inviteCode ? { invite_code: inviteCode } : {}),
+    });
     this.setToken(data.token);
     return data;
   }
 
   async login(email: string, password: string) {
-    const data = await this.request<{
-      id: string;
-      email: string;
-      school_id: string;
-      school_name: string;
-      token: string;
-    }>("POST", "/auth/login", { email, password });
+    const data = await this.request<AuthResponse>("POST", "/auth/login", { email, password });
     this.setToken(data.token);
     return data;
   }
 
   async me() {
-    return this.request<{
-      id: string;
-      email: string;
-      school_id: string;
-      school_name: string;
-    }>("GET", "/auth/me");
+    return this.request<Omit<AuthResponse, "token">>("GET", "/auth/me");
+  }
+
+  // ─── Invites (school admin only) ───
+  async createInvite() {
+    return this.request<Invite>("POST", "/invites");
+  }
+
+  async listInvites(signal?: AbortSignal) {
+    return this.request<Invite[]>("GET", "/invites", undefined, signal);
+  }
+
+  async revokeInvite(code: string) {
+    return this.request<{ status: string }>("DELETE", `/invites/${encodeURIComponent(code)}`);
   }
 
   logout() {

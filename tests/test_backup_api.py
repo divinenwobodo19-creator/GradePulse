@@ -15,6 +15,8 @@ from live_api import BASE_URL, is_real_api
 
 TEST_EMAIL = "backuptest@gradepulse.com"
 TEST_PASSWORD = "backuptest123"
+# Backups are operator-only: the server's OPERATOR_KEY must be supplied here.
+OPERATOR_KEY = os.getenv("TEST_OPERATOR_KEY", "")
 
 
 def _api_available():
@@ -34,7 +36,8 @@ def _get_token():
 
 
 def _headers(token):
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+            "X-Operator-Key": OPERATOR_KEY}
 
 
 @pytest.fixture(scope="module")
@@ -45,6 +48,8 @@ def api_ready():
 
 @pytest.fixture(scope="module")
 def token(api_ready):
+    if not OPERATOR_KEY:
+        pytest.skip("Set TEST_OPERATOR_KEY to the server's OPERATOR_KEY to run backup tests")
     return _get_token()
 
 

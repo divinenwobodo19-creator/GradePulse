@@ -65,6 +65,7 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     school_name: Optional[str] = None
+    invite_code: Optional[str] = None  # join an existing school as a teacher
 
     @field_validator("email")
     @classmethod
@@ -90,7 +91,13 @@ class UserResponse(BaseModel):
     email: str
     school_id: str = ""
     school_name: str = ""
+    role: str = ""
     token: str = ""
+
+class InviteResponse(BaseModel):
+    code: str
+    created_at: str
+    expires_at: str
 
 class SchoolResponse(BaseModel):
     school_id: str

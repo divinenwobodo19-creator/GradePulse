@@ -34,6 +34,7 @@ services:
       - USER_DB_PATH=/data/gradepulse_users.db
       - BACKUP_DIR=/data/backups
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - OPERATOR_KEY=${OPERATOR_KEY:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - gradepulse-data:/data
