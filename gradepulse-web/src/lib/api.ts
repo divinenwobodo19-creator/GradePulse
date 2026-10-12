@@ -1,6 +1,7 @@
 import type {
   AuthResponse,
   BrainSummary,
+  IngestResult,
   Invite,
   SchoolClass,
   Student,
@@ -79,7 +80,9 @@ class ApiClient {
     const headers: Record<string, string> = {};
     const token = this.getToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    if (body) headers["Content-Type"] = "application/json";
+    // A FormData body (file upload) sets its own multipart Content-Type.
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+    if (body && !isForm) headers["Content-Type"] = "application/json";
 
     const controller = new AbortController();
     let timedOut = false;
@@ -98,7 +101,7 @@ class ApiClient {
       const res = await fetch(`${API_URL}${API_PREFIX}${path}`, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
+        body: isForm ? (body as FormData) : body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
 
@@ -195,6 +198,15 @@ class ApiClient {
     }>(`POST`, `/classes/${schoolId}`, { label });
   }
 
+  async updateClass(schoolId: string, classId: string, label: string) {
+    return this.request<SchoolClass>("PUT", `/classes/${schoolId}/${classId}`, { label });
+  }
+
+  // Admin only. Archives the students in the class as well.
+  async deleteClass(schoolId: string, classId: string) {
+    return this.request<{ status: string }>("DELETE", `/classes/${schoolId}/${classId}`);
+  }
+
   // ─── Students ───
   async getStudents(schoolId?: string, classId?: string, signal?: AbortSignal) {
     const params = new URLSearchParams();
@@ -238,6 +250,15 @@ class ApiClient {
       "DELETE",
       `/students/${studentId}`
     );
+  }
+
+  // Upload a class list (CSV or Excel). With dryRun the file is only checked.
+  async importRoster(file: File, dryRun: boolean) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("type", "students");
+    form.append("dry_run", dryRun ? "true" : "false");
+    return this.request<IngestResult>("POST", "/ingest", form);
   }
 
   // ─── Content ───

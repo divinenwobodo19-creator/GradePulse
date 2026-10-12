@@ -179,3 +179,44 @@ def test_triage_can_be_limited_to_one_class(client, school):
     assert whole["total_students"] == 2
     assert one["total_students"] == 1
     assert [s["student_id"] for s in one["tiers"]["remediation"]["students"]] == ["IN"]
+
+
+def test_student_can_be_moved_between_classes_and_out_of_one(client, school):
+    a, b = (client.post(f"/classes/{school['id']}", headers=school["h"], json={"label": label}).json()["class_id"]
+            for label in ("JSS1A", "JSS1B"))
+    _add(client, school, class_id=a)
+
+    moved = client.put("/students/S001", headers=school["h"], json={"class_id": b, "name": "Ada O."})
+    assert moved.status_code == 200
+    assert (moved.json()["class_id"], moved.json()["name"]) == (b, "Ada O.")
+
+    cleared = client.put("/students/S001", headers=school["h"], json={"class_id": ""})
+    assert cleared.status_code == 200 and cleared.json()["class_id"] == ""
+    assert client.put("/students/S001", headers=school["h"], json={"class_id": "nope"}).status_code == 400
+
+
+def test_class_cannot_be_renamed_to_an_existing_or_empty_name(client, school):
+    a, b = (client.post(f"/classes/{school['id']}", headers=school["h"], json={"label": label}).json()["class_id"]
+            for label in ("JSS3A", "JSS3B"))
+    url = f"/classes/{school['id']}/{b}"
+    assert client.put(url, headers=school["h"], json={"label": "jss3a"}).status_code == 400
+    assert client.put(url, headers=school["h"], json={"label": "  "}).status_code == 400
+    assert client.put(url, headers=school["h"], json={"label": "jss3b"}).status_code == 200   # its own name
+    assert client.put(url, headers=school["h"], json={"label": "JSS3C"}).json()["label"] == "JSS3C"
+
+
+def test_roster_upload_over_the_size_limit_is_rejected(client, school):
+    big = b"student_id,name\n" + b"x" * (app_module.MAX_UPLOAD_BYTES + 1)
+    r = client.post("/ingest", headers=school["h"], data={"type": "students"},
+                    files={"file": ("roster.csv", big, "text/csv")})
+    assert r.status_code == 413
+
+
+def test_roster_dry_run_reports_without_saving(client, school):
+    r = client.post("/ingest", headers=school["h"], data={"type": "students", "dry_run": "true"},
+                    files={"file": ("roster.csv", b"student_id,name,class_label\nS9,Tobi Ade,JSS1A\n,No Id,JSS1A\n", "text/csv")})
+    assert r.status_code == 200, r.text
+    stats = r.json()["report"]["stats"]
+    assert (stats["students_valid"], stats["students_skipped"]) == (1, 1)
+    assert client.get("/students", headers=school["h"]).json() == []
+    assert client.get(f"/classes/{school['id']}", headers=school["h"]).json() == []

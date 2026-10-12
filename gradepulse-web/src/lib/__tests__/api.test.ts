@@ -239,4 +239,24 @@ describe("api client", () => {
     expect(url).toContain("/api/invites/a%2Fb%20c");
     expect(init.method).toBe("DELETE");
   });
+
+  it("uploads a roster as multipart form data without a JSON content type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ status: "success", report: { stats: {}, errors: [], warnings: [] } })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    api.setToken("token-123");
+
+    await api.importRoster(new File(["student_id,name\nS1,Ada"], "roster.csv", { type: "text/csv" }), true);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const form = init.body as FormData;
+    expect(url).toContain("/api/ingest");
+    expect(headers["Content-Type"]).toBeUndefined();
+    expect(headers.Authorization).toBe("Bearer token-123");
+    expect(form.get("type")).toBe("students");
+    expect(form.get("dry_run")).toBe("true");
+    expect((form.get("file") as File).name).toBe("roster.csv");
+  });
 });

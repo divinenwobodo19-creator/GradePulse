@@ -125,7 +125,7 @@ export default function DashboardPage() {
             Who needs help, who is on track and who is ahead{user?.school_name ? ` at ${user.school_name}` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3">
           <select
             aria-label="Subject"
             value={subject}
@@ -288,7 +288,7 @@ export default function DashboardPage() {
                 <th>Student</th>
                 <th>ID</th>
                 <th className="text-right">Score</th>
-                <th>Topic</th>
+                <th>Subject</th>
               </tr>
             </thead>
             <tbody>

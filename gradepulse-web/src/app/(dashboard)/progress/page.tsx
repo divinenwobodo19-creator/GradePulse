@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Recommendation } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Student } from "@/lib/types";
+import type { SchoolClass, Student } from "@/lib/types";
 import { scoreToGrade, scoreToPercentage, GRADE_COLORS, getStudentClassId } from "@/lib/types";
 import { NO_SCORE_LABEL, hasScores, overallPercentLabel } from "@/lib/scores";
 
@@ -11,6 +11,7 @@ export default function ProgressPage() {
   const { user, loading: authLoading } = useAuth();
   const recommendationController = useRef<AbortController | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +30,9 @@ export default function ProgressPage() {
         if (cancelled) return;
         setStudents(data);
         if (data.length > 0) setSelected(data[0].student_id);
+        if (user?.school_id) {
+          api.getClasses(user.school_id, controller.signal).then(setClasses).catch(() => undefined);
+        }
       } catch (err) {
         if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
           setError(err instanceof Error ? err.message : "Failed to load students");
@@ -234,7 +238,9 @@ export default function ProgressPage() {
                     </div>
                     <div>
                       <div className="caption text-text-muted mb-1">Class</div>
-                      <div className="heading-2 text-navy">{getStudentClassId(currentStudent) || "N/A"}</div>
+                      <div className="heading-2 text-navy">
+                        {classes.find((c) => c.class_id === getStudentClassId(currentStudent))?.label ?? "—"}
+                      </div>
                     </div>
                     <div>
                       <div className="caption text-text-muted mb-1">Performance</div>

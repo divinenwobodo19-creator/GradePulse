@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Student and score store.** Students and scores now live in SQLite (same file as the accounts, so scheduled backups cover them) instead of inside `brain_state.json`. Every score is a dated row with an optional test name; `grade_history` and `performance_score` are derived from those rows. On first start, students already in `brain_state.json` that belong to a school are moved across automatically.
 - **`POST /bulk-update` takes a sitting:** optional `assessed_on` (date, today by default) and `label` (e.g. "Week 4 test"). Re-sending the same student, subject, date and label corrects the earlier score instead of adding a second one.
 - **`GET /students/{student_id}/scores`** returns a student's dated score records.
+- **Classes screen** (new sidebar item): add and rename classes, with student counts; admins can delete a class.
+- **Edit a student** from the Students page: name, primary subject and class, including moving between classes or out of one. The Add Student dialog also has a class picker, and the table shows each student's class.
+- **Import a class list** from the Students page: upload a CSV or Excel file, check it first (nothing is saved), then import. A template can be downloaded from the dialog.
 - **Roles.** Whoever creates a school at signup is its `admin`; existing accounts become admins. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.
 - **Teacher invites.** `POST /invites`, `GET /invites`, `DELETE /invites/{code}` (admin only). An invite is single-use and expires after 7 days; a teacher redeems it with `invite_code` on `POST /auth/signup` and joins that school as a `teacher`. This is now the only way to join a school someone else created.
 - **Frontend:** invite code field on signup (prefilled from `/signup?invite=CODE`), and an "Invite a Teacher" section in Settings for admins. Settings shows the real role.
@@ -32,6 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A fresh install starts empty.** The five sample students and eight sample content items are only seeded with `SEED_DEMO_DATA=true`. Students with no school ("unclaimed") no longer exist.
 - **Score sheets no longer rewrite the whole engine state** on every save; the engine state is saved by the periodic auto-save.
 - **Frontend:** scores, grades and progress show the calculated values, with a dash for students who have no scores yet. Score entry starts blank, shows each student's last score in the chosen subject, and has a test date and optional test name.
+- **`PUT /students/{id}` accepts `class_id: ""`** to take a student out of their class.
+- **`PUT /classes/{school_id}/{class_id}`** returns 400 for an empty name or one another class in the school already has.
+- **`POST /ingest` rejects files over 2 MB** (413).
 - **`POST /triage` accepts an optional `class_id`** to limit the report to one class.
 - **Frontend cleanup:** the dashboard has subject and class selectors and shows students, assessed, need-help and ahead counts; score entry has a class filter. Engine internals (alpha, gamma, regret, Neural Score, "Save Brain State"), static "Engine Active" badges, invented login-page statistics and "AI / Neural Hybrid" wording are removed. The pricing page is linked from login and signup. Fixed the duplicate Subject label on Triage and the dead "All Schools" filter on Students.
 - **Backup endpoints are operator-only.** `POST /backup`, `GET /backups` and `POST /backup/restore` now require `X-Operator-Key` matching the new `OPERATOR_KEY` env var, instead of any logged-in user. Unset key = disabled (scheduled backups still run). **Deployments must set `OPERATOR_KEY` to keep using these endpoints.**

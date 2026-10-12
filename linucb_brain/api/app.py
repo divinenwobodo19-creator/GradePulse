@@ -55,6 +55,8 @@ BACKUP_DIR = os.getenv("BACKUP_DIR", "backups")
 BACKUP_MAX_COUNT = int(os.getenv("BACKUP_MAX_COUNT", "24"))
 BACKUP_INTERVAL = float(os.getenv("BACKUP_INTERVAL", "21600"))  # 6 hours
 
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # roster / content files
+
 SEED_DEMO_DATA = os.getenv("SEED_DEMO_DATA", "false").lower() == "true"
 
 brain_instance: Optional[Brain] = None
@@ -564,7 +566,12 @@ def update_class(school_id: str, class_id: str, request: CreateClassRequest, use
     cls = get_class_by_id(registry, class_id, school_id)
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
-    cls["label"] = request.label.strip().upper()
+    label = request.label.strip().upper()
+    if not label:
+        raise HTTPException(status_code=400, detail="Class name cannot be empty")
+    if any(c["label"] == label and c["class_id"] != class_id for c in get_classes(registry, school_id=school_id)):
+        raise HTTPException(status_code=400, detail="Class already exists in this school")
+    cls["label"] = label
     _save_registry(registry)
     return cls
 
@@ -627,7 +634,8 @@ def update_student(student_id: str, request: UpdateStudentRequest, user: dict = 
     if request.current_topic is not None:
         changes["current_topic"] = request.current_topic
     if request.class_id is not None:
-        _validate_class_belongs_to_user(user, request.class_id)
+        if request.class_id:  # "" takes the student out of their class
+            _validate_class_belongs_to_user(user, request.class_id)
         changes["class_id"] = request.class_id
         # Keep metadata.class_id in sync — the create path and the frontend
         # convention treat metadata as the class key too.
@@ -876,8 +884,10 @@ async def ingest_data(
         raise HTTPException(status_code=400, detail="File must be CSV or Excel (.csv, .xlsx, .xls)")
     
     # Save uploaded file to temp location
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (limit 2 MB)")
     try:
-        content = await file.read()
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
