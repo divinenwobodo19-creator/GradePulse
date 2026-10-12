@@ -51,6 +51,23 @@ describe("api client", () => {
     });
   });
 
+  it("sends the test date and name with a sitting when given", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ processed: 1 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await api.bulkUpdate([{ student_id: "S1", subject: "MATH", score: 0.8 }], {
+      assessedOn: "2026-10-12",
+      label: "Week 4 test",
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      entries: [{ student_id: "S1", subject: "MATH", score: 0.8 }],
+      assessed_on: "2026-10-12",
+      label: "Week 4 test",
+    });
+  });
+
   it("broadcasts an unauthorized event and surfaces the API detail on 401", async () => {
     globalThis.fetch = vi
       .fn()

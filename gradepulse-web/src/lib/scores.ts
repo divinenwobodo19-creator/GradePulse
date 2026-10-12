@@ -39,3 +39,27 @@ export function scoreToPercent(score: number): number {
 export function scoreToInputValue(score: number): string {
   return String(scoreToPercent(score));
 }
+
+type ScoredStudent = { performance_score: number; grade_history?: Record<string, number[]> };
+
+export const NO_SCORE_LABEL = "—";
+
+// A student with no recorded scores only has a placeholder performance_score,
+// so screens show a dash for them instead of a made-up percentage.
+export function hasScores(student: ScoredStudent): boolean {
+  return Object.values(student.grade_history ?? {}).some((scores) => scores.length > 0);
+}
+
+export function latestSubjectScore(student: ScoredStudent, subject: string): number | null {
+  const scores = student.grade_history?.[subject];
+  return scores && scores.length > 0 ? scores[scores.length - 1] : null;
+}
+
+export function overallPercentLabel(student: ScoredStudent): string {
+  return hasScores(student) ? `${scoreToPercent(student.performance_score)}%` : NO_SCORE_LABEL;
+}
+
+export function todayIsoDate(now: Date = new Date()): string {
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}

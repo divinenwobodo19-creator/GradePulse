@@ -6,7 +6,14 @@ import { useAuth } from "@/lib/auth";
 import type { Student } from "@/lib/types";
 import { SUBJECTS } from "@/lib/types";
 import { scoreToGrade } from "@/lib/types";
-import { percentToScore, scoreToInputValue, scoreToPercent, validateScorePercent } from "@/lib/scores";
+import {
+  NO_SCORE_LABEL,
+  latestSubjectScore,
+  percentToScore,
+  scoreToPercent,
+  todayIsoDate,
+  validateScorePercent,
+} from "@/lib/scores";
 
 export default function ScoresPage() {
   const { user, loading: authLoading } = useAuth();
@@ -15,6 +22,8 @@ export default function ScoresPage() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [subject, setSubject] = useState("MATH");
+  const [assessedOn, setAssessedOn] = useState(todayIsoDate);
+  const [label, setLabel] = useState("");
   const [scores, setScores] = useState<Record<string, string>>({});
   const [modified, setModified] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -43,13 +52,11 @@ export default function ScoresPage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [modified.size]);
 
+  // Each visit is a new sitting, so the score boxes start empty; the last
+  // recorded score for the subject is shown beside them.
   const applyStudents = (data: Student[]) => {
     setStudents(data);
-    const initial: Record<string, string> = {};
-    data.forEach((s) => {
-      initial[s.student_id] = scoreToInputValue(s.performance_score);
-    });
-    setScores(initial);
+    setScores({});
   };
 
   useEffect(() => {
@@ -79,15 +86,18 @@ export default function ScoresPage() {
   }, [authLoading, user]);
 
   const handleScoreChange = (studentId: string, value: string) => {
+    // An emptied box means "no score for this student in this sitting".
+    const blank = value.trim() === "";
     setScores((prev) => ({ ...prev, [studentId]: value }));
     setModified((prev) => {
       const next = new Set(prev);
-      next.add(studentId);
+      if (blank) next.delete(studentId);
+      else next.add(studentId);
       return next;
     });
     setInvalid((prev) => {
       const next = new Set(prev);
-      if (validateScorePercent(value).valid) {
+      if (blank || validateScorePercent(value).valid) {
         next.delete(studentId);
       } else {
         next.add(studentId);
@@ -98,6 +108,14 @@ export default function ScoresPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (modified.size === 0) {
+      showToast("error", "Enter at least one score.");
+      return;
+    }
+    if (invalid.size > 0) {
+      showToast("error", "Fix the highlighted scores. Each value must be between 0 and 100.");
+      return;
+    }
     setSubmitting(true);
     try {
       const entries = Object.entries(scores)
@@ -108,18 +126,8 @@ export default function ScoresPage() {
           score: percentToScore(score),
         }));
 
-      if (entries.length === 0) {
-        showToast("error", "No scores changed. Modify at least one score.");
-        return;
-      }
-
-      if (invalid.size > 0) {
-        showToast("error", "Fix the highlighted scores. Each value must be between 0 and 100.");
-        return;
-      }
-
-      await api.bulkUpdate(entries);
-      showToast("success", `Updated ${entries.length} student${entries.length !== 1 ? "s" : ""}`);
+      await api.bulkUpdate(entries, { assessedOn, label: label.trim() });
+      showToast("success", `Saved ${entries.length} score${entries.length !== 1 ? "s" : ""}`);
       setModified(new Set());
       setInvalid(new Set());
       applyStudents(await api.getStudents(undefined, undefined));
@@ -190,21 +198,42 @@ export default function ScoresPage() {
                 </select>
               </div>
 
+              <div className="input-group">
+                <label className="input-label" htmlFor="score-date">Test date</label>
+                <input
+                  id="score-date"
+                  type="date"
+                  value={assessedOn}
+                  max={todayIsoDate()}
+                  onChange={(e) => setAssessedOn(e.target.value)}
+                  required
+                  className="input w-auto"
+                />
+              </div>
+
+              <div className="input-group flex-1 min-w-[200px] max-w-sm">
+                <label className="input-label" htmlFor="score-label">Test name</label>
+                <input
+                  id="score-label"
+                  type="text"
+                  value={label}
+                  maxLength={80}
+                  onChange={(e) => setLabel(e.target.value)}
+                  className="input"
+                  placeholder="Optional, e.g. Week 4 test"
+                />
+              </div>
+
               {modifiedCount > 0 && (
                 <div className="flex items-center gap-2 ml-auto">
-                  <span className="badge badge-warning">{modifiedCount} changed</span>
+                  <span className="badge badge-warning">{modifiedCount} entered</span>
                   <button
                     type="button"
                     onClick={() => {
                       setModified(new Set());
-                      // Reset scores to original
-                      const initial: Record<string, string> = {};
-                      students.forEach((s) => {
-                        initial[s.student_id] = String(Math.round(s.performance_score * 100));
-                      });
-                       applyStudents(students);
-                       setInvalid(new Set());
-                     }}
+                      setScores({});
+                      setInvalid(new Set());
+                    }}
                      className="btn btn-ghost btn-sm"
                   >
                     Reset
@@ -266,14 +295,15 @@ export default function ScoresPage() {
                     <th scope="col">Student</th>
                     <th scope="col">ID</th>
                     <th scope="col">Grade</th>
-                    <th scope="col" className="text-right">Current (%)</th>
+                    <th scope="col" className="text-right">Last {subject} score</th>
                     <th scope="col" className="text-right w-40">New Score (%)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {students.map((s) => {
-                    const currentPct = scoreToPercent(s.performance_score);
-                    const grade = scoreToGrade(currentPct);
+                    const last = latestSubjectScore(s, subject);
+                    const lastPct = last === null ? null : scoreToPercent(last);
+                    const grade = lastPct === null ? NO_SCORE_LABEL : scoreToGrade(lastPct);
                     const newVal = scores[s.student_id] ?? "";
                     const isModified = modified.has(s.student_id);
 
@@ -293,7 +323,9 @@ export default function ScoresPage() {
                             {grade}
                           </span>
                         </td>
-                        <td className="text-right font-mono text-sm text-text-secondary">{currentPct}%</td>
+                        <td className="text-right font-mono text-sm text-text-secondary">
+                          {lastPct === null ? NO_SCORE_LABEL : `${lastPct}%`}
+                        </td>
                         <td className="text-right">
                           <input
                             id={`score-${s.student_id}`}

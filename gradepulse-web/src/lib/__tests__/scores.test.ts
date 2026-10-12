@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasScores,
+  latestSubjectScore,
+  overallPercentLabel,
   percentToScore,
   scoreToInputValue,
   scoreToPercent,
+  todayIsoDate,
   validateScorePercent,
 } from "../scores";
 
@@ -69,5 +73,32 @@ describe("scoreToInputValue", () => {
     for (const score of [0, 0.34, 0.5, 0.88, 1]) {
       expect(percentToScore(scoreToInputValue(score))).toBeCloseTo(score, 10);
     }
+  });
+});
+
+describe("recorded scores", () => {
+  const unscored = { performance_score: 0.5, grade_history: {} };
+  const scored = { performance_score: 0.64, grade_history: { MATH: [0.3, 0.7], ENGLISH: [] } };
+
+  it("shows a dash, not the placeholder score, for a student with no scores", () => {
+    expect(hasScores(unscored)).toBe(false);
+    expect(hasScores({ performance_score: 0.5 })).toBe(false);
+    expect(overallPercentLabel(unscored)).toBe("—");
+  });
+
+  it("shows the derived percentage once scores exist", () => {
+    expect(hasScores(scored)).toBe(true);
+    expect(overallPercentLabel(scored)).toBe("64%");
+  });
+
+  it("returns the latest score for a subject, or null when never assessed", () => {
+    expect(latestSubjectScore(scored, "MATH")).toBe(0.7);
+    expect(latestSubjectScore(scored, "ENGLISH")).toBeNull();
+    expect(latestSubjectScore(scored, "HISTORY")).toBeNull();
+  });
+
+  it("formats today's date in local time for the date input", () => {
+    expect(todayIsoDate(new Date(2026, 9, 12, 23, 30))).toBe("2026-10-12");
+    expect(todayIsoDate(new Date(2026, 0, 1, 0, 15))).toBe("2026-01-01");
   });
 });

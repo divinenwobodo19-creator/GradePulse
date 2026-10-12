@@ -9,11 +9,14 @@ from typing import List, Dict, Optional
 import hmac
 import os
 import glob
+import sqlite3
 import uuid
 import tempfile
 import numpy as np
 
 from ..brain import Brain
+from ..core.triage import build_triage_report
+from ..models.student import Student
 from ..core.reward import calculate_reward
 from ..sync import BrainSynchronizer
 from ..backup import BackupManager
@@ -29,12 +32,13 @@ from .auth import (
     get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
 )
 from .ratelimit import SlidingWindowLimiter
+from . import store
 from .schemas import (
     StudentSchema, ContentSchema, RecommendationRequest, UpdateRequest,
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
-    UpdateStudentRequest, IngestResponse, InviteResponse,
+    UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
 )
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
@@ -50,6 +54,8 @@ BACKUP_ENABLED = os.getenv("BACKUP_ENABLED", "true").lower() == "true"
 BACKUP_DIR = os.getenv("BACKUP_DIR", "backups")
 BACKUP_MAX_COUNT = int(os.getenv("BACKUP_MAX_COUNT", "24"))
 BACKUP_INTERVAL = float(os.getenv("BACKUP_INTERVAL", "21600"))  # 6 hours
+
+SEED_DEMO_DATA = os.getenv("SEED_DEMO_DATA", "false").lower() == "true"
 
 brain_instance: Optional[Brain] = None
 synchronizer: Optional[BrainSynchronizer] = None
@@ -99,10 +105,12 @@ def _load_brain() -> Brain:
         except Exception as e:
             print(f"  Warning: Could not load {cp}: {e}")
     
-    # Initialize new brain with demo data
-    print(f"Worker {os.getpid()}: Initializing demo Brain with sample students and content...")
+    # Start empty. Sample students/content are only seeded when asked for
+    # (SEED_DEMO_DATA=true), never on a real deployment.
     brain = Brain(model_type="hybrid")
-    _seed_demo_data(brain)
+    if SEED_DEMO_DATA:
+        print(f"Worker {os.getpid()}: Seeding demo students and content (SEED_DEMO_DATA)")
+        _seed_demo_data(brain)
     synchronizer.set_brain(brain)
     # Save initial state so other workers can load it
     synchronizer.save_brain(brain.save)
@@ -145,13 +153,124 @@ def _save_registry(registry):
     save_registry(registry, CONFIG_PATH)
 
 
-def _get_class_students(school_id: str = "", class_id: str = "") -> list:
-    all_students = sorted(brain_instance.students.values(), key=lambda s: s.name)
-    if school_id and class_id:
-        return [s for s in all_students if s.school_id == school_id and s.class_id == class_id]
-    if school_id:
-        return [s for s in all_students if s.school_id == school_id]
-    return all_students
+# ── Students live in the store; the Brain only borrows them ─────────────────
+# Features the engine reads that the roster import can supply.
+ENGINE_FEATURES = ("education_level", "age_band", "credits_studied", "imd_band", "region_code")
+
+
+def _student_schema(rec: store.StudentRecord) -> StudentSchema:
+    return StudentSchema(
+        student_id=rec.student_id, name=rec.name, grade_history=rec.grade_history,
+        performance_score=rec.performance_score, current_topic=rec.current_topic,
+        class_id=rec.class_id, school_id=rec.school_id, metadata=rec.metadata,
+    )
+
+
+def _own_student(user: dict, student_id: str) -> store.StudentRecord:
+    """The caller's student with this ID. IDs are per school, so another
+    school's student with the same ID is simply not found."""
+    rec = store.get_student(user.get("school_id", ""), student_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return rec
+
+
+def _engine_student(rec: store.StudentRecord) -> str:
+    """Give the Brain an up-to-date copy of a stored student; returns its key."""
+    key = rec.engine_key
+    with brain_instance._lock:
+        student = brain_instance.students.get(key)
+        if student is None:
+            student = brain_instance.add_student(key, rec.name)
+            student.session_count = int(rec.features.get("session_count", 0))
+        student.name = rec.name
+        student.school_id = rec.school_id
+        student.class_id = rec.class_id
+        student.current_topic = rec.current_topic
+        student.performance_score = rec.performance_score
+        student.grade_history = {subject: list(v) for subject, v in rec.grade_history.items()}
+        for feature in ENGINE_FEATURES:
+            if feature in rec.features:
+                setattr(student, feature, rec.features[feature])
+    return key
+
+
+def _student_features(student: Student) -> dict:
+    return {"session_count": student.session_count,
+            **{feature: getattr(student, feature) for feature in ENGINE_FEATURES}}
+
+
+def _clamp_scores(history: Dict[str, List[float]]) -> Dict[str, List[float]]:
+    return {subject: [min(1.0, max(0.0, float(v))) for v in values] for subject, values in history.items()}
+
+
+def _ingest_roster(filepath: str, registry: dict, school_id: str, dry_run: bool):
+    """Run a roster file through ingest.py against this school's students,
+    then save what it added or changed to the store."""
+    from ingest import ingest_students
+
+    existing = {rec.student_id: rec for rec in store.list_students(school_id)}
+    # grade_history starts empty so that, afterwards, a non-empty subject is
+    # exactly one the file supplied.
+    roster = {
+        sid: Student(
+            student_id=sid, name=rec.name, school_id=school_id, class_id=rec.class_id,
+            current_topic=rec.current_topic, performance_score=rec.baseline_score,
+            metadata=dict(rec.metadata), session_count=int(rec.features.get("session_count", 0)),
+            **{f: rec.features[f] for f in ENGINE_FEATURES if f in rec.features},
+        )
+        for sid, rec in existing.items()
+    }
+
+    def snapshot(s: Student):
+        return (s.class_id, s.current_topic, s.performance_score, _student_features(s))
+
+    before = {sid: snapshot(s) for sid, s in roster.items()}
+    report = ingest_students(filepath, registry, roster, school_id=school_id, school_name=None, dry_run=dry_run)
+    if dry_run:
+        return report
+
+    for sid, s in roster.items():
+        history = _clamp_scores(s.grade_history)
+        rec = existing.get(sid)
+        if rec is None:
+            store.add_student(
+                school_id, sid, s.name, class_id=s.class_id, current_topic=s.current_topic,
+                baseline_score=s.performance_score, metadata=s.metadata,
+                features=_student_features(s), grade_history=history,
+            )
+            continue
+        if snapshot(s) != before[sid]:
+            store.update_student(
+                rec.pk, class_id=s.class_id, current_topic=s.current_topic,
+                baseline_score=s.performance_score, features=_student_features(s),
+            )
+        # Imported history replaces earlier imports; teacher-entered scores stay.
+        for subject, values in history.items():
+            store.replace_imported_scores(rec.pk, subject, values)
+    return report
+
+
+def _adopt_legacy_students(brain: Brain) -> int:
+    """One-off upgrade: students used to be saved inside brain_state.json.
+    Move the ones that belong to a school into the store (first start only)."""
+    if store.count_students() > 0:
+        return 0
+    moved = 0
+    for key, s in list(brain.students.items()):
+        if not s.school_id:
+            continue
+        try:
+            store.add_student(
+                s.school_id, s.student_id, s.name, class_id=s.class_id, current_topic=s.current_topic,
+                baseline_score=s.performance_score, metadata=s.metadata, features=_student_features(s),
+                grade_history=_clamp_scores(s.grade_history),
+            )
+        except sqlite3.IntegrityError:
+            continue  # another worker is adopting the same file
+        del brain.students[key]
+        moved += 1
+    return moved
 
 
 # ── Phase 2 security: rate limiters + school-ownership enforcement ──────────
@@ -196,23 +315,6 @@ def _require_school_access(user: dict, school_id: str) -> str:
     return user_school
 
 
-def _require_student_access(user: dict, student_id: str):
-    student = brain_instance.students.get(student_id)
-    if student is None:
-        raise HTTPException(status_code=404, detail="Student not found")
-    user_school = user.get("school_id", "")
-    if student.school_id and student.school_id != user_school:
-        raise HTTPException(status_code=403, detail="Student belongs to another school")
-    return student
-
-
-def _require_recommend_student(user: dict, student_id: str):
-    # /recommend keeps 400 for a missing id (existing contract); cross-school is 403.
-    if student_id not in brain_instance.students:
-        raise HTTPException(status_code=400, detail=f"Student ID {student_id} not found.")
-    return _require_student_access(user, student_id)
-
-
 def _validate_class_belongs_to_user(user: dict, class_id: str):
     user_school = user.get("school_id", "")
     if not user_school:
@@ -222,17 +324,15 @@ def _validate_class_belongs_to_user(user: dict, class_id: str):
         raise HTTPException(status_code=400, detail="Class does not belong to your school")
 
 
-def _owns_or_unclaimed(student, user: dict) -> bool:
-    user_school = user.get("school_id", "")
-    return not student.school_id or student.school_id == user_school
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global brain_instance, synchronizer, backup_manager
     
     # Load brain state for this worker
     brain_instance = _load_brain()
+    adopted = _adopt_legacy_students(brain_instance)
+    if adopted:
+        print(f"Worker {os.getpid()}: moved {adopted} students from the brain state into the store")
     
     # Set brain in synchronizer and start auto-save
     if synchronizer is not None:
@@ -428,13 +528,9 @@ def delete_school(school_id: str, user: dict = Depends(require_admin)):
     school = get_school_by_id(registry, school_id)
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
-    class_ids = {c["class_id"] for c in school.get("classes", [])}
-    for sid, student in list(brain_instance.students.items()):
-        if student.school_id == school_id or student.class_id in class_ids:
-            del brain_instance.students[sid]
+    store.archive_school(school_id)
     registry["schools"] = [s for s in registry["schools"] if s["school_id"] != school_id]
     _save_registry(registry)
-    synchronizer.save_brain(brain_instance.save)
     return {"status": "deleted"}
 
 
@@ -480,12 +576,9 @@ def delete_class(school_id: str, class_id: str, user: dict = Depends(require_adm
     cls = get_class_by_id(registry, class_id, school_id)
     if not cls:
         raise HTTPException(status_code=404, detail="Class not found")
-    for sid, student in list(brain_instance.students.items()):
-        if student.class_id == class_id:
-            del brain_instance.students[sid]
+    store.archive_class(school_id, class_id)
     remove_class(registry, school_id, class_id)
     _save_registry(registry)
-    synchronizer.save_brain(brain_instance.save)
     return {"status": "deleted"}
 
 
@@ -504,73 +597,57 @@ def list_students(
     # the school is always derived from the authenticated user (Phase 2).
     if school_id and school_id != user_school:
         raise HTTPException(status_code=403, detail="Not authorized for this school")
-    if not user_school:
-        return []
-    students = _get_class_students(school_id=user_school, class_id=class_id or "")
-    return [StudentSchema(
-        student_id=s.student_id, name=s.name, grade_history=s.grade_history,
-        performance_score=s.performance_score,
-        current_topic=getattr(s, "current_topic", ""),
-        class_id=s.class_id, school_id=s.school_id, metadata=s.metadata,
-    ) for s in students]
+    return [_student_schema(rec) for rec in store.list_students(user_school, class_id or "")]
 
 
 @app.post("/students", response_model=StudentSchema)
 def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
-    try:
-        class_id = student.metadata.get("class_id") or student.class_id or ""
-        if class_id:
-            _validate_class_belongs_to_user(user, class_id)
-        # Student IDs are still global, and add_student() returns the existing
-        # record on a clash — which would hand back another school's student.
-        existing = brain_instance.students.get(student.student_id)
-        if existing is not None and existing.school_id and existing.school_id != user.get("school_id", ""):
-            raise HTTPException(status_code=409, detail="That student ID is already in use — choose a different one")
-        brain_instance.add_student(
-            student.student_id, student.name,
-            grade_history=student.grade_history,
-            performance_score=student.performance_score,
-            current_topic=student.current_topic,
-            metadata=student.metadata,
-            school_id=user.get("school_id", ""),
-            class_id=class_id,
-        )
-        synchronizer.save_brain(brain_instance.save)
-        s = brain_instance.students[student.student_id]
-        return StudentSchema(student_id=s.student_id, name=s.name, grade_history=s.grade_history,
-                             performance_score=s.performance_score, current_topic=s.current_topic,
-                             class_id=s.class_id, school_id=s.school_id, metadata=s.metadata)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    school_id = user.get("school_id", "")
+    if not school_id:
+        raise HTTPException(status_code=403, detail="User has no school — create/join a school first")
+    class_id = student.metadata.get("class_id") or student.class_id or ""
+    if class_id:
+        _validate_class_belongs_to_user(user, class_id)
+    # An ID that already exists in this school returns that student unchanged.
+    rec, _created = store.add_student(
+        school_id, student.student_id, student.name,
+        class_id=class_id, current_topic=student.current_topic or "",
+        baseline_score=student.performance_score, metadata=student.metadata,
+        grade_history=student.grade_history,
+    )
+    return _student_schema(rec)
 
 
 @app.put("/students/{student_id}", response_model=StudentSchema)
 def update_student(student_id: str, request: UpdateStudentRequest, user: dict = Depends(get_current_user)):
-    s = _require_student_access(user, student_id)
+    rec = _own_student(user, student_id)
+    changes = {}
     if request.name is not None:
-        s.name = request.name
+        changes["name"] = request.name
     if request.current_topic is not None:
-        s.current_topic = request.current_topic
+        changes["current_topic"] = request.current_topic
     if request.class_id is not None:
         _validate_class_belongs_to_user(user, request.class_id)
-        s.class_id = request.class_id
+        changes["class_id"] = request.class_id
         # Keep metadata.class_id in sync — the create path and the frontend
         # convention treat metadata as the class key too.
-        s.metadata["class_id"] = request.class_id
-    s.touch()
-    synchronizer.save_brain(brain_instance.save)
-    return StudentSchema(student_id=s.student_id, name=s.name, grade_history=s.grade_history,
-                         performance_score=s.performance_score,
-                         current_topic=getattr(s, "current_topic", ""),
-                         class_id=s.class_id, school_id=s.school_id, metadata=s.metadata)
+        changes["metadata"] = {**rec.metadata, "class_id": request.class_id}
+    store.update_student(rec.pk, **changes)
+    return _student_schema(_own_student(user, student_id))
 
 
 @app.delete("/students/{student_id}")
 def delete_student(student_id: str, user: dict = Depends(get_current_user)):
-    _require_student_access(user, student_id)
-    del brain_instance.students[student_id]
-    synchronizer.save_brain(brain_instance.save)
+    rec = _own_student(user, student_id)
+    store.archive_student(rec.pk)
+    brain_instance.students.pop(rec.engine_key, None)
     return {"status": "deleted"}
+
+
+@app.get("/students/{student_id}/scores", response_model=List[ScoreRecord])
+def list_student_scores(student_id: str, user: dict = Depends(get_current_user)):
+    """Every recorded score for one student, oldest first."""
+    return store.list_scores(_own_student(user, student_id).pk)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -600,8 +677,11 @@ def recommend(request: RecommendationRequest, user: dict = Depends(get_current_u
         # The bare-object-vs-array polymorphism was normalised at the HTTP
         # boundary (see Mia 2026-09-27); `brain.recommend()` is unchanged for
         # ML-layer callers. `[]` means "nothing to show".
-        _require_recommend_student(user, request.student_id)
-        result = brain_instance.recommend(request.student_id, topic=request.topic, top_n=request.top_n)
+        # /recommend keeps 400 for an unknown student (existing contract).
+        rec = store.get_student(user.get("school_id", ""), request.student_id)
+        if rec is None:
+            raise HTTPException(status_code=400, detail=f"Student ID {request.student_id} not found.")
+        result = brain_instance.recommend(_engine_student(rec), topic=request.topic, top_n=request.top_n)
         if request.top_n == 1:
             return [result.__dict__] if result else []
         return [r.__dict__ for r in result]
@@ -611,9 +691,11 @@ def recommend(request: RecommendationRequest, user: dict = Depends(get_current_u
 
 @app.post("/update")
 def update(request: UpdateRequest, user: dict = Depends(get_current_user)):
-    _require_student_access(user, request.student_id)
+    # An engine reward is feedback on a recommendation, not a grade: it
+    # trains the model but is not written to the student's scores.
+    rec = _own_student(user, request.student_id)
     try:
-        brain_instance.update(request.student_id, request.content_id, request.reward)
+        brain_instance.update(_engine_student(rec), request.content_id, request.reward)
         synchronizer.save_brain(brain_instance.save)
         return {"status": "success"}
     except KeyError as e:
@@ -622,22 +704,37 @@ def update(request: UpdateRequest, user: dict = Depends(get_current_user)):
 
 @app.post("/bulk-update")
 def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_user)):
+    records = {}
     for entry in request.entries:
-        _require_student_access(user, entry.student_id)
-    entries = [{"student_id": e.student_id, "subject": e.subject, "score": e.score} for e in request.entries]
-    result = brain_instance.bulk_update(entries)
-    synchronizer.save_brain(brain_instance.save)
-    return result
+        if entry.student_id not in records:
+            records[entry.student_id] = _own_student(user, entry.student_id)
+    # The store is the record of the scores...
+    store.record_scores(
+        [(records[e.student_id].pk, e.subject, e.score) for e in request.entries],
+        assessed_on=request.assessed_on, label=request.label.strip(), entered_by=user["id"],
+    )
+    # ...and the engine learns from them. Its state is saved by the periodic
+    # auto-save, not on every score sheet.
+    keys = {student_id: _engine_student(rec) for student_id, rec in records.items()}
+    return brain_instance.bulk_update(
+        [{"student_id": keys[e.student_id], "subject": e.subject, "score": e.score} for e in request.entries]
+    )
 
 
 @app.post("/triage")
 def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
-    # Triage is a school report: only the caller's own (and unclaimed)
-    # students are tiered, so the counts are scoped as well as the names.
-    return brain_instance.triage(
-        request.subject,
-        student_filter=lambda s: _owns_or_unclaimed(s, user),
-    )
+    # Triage is a school report over recorded scores: only the caller's own
+    # students who have been assessed in the subject are tiered.
+    results = []
+    for rec in store.list_students(user.get("school_id", "")):
+        grades = rec.grade_history.get(request.subject, [])
+        if grades:
+            results.append({
+                "student_id": rec.student_id, "name": rec.name,
+                "predicted": min(1.0, max(0.0, sum(grades) / len(grades))),
+                "attempts": len(grades),
+            })
+    return build_triage_report(request.subject, results)
 
 
 @app.post("/calculate-reward")
@@ -654,7 +751,7 @@ def get_summary(user: dict = Depends(get_current_user)):
     score = brain_instance.last_neural_score
     user_school = user.get("school_id", "")
     return {
-        "student_count": len(_get_class_students(school_id=user_school)) if user_school else 0,
+        "student_count": store.count_students(user_school) if user_school else 0,
         "content_count": len(brain_instance.contents),
         "total_sessions": brain_instance.update_count,
         "model_type": brain_instance.model_type,
@@ -791,7 +888,7 @@ async def ingest_data(
         # Import ingestion functions (ingest.py is a top-level module; launch
         # contract is PYTHONPATH=<project root>. The old relative `from ...ingest`
         # raised ImportError beyond the top-level package.)
-        from ingest import ingest_students, ingest_content, ValidationReport
+        from ingest import ingest_content
         
         # Load existing state
         registry = _get_registry()
@@ -811,22 +908,14 @@ async def ingest_data(
                 if school and own_school["name"] != school.strip().upper():
                     raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
                 # Force-school to the caller's own school regardless of form.
-                report = ingest_students(
-                    tmp_path, registry, brain_instance.students,
-                    school_id=user_school, school_name=None,
-                    dry_run=dry_run,
-                )
+                report = _ingest_roster(tmp_path, registry, user_school, dry_run)
             else:
                 # No school yet (or a dangling one): the roster goes into a
                 # NEW school owned by the caller. A form school/school_id is
                 # only a label here and can never attach them to an existing
                 # school. (On dry_run the registry is not saved.)
                 new_school = registry_create_school(registry, school or "MY SCHOOL")
-                report = ingest_students(
-                    tmp_path, registry, brain_instance.students,
-                    school_id=new_school["school_id"], school_name=None,
-                    dry_run=dry_run,
-                )
+                report = _ingest_roster(tmp_path, registry, new_school["school_id"], dry_run)
                 if not dry_run:
                     update_user_school(user["id"], new_school["school_id"], role=ROLE_ADMIN)
         else:

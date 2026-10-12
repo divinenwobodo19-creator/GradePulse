@@ -77,12 +77,15 @@ def test_cross_school_isolation(client, attempt):
         assert r.status_code == 200
         assert all(s["student_id"] != sid for s in r.json())
     elif attempt == "update_foreign_student":
+        # Student IDs are per school: B's ID does not exist for A (404), and
+        # B's student is untouched.
         r = client.put(f"/students/{sid}", headers=_hdr(tok_a),
                        json={"name": "Hacked"})
-        assert r.status_code == 403
+        assert r.status_code == 404
+        assert [s["name"] for s in client.get("/students", headers=_hdr(tok_b)).json()] == ["B Student"]
     else:
         r = client.delete(f"/students/{sid}", headers=_hdr(tok_a))
-        assert r.status_code == 403
+        assert r.status_code == 404
         assert sid in brain_student_ids(client, tok_b)["own"]
 
 
@@ -99,15 +102,18 @@ def test_foreign_student_actions_blocked(client):
         "student_id": sid, "name": "Target", "current_topic": "Science",
     }).status_code == 200
 
-    # recommend / update / bulk-update / triage on a foreign student -> 403
+    # recommend / update / bulk-update on another school's student: the ID
+    # does not exist for A (recommend keeps its 400-for-unknown contract).
     assert client.post("/recommend", headers=_hdr(tok_a),
-                       json={"student_id": sid}).status_code == 403
+                       json={"student_id": sid}).status_code == 400
     assert client.post("/update", headers=_hdr(tok_a),
-                       json={"student_id": sid, "content_id": "NO", "reward": 0.5}).status_code == 403
+                       json={"student_id": sid, "content_id": "NO", "reward": 0.5}).status_code == 404
     assert client.post("/bulk-update", headers=_hdr(tok_a),
-                       json={"entries": [{"student_id": sid, "subject": "Math", "score": 0.5}]}).status_code == 403
+                       json={"entries": [{"student_id": sid, "subject": "Math", "score": 0.5}]}).status_code == 404
+    assert client.get(f"/students/{sid}/scores", headers=_hdr(tok_a)).status_code == 404
+    assert client.get(f"/students/{sid}/scores", headers=_hdr(tok_b)).json() == []
 
-    # triage is scoped to the caller's own (and unclaimed) students
+    # triage is scoped to the caller's own students
     # (B's student needs a Science score, or triage would skip it regardless.)
     assert client.post("/bulk-update", headers=_hdr(tok_b), json={
         "entries": [{"student_id": sid, "subject": "Science", "score": 0.2}],
@@ -284,28 +290,35 @@ def test_summary_student_count_is_per_school(client):
     assert client.get("/summary", headers=_hdr(tok_b)).json()["student_count"] == 0
 
 
-# ── Student IDs are global: a clash must never expose or move a student ────
+# ── Student IDs are per school ─────────────────────────────────────────────
 
-def test_student_id_clash_across_schools_is_rejected(client):
+def test_two_schools_can_use_the_same_student_id_independently(client):
     tok_a, sch_a = _signup(client, "iota")
-    tok_b, _ = _signup(client, "kappa")
-    sid = f"clash_{uuid.uuid4().hex[:6]}"
-    assert client.post("/students", headers=_hdr(tok_a), json={
-        "student_id": sid, "name": "A Original",
+    tok_b, sch_b = _signup(client, "kappa")
+    sid = f"same_{uuid.uuid4().hex[:6]}"
+    for tok, name in ((tok_a, "A Original"), (tok_b, "B Original")):
+        r = client.post("/students", headers=_hdr(tok), json={"student_id": sid, "name": name})
+        assert r.status_code == 200 and r.json()["name"] == name
+
+    # Scores, edits and deletes on one never reach the other.
+    assert client.post("/bulk-update", headers=_hdr(tok_a), json={
+        "entries": [{"student_id": sid, "subject": "Math", "score": 0.9}],
     }).status_code == 200
+    assert client.delete(f"/students/{sid}", headers=_hdr(tok_b)).status_code == 200
 
-    r = client.post("/students", headers=_hdr(tok_b), json={"student_id": sid, "name": "B Copy"})
-    assert r.status_code == 409
-    assert "A Original" not in r.text
+    a_students = client.get("/students", headers=_hdr(tok_a)).json()
+    assert [(s["student_id"], s["name"], s["school_id"], s["grade_history"]) for s in a_students] == [
+        (sid, "A Original", sch_a, {"Math": [0.9]})
+    ]
+    assert client.get("/students", headers=_hdr(tok_b)).json() == []
 
-    # A roster upload from B cannot take the student over either.
+    # A roster upload from B creates B's own student; A's is untouched.
     r = client.post(
         "/ingest", headers=_hdr(tok_b),
-        files={"file": ("roster.csv", f"student_id,name\n{sid},B Copy\n".encode(), "text/csv")},
+        files={"file": ("roster.csv", f"student_id,name\n{sid},B Reborn\n".encode(), "text/csv")},
         data={"type": "students"},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["report"]["stats"]["students_skipped"] == 1
-    owned = client.get("/students", headers=_hdr(tok_a)).json()
-    assert [(s["student_id"], s["name"], s["school_id"]) for s in owned] == [(sid, "A Original", sch_a)]
-    assert client.get("/students", headers=_hdr(tok_b)).json() == []
+    b_students = client.get("/students", headers=_hdr(tok_b)).json()
+    assert [(s["student_id"], s["name"], s["school_id"]) for s in b_students] == [(sid, "B REBORN", sch_b)]
+    assert client.get("/students", headers=_hdr(tok_a)).json()[0]["name"] == "A Original"

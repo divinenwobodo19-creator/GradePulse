@@ -8,6 +8,8 @@
 
 > **Contract change (2026-10-10, unreleased):** `POST /auth/signup` now returns **422** for a malformed email or a password under 8 characters, and always creates a **new** school for the caller — it never attaches the account to an existing school with the same name. `POST /triage` and `GET /summary` `student_count` are scoped to the caller's school. `POST /students` returns **409** when the student ID already belongs to another school. Response shapes are unchanged. Teachers join an existing school with an admin's invite: `POST /invites` (admin) → code → `invite_code` on signup. Auth responses now include `role` (`admin` | `teacher`). Renaming/deleting a school and deleting a class are admin-only (403 for teachers). Backup endpoints need the `X-Operator-Key` header instead of a user token. See `API_REFERENCE.md` → Invites.
 
+> **Contract change (2026-10-12, unreleased) — students and scores:** Student IDs are per school (acting on an ID outside your school → **404**, `/recommend` → 400; the 409 clash response is gone). `performance_score` is now derived (mean of the five most recent scores; the value sent at creation is only the starting point), and `grade_history` holds only recorded scores, never `/update` rewards. `POST /bulk-update` accepts optional `assessed_on` (ISO date) and `label`; the same student + subject + date + label corrects the earlier score. New: `GET /students/{student_id}/scores` → `[{subject, score, assessed_on, label, source}]`. Deletes archive. A student with an empty `grade_history` has no real score yet — the frontend shows a dash.
+
 ---
 
 ## 1. TL;DR

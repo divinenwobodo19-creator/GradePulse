@@ -15,6 +15,7 @@ from .diagnostics.neural_score import run_neural_diagnostics
 from .diagnostics.report import render_neural_report
 from .storage import save_brain, load_brain
 from .utils import clip
+from .core.triage import build_triage_report
 
 class Brain:
     """
@@ -483,57 +484,7 @@ class Brain:
                     "attempts": n_attempts,
                 })
 
-            tiers = {1: [], 2: [], 3: []}
-            tier_labels = {1: "remediation", 2: "on_track", 3: "ahead"}
-            tier_diff = {1: 1, 2: 3, 3: 5}
-            tier_desc = {
-                1: "Scored below 40% (F9). Needs extra practice — give foundational materials.",
-                2: "Scored 40–74% (E8 to B2). On track — continue with standard curriculum.",
-                3: "Scored 75% or above (A1). Ahead of class — give advanced materials.",
-            }
-
-            if not results:
-                return {
-                    "subject": subject,
-                    "total_students": 0,
-                    "tiers": {
-                        tier_labels[k]: {"students": [], "count": 0,
-                                         "recommended_difficulty": tier_diff[k],
-                                         "note": tier_desc[k]}
-                        for k in (1, 2, 3)
-                    },
-                    "scope": "assessed_only",
-                }
-
-            for r in results:
-                p = r["predicted"]
-                if p < 0.4:
-                    t = 1
-                elif p < 0.75:
-                    t = 2
-                else:
-                    t = 3
-                tiers[t].append({
-                    "student_id": r["student_id"],
-                    "name": r["name"],
-                    "predicted_score": round(p, 2),
-                    "attempts": r["attempts"],
-                })
-
-            return {
-                "subject": subject,
-                "total_students": len(results),
-                "tiers": {
-                    tier_labels[k]: {
-                        "students": v,
-                        "count": len(v),
-                        "recommended_difficulty": tier_diff[k],
-                        "note": tier_desc[k],
-                    }
-                    for k, v in tiers.items()
-                },
-                "scope": "assessed_only",
-            }
+            return build_triage_report(subject, results)
 
     def warm_start(self, sessions_data: List[Dict]) -> None:
         """
