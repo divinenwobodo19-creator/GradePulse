@@ -504,6 +504,32 @@ Force save brain state to disk.
 
 ---
 
+## Passwords
+
+There is no email service. A forgotten password is recovered with a single-use reset code (valid 24 hours) handed over by a school admin, or by the deployment operator.
+
+### POST /auth/change-password
+
+Authenticated. Body `{ "current_password": "...", "new_password": "..." }`. Returns the same shape as login, with a **new token**: every session started before the change is signed out. 400 if the current password is wrong; 422 if the new one is under 8 characters.
+
+### GET /members
+
+Admin only. The accounts in the caller's school: `[{ "id", "email", "role" }]`.
+
+### POST /members/{user_id}/password-reset
+
+Admin only, for another member of the caller's school. Returns `{ "code", "expires_at" }`. The code is returned once; only its hash is stored. Creating a new code cancels an earlier unused one for the same account. 404 for an account outside the school; 400 for the caller's own account.
+
+### POST /auth/reset-password
+
+Public, rate-limited. Body `{ "code": "...", "new_password": "..." }`. 400 if the code is unknown, used or expired. The web page for it is `/reset-password?code=CODE`.
+
+### POST /auth/operator-reset
+
+For an admin who is locked out. Requires the `X-Operator-Key` header. Body `{ "email": "..." }`; returns `{ "code", "expires_at" }`.
+
+---
+
 ## Invites
 
 Admin only. A school's admin is whoever created it at signup; teachers join with an invite and get the `teacher` role. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.

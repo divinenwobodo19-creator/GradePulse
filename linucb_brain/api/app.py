@@ -26,6 +26,8 @@ from .auth import (
     get_current_user, optional_user, update_user_school, get_user_by_id,
     require_admin, create_invite, list_pending_invites, revoke_invite,
     get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
+    verify_password, set_password, get_user_by_email, list_school_members,
+    create_password_reset, redeem_password_reset,
 )
 from .ratelimit import SlidingWindowLimiter
 from . import store
@@ -35,7 +37,8 @@ from .schemas import (
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
     UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
-    SubjectsPayload, SchoolScoreRecord,
+    SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest,
+    OperatorResetRequest, PasswordResetLink, MemberResponse,
 )
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
@@ -459,6 +462,56 @@ def me(user: dict = Depends(get_current_user)):
             "school_id": user.get("school_id", ""),
             "school_name": school["name"] if school else "",
             "role": user.get("role", ROLE_ADMIN)}
+
+
+# ── Passwords ───────────────────────────────────────────────────────────────
+# There is no email service, so a forgotten password is recovered with a
+# single-use reset code handed over by someone already trusted: a school admin
+# for the teachers in their school, the deployment's operator for anyone.
+
+@app.post("/auth/change-password", response_model=UserResponse)
+def change_password(request: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    if not verify_password(request.current_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Your current password is not correct")
+    set_password(user["id"], request.new_password)
+    school = store.get_school(user.get("school_id", ""))
+    # Every earlier session is now signed out; this one continues on a new token.
+    return {"id": user["id"], "email": user["email"], "school_id": user.get("school_id", ""),
+            "school_name": school["name"] if school else "", "role": user.get("role", ROLE_ADMIN),
+            "token": create_access_token({"sub": user["id"]})}
+
+
+@app.post("/auth/reset-password")
+def reset_password(http_request: Request, request: ResetPasswordRequest):
+    if not LOGIN_HOST_LIMITER.allow(_client_host(http_request)):
+        raise HTTPException(status_code=429, detail="Too many attempts — try again later")
+    if not redeem_password_reset(request.code.strip(), request.new_password):
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired")
+    return {"status": "password_updated"}
+
+
+@app.post("/auth/operator-reset", response_model=PasswordResetLink)
+def operator_reset(request: OperatorResetRequest, _: None = Depends(require_operator)):
+    """For an admin who is locked out: the operator issues the reset code."""
+    account = get_user_by_email(request.email)
+    if not account:
+        raise HTTPException(status_code=404, detail="No account with that email")
+    return create_password_reset(account["id"], created_by="operator")
+
+
+@app.get("/members", response_model=List[MemberResponse])
+def list_members(user: dict = Depends(require_admin)):
+    return list_school_members(_admin_school(user))
+
+
+@app.post("/members/{user_id}/password-reset", response_model=PasswordResetLink)
+def member_password_reset(user_id: str, user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="Use Change Password for your own account")
+    if not any(member["id"] == user_id for member in list_school_members(school_id)):
+        raise HTTPException(status_code=404, detail="No such member in your school")
+    return create_password_reset(user_id, created_by=user["id"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════

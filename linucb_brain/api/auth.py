@@ -1,6 +1,7 @@
 """
 Authentication module — JWT + bcrypt + SQLite user store.
 """
+import hashlib
 import os
 import secrets
 import sqlite3
@@ -42,6 +43,7 @@ ISSUER = "gradepulse"
 ROLE_ADMIN = "admin"      # owns the school: invites teachers, deletes classes/school
 ROLE_TEACHER = "teacher"  # joined through an invite
 INVITE_TTL_DAYS = 7
+PASSWORD_RESET_TTL_HOURS = 24
 DB_PATH = os.getenv("USER_DB_PATH", "gradepulse_users.db")
 
 security = HTTPBearer(auto_error=False)
@@ -70,6 +72,19 @@ def init_db():
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
     if "role" not in columns:
         conn.execute(f"ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT '{ROLE_ADMIN}'")
+    if "password_changed_at" not in columns:
+        # Epoch seconds of the last password change; tokens issued before it are refused.
+        conn.execute("ALTER TABLE users ADD COLUMN password_changed_at INTEGER NOT NULL DEFAULT 0")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS password_resets (
+            code_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS invites (
             code TEXT PRIMARY KEY,
@@ -173,6 +188,74 @@ def update_user_school(user_id: str, school_id: str, role: Optional[str] = None)
     conn.close()
 
 
+# ── Passwords ──────────────────────────────────────────────────────────────
+
+def get_user_by_email(email: str) -> Optional[dict]:
+    conn = _get_db()
+    user = conn.execute("SELECT * FROM users WHERE email = ?", (email.lower().strip(),)).fetchone()
+    conn.close()
+    return dict(user) if user else None
+
+
+def list_school_members(school_id: str) -> list:
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT id, email, role FROM users WHERE school_id = ? ORDER BY role, email", (school_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def set_password(user_id: str, password: str) -> None:
+    """Store a new password. Sessions started before now stop working."""
+    conn = _get_db()
+    conn.execute(
+        "UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?",
+        (hash_password(password), int(datetime.now(timezone.utc).timestamp()), user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _hash_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def create_password_reset(user_id: str, created_by: str) -> dict:
+    """A single-use reset code for one account. Only its hash is stored, so
+    the code is shown once, to whoever asked for it."""
+    now = datetime.now(timezone.utc)
+    code = secrets.token_urlsafe(24)
+    expires_at = (now + timedelta(hours=PASSWORD_RESET_TTL_HOURS)).isoformat()
+    conn = _get_db()
+    # A new code replaces any earlier unused one for the same account.
+    conn.execute("DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL", (user_id,))
+    conn.execute(
+        "INSERT INTO password_resets (code_hash, user_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+        (_hash_code(code), user_id, created_by, now.isoformat(), expires_at),
+    )
+    conn.commit()
+    conn.close()
+    return {"code": code, "expires_at": expires_at}
+
+
+def redeem_password_reset(code: str, new_password: str) -> bool:
+    """Set a new password with a reset code. False if the code is unknown, used or expired."""
+    conn = _get_db()
+    now = _now_iso()
+    cur = conn.execute(
+        "UPDATE password_resets SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?",
+        (now, _hash_code(code), now),
+    )
+    row = conn.execute("SELECT user_id FROM password_resets WHERE code_hash = ?", (_hash_code(code),)).fetchone()
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0 or row is None:
+        return False
+    set_password(row["user_id"], new_password)
+    return True
+
+
 # ── Invites: the only way to join a school someone else created ────────────
 
 def _now_iso() -> str:
@@ -240,6 +323,11 @@ def redeem_invite(code: str, user_id: str) -> bool:
     return cur.rowcount > 0
 
 
+def _token_predates_password(payload: dict, user: dict) -> bool:
+    """A password change or reset signs every earlier session out."""
+    return int(payload.get("iat", 0)) < int(user.get("password_changed_at") or 0)
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -249,6 +337,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     user = get_user_by_id(payload.get("sub"))
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if _token_predates_password(payload, user):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
 
 
@@ -264,7 +354,10 @@ def optional_user(credentials: HTTPAuthorizationCredentials = Depends(security))
     payload = decode_token(credentials.credentials)
     if not payload:
         return None
-    return get_user_by_id(payload.get("sub"))
+    user = get_user_by_id(payload.get("sub"))
+    if user and _token_predates_password(payload, user):
+        return None
+    return user
 
 
 init_db()

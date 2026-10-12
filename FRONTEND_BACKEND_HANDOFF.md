@@ -12,6 +12,8 @@
 
 > **Contract addition (2026-10-12, unreleased) — subjects:** `GET /subjects` → `{subjects: [...]}` for the caller's school; `PUT /subjects` (admin) replaces it. Schools and classes are now stored in SQLite; their endpoints and response shapes are unchanged.
 
+> **Contract addition (2026-10-12, unreleased) — passwords:** `POST /auth/change-password` returns a new token (store it; older tokens stop working). `GET /members` and `POST /members/{id}/password-reset` (admin) issue a single-use reset code that `POST /auth/reset-password` redeems. A 401 on any request can now also mean "password changed elsewhere". See `API_REFERENCE.md` → Passwords.
+
 ---
 
 ## 1. TL;DR
