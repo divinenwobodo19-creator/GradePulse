@@ -136,6 +136,16 @@ class ScoreRecord(BaseModel):
     label: str = ""
     source: str = "teacher"
 
+class SubjectsPayload(BaseModel):
+    subjects: List[str] = Field(..., max_length=40)
+
+    @field_validator("subjects")
+    @classmethod
+    def _check_names(cls, value: List[str]) -> List[str]:
+        if any(len(subject.strip()) > 40 for subject in value):
+            raise ValueError("A subject name can be at most 40 characters")
+        return value
+
 class TriageRequest(BaseModel):
     subject: str
     class_id: Optional[str] = None  # limit the report to one class

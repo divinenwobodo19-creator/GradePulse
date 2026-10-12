@@ -147,6 +147,26 @@ Delete a school and all its classes/students.
 
 ---
 
+## Subjects
+
+Each school has its own subject list. It drives the subject pickers; it does not restrict which subjects `/bulk-update` accepts.
+
+### GET /subjects
+
+```json
+{ "subjects": ["MATH", "ENGLISH", "SCIENCE", "HISTORY"] }
+```
+
+### PUT /subjects
+
+Admin only. Replaces the whole list. Names are trimmed, upper-cased and de-duplicated; at most 40 subjects of up to 40 characters each. An empty result returns 400.
+
+```json
+{ "subjects": ["Mathematics", "English Language", "Basic Science"] }
+```
+
+---
+
 ## Classes
 
 ### GET /classes/{school_id}

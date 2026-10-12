@@ -17,7 +17,7 @@ Two services run together:
 The browser talks to the web app, which **server-side proxies** `/api/*` to the API container; the API host is never exposed to browsers. Both persist data in the `gradepulse-data` Docker volume at `/data`:
 
 - `brain_state.json` — the model (LinUCB parameters, students, sessions)
-- `class_config.json` — school/class registry
+- `class_config.json` — legacy school/class registry. No longer written; if present it is copied into `gradepulse_users.db` on first start
 - `gradepulse_users.db` — accounts (SQLite, WAL mode)
 - `backups/` — automated backups (all three of the above)
 

@@ -6,7 +6,8 @@ import RosterImportDialog from "@/components/RosterImportDialog";
 import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
 import type { Student, SchoolClass } from "@/lib/types";
-import { SUBJECTS, getStudentClassId } from "@/lib/types";
+import { getStudentClassId } from "@/lib/types";
+import { useSubjects } from "@/lib/subjects";
 
 export default function StudentsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -24,7 +25,12 @@ export default function StudentsPage() {
   const [showImport, setShowImport] = useState(false);
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
-  const [newTopic, setNewTopic] = useState("MATH");
+  const subjects = useSubjects();
+  // "" means "not chosen yet": the form then shows the school's first subject.
+  const [newTopic, setNewTopic] = useState("");
+  const topic = newTopic || subjects[0];
+  // A student may still carry a subject that was later taken off the list.
+  const topicOptions = subjects.includes(topic) ? subjects : [...subjects, topic];
   const [newClass, setNewClass] = useState("");
   // The student being edited; null while the dialog is adding a new one.
   const [editing, setEditing] = useState<Student | null>(null);
@@ -41,7 +47,7 @@ export default function StudentsPage() {
   const resetForm = useCallback(() => {
     setNewId("");
     setNewName("");
-    setNewTopic("MATH");
+    setNewTopic("");
     setNewClass("");
     setEditing(null);
     setShowModal(false);
@@ -57,7 +63,7 @@ export default function StudentsPage() {
     setEditing(student);
     setNewId(student.student_id);
     setNewName(student.name);
-    setNewTopic(student.current_topic || "MATH");
+    setNewTopic(student.current_topic || "");
     setNewClass(getStudentClassId(student) ?? "");
     setShowModal(true);
   };
@@ -189,7 +195,7 @@ export default function StudentsPage() {
       if (editing) {
         await api.updateStudent(editing.student_id, {
           name: newName.trim(),
-          current_topic: newTopic,
+          current_topic: topic,
           class_id: newClass,
         });
         showToast("success", `Saved ${newName.trim()}`);
@@ -197,7 +203,7 @@ export default function StudentsPage() {
         await api.addStudent({
           student_id: newId.trim(),
           name: newName.trim(),
-          current_topic: newTopic,
+          current_topic: topic,
           ...(newClass ? { metadata: { class_id: newClass } } : {}),
         });
         showToast("success", `Added ${newName.trim()} successfully`);
@@ -480,11 +486,11 @@ export default function StudentsPage() {
                  <select
                    id="student-topic"
                    name="current_topic"
-                   value={newTopic}
+                   value={topic}
                    onChange={(e) => setNewTopic(e.target.value)}
                    className="input select"
                  >
-                  {SUBJECTS.map((s) => (
+                  {topicOptions.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>

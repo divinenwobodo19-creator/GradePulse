@@ -1,8 +1,9 @@
 """
-Student and score store — SQLite, in the same database file as the user
-accounts (so the scheduled backup already covers it).
+School data store — SQLite, in the same database file as the user accounts
+(so the scheduled backup already covers it).
 
-This is the record of a school's roster and test scores. The Brain keeps an
+This is the record of schools, their classes and subjects, their students and
+their test scores. The Brain keeps an
 in-memory copy of a student only while it scores recommendations for them; it
 is no longer where students or grades are saved.
 
@@ -12,15 +13,25 @@ is no longer where students or grades are saved.
   on the API are derived from those rows.
 - Deleting a student, class or school archives the rows instead of erasing
   them.
+- Schools and classes used to live in class_config.json, which was rewritten
+  whole on every change; each change is now its own row update.
 """
 import json
+import sqlite3
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from ..models.school import SchoolClass, normalize_label
 from .auth import _get_db
 
 RECENT_SCORES = 5  # performance_score = mean of this many most recent scores
+
+DEFAULT_SCHOOL_NAME = "MY SCHOOL"
+# A new school starts with these; its admin can change the list.
+DEFAULT_SUBJECTS = ["MATH", "ENGLISH", "SCIENCE", "HISTORY"]
+MAX_SUBJECTS = 40
 
 SOURCE_TEACHER = "teacher"  # entered on the score sheet
 SOURCE_IMPORT = "import"    # history that arrived with a roster/CSV
@@ -60,6 +71,25 @@ def _now() -> str:
 def init_store():
     conn = _get_db()
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS schools (
+            school_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            subjects TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            archived_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS classes (
+            class_id TEXT PRIMARY KEY,
+            school_id TEXT NOT NULL REFERENCES schools (school_id),
+            label TEXT NOT NULL,
+            grade_level TEXT NOT NULL DEFAULT '',
+            arm TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            archived_at TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS classes_school_label
+            ON classes (school_id, label) WHERE archived_at IS NULL;
+
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id TEXT NOT NULL,
@@ -93,6 +123,183 @@ def init_store():
     """)
     conn.commit()
     conn.close()
+
+
+# ── Schools, classes and subjects ──────────────────────────────────────────
+
+def _new_id() -> str:
+    return str(uuid.uuid4())[:8]
+
+
+def _class_dict(row) -> dict:
+    return {"class_id": row["class_id"], "label": row["label"],
+            "grade_level": row["grade_level"], "arm": row["arm"]}
+
+
+def _classes(conn, school_id: str) -> List[dict]:
+    rows = conn.execute(
+        "SELECT * FROM classes WHERE school_id = ? AND archived_at IS NULL ORDER BY created_at, rowid",
+        (school_id,),
+    ).fetchall()
+    return [_class_dict(r) for r in rows]
+
+
+def create_school(name: str = DEFAULT_SCHOOL_NAME) -> dict:
+    """Always create a new school. Names are labels, not identifiers, so two
+    schools may share one; membership is never granted by matching a name."""
+    name = normalize_label(name) or DEFAULT_SCHOOL_NAME
+    conn = _get_db()
+    while True:
+        school_id = _new_id()
+        try:
+            conn.execute(
+                "INSERT INTO schools (school_id, name, subjects, created_at) VALUES (?, ?, ?, ?)",
+                (school_id, name, json.dumps(DEFAULT_SUBJECTS), _now()),
+            )
+            break
+        except sqlite3.IntegrityError:
+            continue  # 8-character id already taken
+    conn.commit()
+    conn.close()
+    return {"school_id": school_id, "name": name, "classes": []}
+
+
+def get_school(school_id: str) -> Optional[dict]:
+    if not school_id:
+        return None
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT school_id, name FROM schools WHERE school_id = ? AND archived_at IS NULL", (school_id,)
+    ).fetchone()
+    school = {"school_id": row["school_id"], "name": row["name"], "classes": _classes(conn, school_id)} if row else None
+    conn.close()
+    return school
+
+
+def rename_school(school_id: str, name: str) -> None:
+    conn = _get_db()
+    conn.execute("UPDATE schools SET name = ? WHERE school_id = ?", (normalize_label(name), school_id))
+    conn.commit()
+    conn.close()
+
+
+def list_classes(school_id: str) -> List[dict]:
+    conn = _get_db()
+    classes = _classes(conn, school_id)
+    conn.close()
+    return classes
+
+
+def get_class(school_id: str, class_id: str) -> Optional[dict]:
+    if not school_id:
+        return None
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM classes WHERE school_id = ? AND class_id = ? AND archived_at IS NULL",
+        (school_id, class_id),
+    ).fetchone()
+    conn.close()
+    return _class_dict(row) if row else None
+
+
+def add_class(school_id: str, label: str, class_id: Optional[str] = None) -> Optional[dict]:
+    """Add a class. None if the name is empty or already used in this school."""
+    label = normalize_label(label)
+    if not label:
+        return None
+    grade_level, arm = SchoolClass.split_label(label)
+    conn = _get_db()
+    try:
+        while True:
+            new_id = class_id or _new_id()
+            try:
+                conn.execute(
+                    "INSERT INTO classes (class_id, school_id, label, grade_level, arm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (new_id, school_id, label, grade_level, arm, _now()),
+                )
+                break
+            except sqlite3.IntegrityError as exc:
+                if "class_id" in str(exc) and class_id is None:
+                    continue  # generated id already taken
+                return None  # this school already has a class with that name
+        conn.commit()
+    finally:
+        conn.close()
+    return {"class_id": new_id, "label": label, "grade_level": grade_level, "arm": arm}
+
+
+def rename_class(school_id: str, class_id: str, label: str) -> Optional[dict]:
+    """Rename a class. None if another class in the school has that name."""
+    label = normalize_label(label)
+    grade_level, arm = SchoolClass.split_label(label)
+    conn = _get_db()
+    try:
+        conn.execute(
+            "UPDATE classes SET label = ?, grade_level = ?, arm = ? WHERE school_id = ? AND class_id = ?",
+            (label, grade_level, arm, school_id, class_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+    return get_class(school_id, class_id)
+
+
+def get_subjects(school_id: str) -> List[str]:
+    conn = _get_db()
+    row = conn.execute("SELECT subjects FROM schools WHERE school_id = ?", (school_id,)).fetchone()
+    conn.close()
+    subjects = json.loads(row["subjects"]) if row else []
+    return subjects or list(DEFAULT_SUBJECTS)
+
+
+def set_subjects(school_id: str, subjects: Iterable[str]) -> List[str]:
+    """Replace a school's subject list (normalised, de-duplicated, order kept)."""
+    cleaned: List[str] = []
+    for subject in subjects:
+        subject = normalize_label(subject)
+        if subject and subject not in cleaned:
+            cleaned.append(subject)
+    conn = _get_db()
+    conn.execute("UPDATE schools SET subjects = ? WHERE school_id = ?", (json.dumps(cleaned), school_id))
+    conn.commit()
+    conn.close()
+    return cleaned
+
+
+def adopt_legacy_registry(registry: dict) -> int:
+    """One-off upgrade: copy schools and classes from class_config.json into
+    the store, keeping their IDs (first start only)."""
+    conn = _get_db()
+    if conn.execute("SELECT COUNT(*) FROM schools").fetchone()[0] > 0:
+        conn.close()
+        return 0
+    now, moved = _now(), 0
+    for school in registry.get("schools", []):
+        try:
+            conn.execute(
+                "INSERT INTO schools (school_id, name, subjects, created_at) VALUES (?, ?, ?, ?)",
+                (school["school_id"], normalize_label(school.get("name", "")) or DEFAULT_SCHOOL_NAME,
+                 json.dumps(DEFAULT_SUBJECTS), now),
+            )
+        except sqlite3.IntegrityError:
+            continue  # another worker is adopting the same file
+        moved += 1
+        for cls in school.get("classes", []):
+            try:
+                conn.execute(
+                    "INSERT INTO classes (class_id, school_id, label, grade_level, arm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (cls["class_id"], school["school_id"], normalize_label(cls.get("label", "")),
+                     cls.get("grade_level", ""), cls.get("arm", ""), now),
+                )
+            except sqlite3.IntegrityError:
+                continue  # duplicate name or id in the old file
+    conn.commit()
+    conn.close()
+    return moved
 
 
 # ── Reading ────────────────────────────────────────────────────────────────
@@ -235,11 +442,23 @@ def archive_student(student_pk: int) -> int:
     return _archive("id = ?", (student_pk,))
 
 
+def _archive_rows(table: str, where: str, params: Iterable) -> None:
+    conn = _get_db()
+    conn.execute(f"UPDATE {table} SET archived_at = ? WHERE archived_at IS NULL AND {where}", (_now(), *params))
+    conn.commit()
+    conn.close()
+
+
 def archive_class(school_id: str, class_id: str) -> int:
+    """Archive a class and the students in it."""
+    _archive_rows("classes", "school_id = ? AND class_id = ?", (school_id, class_id))
     return _archive("school_id = ? AND class_id = ?", (school_id, class_id))
 
 
 def archive_school(school_id: str) -> int:
+    """Archive a school with its classes and students."""
+    _archive_rows("classes", "school_id = ?", (school_id,))
+    _archive_rows("schools", "school_id = ?", (school_id,))
     return _archive("school_id = ?", (school_id,))
 
 

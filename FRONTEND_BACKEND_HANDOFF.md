@@ -10,6 +10,8 @@
 
 > **Contract change (2026-10-12, unreleased) — students and scores:** Student IDs are per school (acting on an ID outside your school → **404**, `/recommend` → 400; the 409 clash response is gone). `performance_score` is now derived (mean of the five most recent scores; the value sent at creation is only the starting point), and `grade_history` holds only recorded scores, never `/update` rewards. `POST /bulk-update` accepts optional `assessed_on` (ISO date) and `label`; the same student + subject + date + label corrects the earlier score. New: `GET /students/{student_id}/scores` → `[{subject, score, assessed_on, label, source}]`. Deletes archive. A student with an empty `grade_history` has no real score yet — the frontend shows a dash.
 
+> **Contract addition (2026-10-12, unreleased) — subjects:** `GET /subjects` → `{subjects: [...]}` for the caller's school; `PUT /subjects` (admin) replaces it. Schools and classes are now stored in SQLite; their endpoints and response shapes are unchanged.
+
 ---
 
 ## 1. TL;DR
