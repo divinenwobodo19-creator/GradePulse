@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A fresh install starts empty.** The five sample students and eight sample content items are only seeded with `SEED_DEMO_DATA=true`. Students with no school ("unclaimed") no longer exist.
 - **Score sheets no longer rewrite the whole engine state** on every save; the engine state is saved by the periodic auto-save.
 - **Frontend:** scores, grades and progress show the calculated values, with a dash for students who have no scores yet. Score entry starts blank, shows each student's last score in the chosen subject, and has a test date and optional test name.
+- **`POST /triage` accepts an optional `class_id`** to limit the report to one class.
+- **Frontend cleanup:** the dashboard has subject and class selectors and shows students, assessed, need-help and ahead counts; score entry has a class filter. Engine internals (alpha, gamma, regret, Neural Score, "Save Brain State"), static "Engine Active" badges, invented login-page statistics and "AI / Neural Hybrid" wording are removed. The pricing page is linked from login and signup. Fixed the duplicate Subject label on Triage and the dead "All Schools" filter on Students.
 - **Backup endpoints are operator-only.** `POST /backup`, `GET /backups` and `POST /backup/restore` now require `X-Operator-Key` matching the new `OPERATOR_KEY` env var, instead of any logged-in user. Unset key = disabled (scheduled backups still run). **Deployments must set `OPERATOR_KEY` to keep using these endpoints.**
 - **Admin-only actions:** renaming or deleting a school and deleting a class return 403 for teachers.
 - Frontend signup form enforces the same 8-character minimum.

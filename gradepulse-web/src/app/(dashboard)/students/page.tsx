@@ -4,13 +4,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
-import type { Student, School, SchoolClass } from "@/lib/types";
+import type { Student, SchoolClass } from "@/lib/types";
 import { SUBJECTS } from "@/lib/types";
 
 export default function StudentsPage() {
   const { user, loading: authLoading } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
-  const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [selectedSchool, setSelectedSchool] = useState("");
   const [selectedClass, setSelectedClass] = useState("");
@@ -82,7 +81,6 @@ export default function StudentsPage() {
       try {
         const schools = await api.getSchools();
         if (cancelled) return;
-        setSchools(schools);
         if (schools.length > 0) {
           setSelectedSchool(schools[0].school_id);
         } else {
@@ -256,18 +254,6 @@ export default function StudentsPage() {
             placeholder="Search students..."
           />
         </div>
-
-         <select
-           aria-label="Filter by school"
-           value={selectedSchool}
-           onChange={(e) => setSelectedSchool(e.target.value)}
-          className="input select w-auto min-w-[160px]"
-        >
-          <option value="">All Schools</option>
-          {schools.map((s) => (
-            <option key={s.school_id} value={s.school_id}>{s.name}</option>
-          ))}
-        </select>
 
          <select
            aria-label="Filter by class"

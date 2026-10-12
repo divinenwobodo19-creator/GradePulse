@@ -7,7 +7,6 @@ import type { BrainSummary, Invite } from "@/lib/types";
 
 export default function SettingsPage() {
   const { user, loading: authLoading, logout } = useAuth();
-  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [summary, setSummary] = useState<BrainSummary | null>(null);
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
@@ -107,18 +106,6 @@ export default function SettingsPage() {
       showToast("success", "Invite revoked");
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Could not revoke invite");
-    }
-  };
-
-  const handleSaveBrain = async () => {
-    setSaving(true);
-    try {
-      await api.save();
-      showToast("success", "Brain state saved successfully");
-    } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -239,54 +226,6 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Algorithm Status */}
-      {summary && (
-        <div className="card">
-          <div className="card-body">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-xl bg-gold/10 flex items-center justify-center">
-                <svg className="w-5 h-5 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="heading-2 text-navy">Algorithm Engine</h2>
-                <p className="caption text-text-muted">LinUCB + Neural Hybrid status</p>
-              </div>
-              <span className="badge badge-success ml-auto">Active</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-surface-elevated rounded-xl">
-                <div className="caption text-text-muted mb-1">Model Type</div>
-                <div className="heading-2 text-navy capitalize">{summary.model_type}</div>
-              </div>
-              <div className="p-4 bg-surface-elevated rounded-xl">
-                <div className="caption text-text-muted mb-1">Total Sessions</div>
-                <div className="heading-2 text-navy">{summary.total_sessions.toLocaleString()}</div>
-              </div>
-              <div className="p-4 bg-surface-elevated rounded-xl">
-                <div className="caption text-text-muted mb-1">Alpha (Exploration)</div>
-                <div className="heading-2 text-navy font-mono">{summary.current_alpha?.toFixed(3) ?? "1.000"}</div>
-              </div>
-              <div className="p-4 bg-surface-elevated rounded-xl">
-                <div className="caption text-text-muted mb-1">Gamma (Discount)</div>
-                <div className="heading-2 text-navy font-mono">{summary.current_gamma?.toFixed(3) ?? "1.000"}</div>
-              </div>
-              <div className="p-4 bg-surface-elevated rounded-xl">
-                <div className="caption text-text-muted mb-1">Cumulative Regret</div>
-                <div className="heading-2 text-navy font-mono">{summary.cumulative_regret?.toFixed(3) ?? "0.000"}</div>
-              </div>
-              <div className="p-4 bg-surface-elevated rounded-xl">
-                <div className="caption text-text-muted mb-1">Neural Score</div>
-                <div className="heading-2 text-navy font-mono">{summary.last_neural_score?.toFixed(3) ?? "0.000"}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* System */}
       <div className="card">
         <div className="card-body">
@@ -298,48 +237,17 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="heading-2 text-navy">System</h2>
-              <p className="caption text-text-muted">Engine operations and health</p>
+              <p className="caption text-text-muted">Connection and school totals</p>
             </div>
           </div>
 
           <div className="space-y-4">
-            {/* Save Brain State */}
-            <div className="flex items-center justify-between p-4 bg-surface-elevated rounded-xl">
-              <div>
-                <h3 className="body font-medium text-navy">Save Brain State</h3>
-                <p className="caption text-text-muted mt-0.5">
-                  Persist the current model state to disk
-                </p>
-              </div>
-              <button
-                onClick={handleSaveBrain}
-                disabled={saving}
-                className="btn btn-secondary"
-              >
-                {saving ? (
-                  <>
-                    <div className="spinner spinner-sm" style={{ borderTopColor: 'white' }} />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                      <polyline points="17 21 17 13 7 13 7 21" />
-                      <polyline points="7 3 7 8 15 8" />
-                    </svg>
-                    Save Now
-                  </>
-                )}
-              </button>
-            </div>
-
             {/* API Status */}
             <div className="flex items-center justify-between p-4 bg-surface-elevated rounded-xl">
               <div>
-                <h3 className="body font-medium text-navy">API Status</h3>
+                <h3 className="body font-medium text-navy">Connection</h3>
                 <p className="caption text-text-muted mt-0.5">
-                  Backend connection health
+                  Whether GradePulse can reach its server
                 </p>
               </div>
                <span className={`flex items-center gap-2 badge ${apiStatus === "online" ? "badge-success" : apiStatus === "offline" ? "badge-danger" : "badge-neutral"}`}>
@@ -348,26 +256,13 @@ export default function SettingsPage() {
                </span>
             </div>
 
-            {/* Content Count */}
-            {summary && (
-              <div className="flex items-center justify-between p-4 bg-surface-elevated rounded-xl">
-                <div>
-                  <h3 className="body font-medium text-navy">Content Library</h3>
-                  <p className="caption text-text-muted mt-0.5">
-                    Available learning materials
-                  </p>
-                </div>
-                <span className="heading-2 text-navy">{summary.content_count}</span>
-              </div>
-            )}
-
             {/* Student Count */}
             {summary && (
               <div className="flex items-center justify-between p-4 bg-surface-elevated rounded-xl">
                 <div>
-                  <h3 className="body font-medium text-navy">Student Profiles</h3>
+                  <h3 className="body font-medium text-navy">Students</h3>
                   <p className="caption text-text-muted mt-0.5">
-                    Active student records
+                    In your school
                   </p>
                 </div>
                 <span className="heading-2 text-navy">{summary.student_count}</span>

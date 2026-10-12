@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "GradePulse",
-  description: "AI-Powered Student Performance Intelligence for Nigerian Schools",
+  description: "See every week which students are falling behind. Built for Nigerian schools.",
 };
 
 export default function RootLayout({
