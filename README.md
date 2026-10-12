@@ -64,11 +64,23 @@ curl -X POST http://localhost:8000/auth/signup \
   -H "Content-Type: application/json" \
   -d '{"email": "teacher@school.com", "password": "password123", "school_name": "My School"}'
 
-# Get a recommendation (use the token from signup)
-curl -X POST http://localhost:8000/recommend \
+# Add a student (use the token from signup)
+curl -X POST http://localhost:8000/students \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <your-token>" \
-  -d '{"student_id": "608041", "top_n": 3}'
+  -d '{"student_id": "S001", "name": "Chinwe Okoro"}'
+
+# Enter a test score for them
+curl -X POST http://localhost:8000/bulk-update \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{"entries": [{"student_id": "S001", "subject": "MATH", "score": 0.35}], "label": "Week 1 test"}'
+
+# See who needs help in that subject
+curl -X POST http://localhost:8000/triage \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-token>" \
+  -d '{"subject": "MATH"}'
 ```
 
 ### Option 2: Docker (Production)

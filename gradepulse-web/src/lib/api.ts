@@ -262,11 +262,16 @@ class ApiClient {
     );
   }
 
+  // One sitting of a test. Re-sending the same student, subject, date and
+  // label corrects the earlier score instead of adding another.
   async bulkUpdate(
-    entries: { student_id: string; subject: string; score: number }[]
+    entries: { student_id: string; subject: string; score: number }[],
+    sitting: { assessedOn?: string; label?: string } = {}
   ) {
     return this.request<{ processed: number }>("POST", "/bulk-update", {
       entries,
+      ...(sitting.assessedOn ? { assessed_on: sitting.assessedOn } : {}),
+      ...(sitting.label ? { label: sitting.label } : {}),
     });
   }
 

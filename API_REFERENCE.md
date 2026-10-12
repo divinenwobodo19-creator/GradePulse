@@ -194,6 +194,8 @@ Delete a class and its students.
 
 ## Students
 
+A student is identified by `student_id` **within the caller's school**; two schools can use the same ID. `grade_history` (`{subject: [scores]}`, oldest first) and `performance_score` (mean of the five most recent scores) are derived from the recorded scores. A student with an empty `grade_history` has no score yet, and `performance_score` is then just the starting value given at creation. Deleting archives the student.
+
 ### GET /students
 
 List students (filtered by school/class).
@@ -351,6 +353,28 @@ Bulk score entry for a class.
 ```
 
 ---
+
+Request body:
+
+| Field | Type | Notes |
+|---|---|---|
+| `entries` | list | `{student_id, subject, score}` with `score` 0–1 |
+| `assessed_on` | date, optional | Day the test was taken (`YYYY-MM-DD`); today if omitted |
+| `label` | string, optional | Name of the test, e.g. `"Week 4 test"` (max 80 chars) |
+
+Each entry is saved as a dated score record. Sending the same student, subject, `assessed_on` and `label` again **corrects** the earlier score. A `student_id` that is not in the caller's school returns 404.
+
+### GET /students/{student_id}/scores
+
+Every recorded score for one student, oldest first.
+
+```json
+[
+  { "subject": "MATH", "score": 0.7, "assessed_on": "2026-09-07", "label": "Week 1 test", "source": "teacher" }
+]
+```
+
+`source` is `teacher` (score sheet) or `import` (history that came with a roster file).
 
 ### POST /triage
 

@@ -1,7 +1,7 @@
 import re
 from pydantic import BaseModel, Field, field_validator
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import date, datetime
 
 class StudentSchema(BaseModel):
     student_id: str
@@ -123,6 +123,18 @@ class BulkUpdateEntry(BaseModel):
 
 class BulkUpdateRequest(BaseModel):
     entries: List[BulkUpdateEntry]
+    # One sitting: the day the test was taken (today if omitted) and an
+    # optional name for it, e.g. "Week 4 test". Re-sending the same student,
+    # subject, date and label corrects the earlier score.
+    assessed_on: Optional[date] = None
+    label: str = Field("", max_length=80)
+
+class ScoreRecord(BaseModel):
+    subject: str
+    score: float
+    assessed_on: str
+    label: str = ""
+    source: str = "teacher"
 
 class TriageRequest(BaseModel):
     subject: str

@@ -240,7 +240,7 @@ docker compose up -d --build
 |---|---|
 | Container exits immediately | Check `docker compose logs api` — in `GRADEPULPE_ENV=production` a weak/missing `JWT_SECRET` aborts deliberately at boot. |
 | Port 8000 busy | `lsof -i :8000` and kill, or change `PORT` in `.env`. |
-| API recovers with empty model | Fresh deployment seeds demo data when `brain_state.json` is absent. Restore from `/data/backups/` if needed. |
+| API recovers with empty model | A deployment starts with an empty engine when `brain_state.json` is absent (students and scores are in `gradepulse_users.db`, not in that file). Restore from `/data/backups/` if needed. |
 | Web can't reach the API | `API_URL=http://api:8000` is set in `docker-compose.yml`; only override via the `API_URL` build ARG/env. Browsers must call `/api/*` same-origin. |
 | Out of disk | `docker system prune -a`, `docker volume prune` (never the `gradepulse-data` volume), trim `/data/backups/`. |
 | 429 Too Many Requests | Signup/login rate limit (30/min per address, 120/min per host) — legitimate users just wait. |
@@ -265,7 +265,7 @@ docker stats --no-stream
 ### Data loss
 1. List backups: `docker compose exec api ls /data/backups/`
 2. Restore via Section 3 (API or volume copy).
-3. If nothing survived, the engine re-seeds demo data; learned parameters are lost.
+3. If nothing survived, the engine starts empty; learned parameters are lost. Students and scores are unaffected as long as `gradepulse_users.db` survived.
 
 ### Compromise
 1. `docker compose down`

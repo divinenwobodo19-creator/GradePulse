@@ -295,7 +295,10 @@ class TestStudentsAPI:
         data = r.json()
         assert data["student_id"] == sid
         assert data["name"] == "Echo"
-        assert data["performance_score"] == 0.6
+        # performance_score is derived from the recorded scores (mean of the
+        # most recent ones); the supplied value is only the starting point.
+        assert data["performance_score"] == pytest.approx(0.55)
+        assert data["grade_history"] == {"Math": [0.5, 0.6]}
 
     def test_add_student_zero_performance(self, client, auth_h):
         sid = f"QA_ZERO_{uuid.uuid4().hex[:6]}"
@@ -599,10 +602,13 @@ class TestTriageAPI:
 
 class TestBulkUpdateAPI:
     def test_bulk_update_returns_200(self, client, auth_h):
+        sid = f"bulk_{uuid.uuid4().hex[:6]}"
+        client.post("/students", headers=auth_h, json={"student_id": sid, "name": "Bulk"})
         r = client.post("/bulk-update", headers=auth_h, json={
-            "entries": [{"student_id": "608041", "subject": "Math", "score": 0.8}]
+            "entries": [{"student_id": sid, "subject": "Math", "score": 0.8}]
         })
         assert r.status_code == 200
+        assert r.json()["processed"] == 1
 
     def test_without_auth_returns_401(self, client):
         assert client.post("/bulk-update", json={"entries": []}).status_code == 401

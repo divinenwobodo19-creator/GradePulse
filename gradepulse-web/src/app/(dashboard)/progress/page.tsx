@@ -5,6 +5,7 @@ import { api, type Recommendation } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Student } from "@/lib/types";
 import { scoreToGrade, scoreToPercentage, GRADE_COLORS, getStudentClassId } from "@/lib/types";
+import { NO_SCORE_LABEL, hasScores, overallPercentLabel } from "@/lib/scores";
 
 export default function ProgressPage() {
   const { user, loading: authLoading } = useAuth();
@@ -145,7 +146,7 @@ export default function ProgressPage() {
             ) : (
               <div className="space-y-0.5 max-h-[500px] overflow-y-auto">
                 {filtered.map((s) => {
-                  const grade = scoreToGrade(scoreToPercentage(s.performance_score));
+                  const grade = hasScores(s) ? scoreToGrade(scoreToPercentage(s.performance_score)) : null;
                   return (
                     <button
                       key={s.student_id}
@@ -177,8 +178,8 @@ export default function ProgressPage() {
                             <div className="caption text-text-muted font-mono">{s.student_id}</div>
                           </div>
                         </div>
-                        <span className={`badge ${GRADE_COLORS[grade]} shrink-0 ml-2`}>
-                          {grade}
+                        <span className={`badge ${grade ? GRADE_COLORS[grade] : "badge-neutral"} shrink-0 ml-2`}>
+                          {grade ?? NO_SCORE_LABEL}
                         </span>
                       </div>
                     </button>
@@ -207,6 +208,9 @@ export default function ProgressPage() {
                       </div>
                     </div>
                     {(() => {
+                      if (!hasScores(currentStudent)) {
+                        return <span className="grade-badge text-lg badge-neutral">{NO_SCORE_LABEL}</span>;
+                      }
                       const grade = scoreToGrade(scoreToPercentage(currentStudent.performance_score));
                       return (
                         <span className={`grade-badge text-lg ${GRADE_COLORS[grade]}`}>
@@ -221,7 +225,7 @@ export default function ProgressPage() {
                     <div>
                       <div className="caption text-text-muted mb-1">Score</div>
                       <div className="heading-2 text-navy">
-                        {scoreToPercentage(currentStudent.performance_score)}%
+                        {overallPercentLabel(currentStudent)}
                       </div>
                     </div>
                     <div>
@@ -241,7 +245,7 @@ export default function ProgressPage() {
                               currentStudent.performance_score >= 0.75 ? "success" :
                               currentStudent.performance_score >= 0.4 ? "" : "danger"
                             }`}
-                            style={{ width: `${currentStudent.performance_score * 100}%` }}
+                            style={{ width: hasScores(currentStudent) ? `${currentStudent.performance_score * 100}%` : "0%" }}
                           />
                         </div>
                       </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
 import type { Student, School, SchoolClass } from "@/lib/types";
 import { SUBJECTS } from "@/lib/types";
@@ -342,7 +343,7 @@ export default function StudentsPage() {
                     <td className="font-mono text-xs text-text-muted">{s.student_id}</td>
                     <td className="text-right">
                       <span className="badge badge-info font-mono">
-                        {Math.round(s.performance_score * 100)}%
+                        {overallPercentLabel(s)}
                       </span>
                     </td>
                     <td className="text-text-secondary">{s.current_topic}</td>

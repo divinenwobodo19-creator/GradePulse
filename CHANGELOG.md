@@ -11,17 +11,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Signup no longer joins an existing school by name.** `POST /auth/signup`, `POST /schools` and a first roster `POST /ingest` always create a new school owned by the caller; school names are labels and may repeat. Previously anyone who signed up with an existing school's name (or with no name, landing in the shared `MY SCHOOL`) could read that school's students.
 - **`/triage` is scoped before tiering.** The old post-filter never ran, so every school's students were returned; `total_students` and tier `count` now cover only the caller's (and unclaimed) students.
 - **`/summary` `student_count` is per school** (was platform-wide).
-- **Student ID clashes are rejected.** IDs are still global, so `POST /students` now returns **409** when the ID belongs to another school (it used to return that school's student), and a roster `POST /ingest` skips such rows with an error instead of moving the student into the uploader's school. Interim guard until IDs become per-school.
+- **Student IDs are per school.** Two schools can both have an `S001`; another school's student with the same ID can no longer be returned, edited or moved by a roster upload. Acting on an ID that is not in your school returns **404** (`/recommend` keeps **400**) where a foreign student used to return 403.
 - **Signup validation:** emails are format-checked and lower-cased, passwords need at least 8 characters (HTTP 422 otherwise). A duplicate email in different letter case now returns 400 instead of a 500.
 
 ### Added
 
+- **Student and score store.** Students and scores now live in SQLite (same file as the accounts, so scheduled backups cover them) instead of inside `brain_state.json`. Every score is a dated row with an optional test name; `grade_history` and `performance_score` are derived from those rows. On first start, students already in `brain_state.json` that belong to a school are moved across automatically.
+- **`POST /bulk-update` takes a sitting:** optional `assessed_on` (date, today by default) and `label` (e.g. "Week 4 test"). Re-sending the same student, subject, date and label corrects the earlier score instead of adding a second one.
+- **`GET /students/{student_id}/scores`** returns a student's dated score records.
 - **Roles.** Whoever creates a school at signup is its `admin`; existing accounts become admins. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.
 - **Teacher invites.** `POST /invites`, `GET /invites`, `DELETE /invites/{code}` (admin only). An invite is single-use and expires after 7 days; a teacher redeems it with `invite_code` on `POST /auth/signup` and joins that school as a `teacher`. This is now the only way to join a school someone else created.
 - **Frontend:** invite code field on signup (prefilled from `/signup?invite=CODE`), and an "Invite a Teacher" section in Settings for admins. Settings shows the real role.
 
 ### Changed
 
+- **`performance_score` is calculated**: the mean of the student's five most recent scores. It used to stay at whatever was supplied when the student was created. The supplied value is now only the starting point until a score exists.
+- **`/update` rewards are no longer stored as grades.** They train the engine but do not appear in `grade_history` or affect triage.
+- **Triage is computed from recorded scores** (same thresholds and response shape).
+- **Deleting a student, class or school archives** the students and their scores instead of erasing them; an archived student's ID can be reused.
+- **A fresh install starts empty.** The five sample students and eight sample content items are only seeded with `SEED_DEMO_DATA=true`. Students with no school ("unclaimed") no longer exist.
+- **Score sheets no longer rewrite the whole engine state** on every save; the engine state is saved by the periodic auto-save.
+- **Frontend:** scores, grades and progress show the calculated values, with a dash for students who have no scores yet. Score entry starts blank, shows each student's last score in the chosen subject, and has a test date and optional test name.
 - **Backup endpoints are operator-only.** `POST /backup`, `GET /backups` and `POST /backup/restore` now require `X-Operator-Key` matching the new `OPERATOR_KEY` env var, instead of any logged-in user. Unset key = disabled (scheduled backups still run). **Deployments must set `OPERATOR_KEY` to keep using these endpoints.**
 - **Admin-only actions:** renaming or deleting a school and deleting a class return 403 for teachers.
 - Frontend signup form enforces the same 8-character minimum.
