@@ -35,6 +35,7 @@ services:
       - BACKUP_DIR=/data/backups
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - OPERATOR_KEY=${OPERATOR_KEY:-}
+      - RECOMMENDATIONS_ENABLED=${RECOMMENDATIONS_ENABLED:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - gradepulse-data:/data
