@@ -1,8 +1,17 @@
+export type UserRole = "admin" | "teacher";
+
 export interface User {
   id: string;
   email: string;
   school_id: string;
   school_name: string;
+  role: UserRole;
+}
+
+export interface Invite {
+  code: string;
+  created_at: string;
+  expires_at: string;
 }
 
 export interface AuthResponse {
@@ -10,6 +19,7 @@ export interface AuthResponse {
   email: string;
   school_id: string;
   school_name: string;
+  role: UserRole;
   token: string;
 }
 

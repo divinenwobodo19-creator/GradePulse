@@ -14,8 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Student ID clashes are rejected.** IDs are still global, so `POST /students` now returns **409** when the ID belongs to another school (it used to return that school's student), and a roster `POST /ingest` skips such rows with an error instead of moving the student into the uploader's school. Interim guard until IDs become per-school.
 - **Signup validation:** emails are format-checked and lower-cased, passwords need at least 8 characters (HTTP 422 otherwise). A duplicate email in different letter case now returns 400 instead of a 500.
 
+### Added
+
+- **Roles.** Whoever creates a school at signup is its `admin`; existing accounts become admins. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.
+- **Teacher invites.** `POST /invites`, `GET /invites`, `DELETE /invites/{code}` (admin only). An invite is single-use and expires after 7 days; a teacher redeems it with `invite_code` on `POST /auth/signup` and joins that school as a `teacher`. This is now the only way to join a school someone else created.
+- **Frontend:** invite code field on signup (prefilled from `/signup?invite=CODE`), and an "Invite a Teacher" section in Settings for admins. Settings shows the real role.
+
 ### Changed
 
+- **Backup endpoints are operator-only.** `POST /backup`, `GET /backups` and `POST /backup/restore` now require `X-Operator-Key` matching the new `OPERATOR_KEY` env var, instead of any logged-in user. Unset key = disabled (scheduled backups still run). **Deployments must set `OPERATOR_KEY` to keep using these endpoints.**
+- **Admin-only actions:** renaming or deleting a school and deleting a class return 403 for teachers.
 - Frontend signup form enforces the same 8-character minimum.
 
 ## [0.2.1] - 2026-09-30

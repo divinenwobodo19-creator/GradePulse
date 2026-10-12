@@ -17,7 +17,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, schoolName: string) => Promise<void>;
+  signup: (email: string, password: string, schoolName: string, inviteCode?: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: data.email,
           school_id: data.school_id,
           school_name: data.school_name,
+          role: data.role,
         };
         cachedUser = u;
         setUser(u);
@@ -83,19 +84,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: data.email,
       school_id: data.school_id,
       school_name: data.school_name,
+      role: data.role,
     };
     cachedUser = u;
     setUser(u);
   }, []);
 
   const signup = useCallback(
-    async (email: string, password: string, schoolName: string) => {
-      const data = await api.signup(email, password, schoolName);
+    async (email: string, password: string, schoolName: string, inviteCode?: string) => {
+      const data = await api.signup(email, password, schoolName, inviteCode);
       const u: User = {
         id: data.id,
         email: data.email,
         school_id: data.school_id,
         school_name: data.school_name,
+        role: data.role,
       };
       cachedUser = u;
       setUser(u);

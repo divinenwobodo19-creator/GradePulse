@@ -177,14 +177,13 @@ Automatically (every 6 hours, keeps the last 24): `brain_state.json`, `class_con
 
 ### Manual backup via API
 
-```bash
-TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"your@email.com","password":"yourpassword"}' | \
-  python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+The backup endpoints act on every school's data, so they take the deployment's **operator key** (`OPERATOR_KEY` in `.env`), not a school login. With `OPERATOR_KEY` unset they return 403 for everyone; scheduled backups still run.
 
-curl -X POST http://localhost:8000/backup -H "Authorization: Bearer $TOKEN"     # create
-curl http://localhost:8000/backups -H "Authorization: Bearer $TOKEN"           # list
+```bash
+OPERATOR_KEY=...   # the value from .env
+
+curl -X POST http://localhost:8000/backup -H "X-Operator-Key: $OPERATOR_KEY"     # create
+curl http://localhost:8000/backups -H "X-Operator-Key: $OPERATOR_KEY"           # list
 ```
 
 ### Backup from the host
@@ -199,7 +198,7 @@ docker cp $(docker compose ps -q api):/data/backups ./local-backups
 
 ```bash
 curl -X POST "http://localhost:8000/backup/restore?backup_path=/data/backups/20260927_100000_123456" \
-  -H "Authorization: Bearer $TOKEN"
+  -H "X-Operator-Key: $OPERATOR_KEY"
 docker compose restart api
 ```
 

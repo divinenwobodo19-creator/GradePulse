@@ -2,6 +2,7 @@
 Authentication module — JWT + bcrypt + SQLite user store.
 """
 import os
+import secrets
 import sqlite3
 import sys
 import uuid
@@ -38,6 +39,9 @@ elif SECRET_KEY in PLACEHOLDER_SECRETS:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 ISSUER = "gradepulse"
+ROLE_ADMIN = "admin"      # owns the school: invites teachers, deletes classes/school
+ROLE_TEACHER = "teacher"  # joined through an invite
+INVITE_TTL_DAYS = 7
 DB_PATH = os.getenv("USER_DB_PATH", "gradepulse_users.db")
 
 security = HTTPBearer(auto_error=False)
@@ -59,6 +63,22 @@ def init_db():
             password_hash TEXT NOT NULL,
             school_id TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    # Accounts that pre-date roles each created their own school, so they
+    # become its admin.
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "role" not in columns:
+        conn.execute(f"ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT '{ROLE_ADMIN}'")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS invites (
+            code TEXT PRIMARY KEY,
+            school_id TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_by TEXT,
+            used_at TEXT
         )
     """)
     conn.commit()
@@ -143,11 +163,81 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
     return dict(user) if user else None
 
 
-def update_user_school(user_id: str, school_id: str):
+def update_user_school(user_id: str, school_id: str, role: Optional[str] = None):
     conn = _get_db()
-    conn.execute("UPDATE users SET school_id = ? WHERE id = ?", (school_id, user_id))
+    if role is None:
+        conn.execute("UPDATE users SET school_id = ? WHERE id = ?", (school_id, user_id))
+    else:
+        conn.execute("UPDATE users SET school_id = ?, role = ? WHERE id = ?", (school_id, role, user_id))
     conn.commit()
     conn.close()
+
+
+# ── Invites: the only way to join a school someone else created ────────────
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def create_invite(school_id: str, created_by: str) -> dict:
+    now = datetime.now(timezone.utc)
+    invite = {
+        "code": secrets.token_urlsafe(9),
+        "school_id": school_id,
+        "created_by": created_by,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(days=INVITE_TTL_DAYS)).isoformat(),
+    }
+    conn = _get_db()
+    conn.execute(
+        "INSERT INTO invites (code, school_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+        tuple(invite.values()),
+    )
+    conn.commit()
+    conn.close()
+    return invite
+
+
+def list_pending_invites(school_id: str) -> list:
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT code, created_at, expires_at FROM invites "
+        "WHERE school_id = ? AND used_by IS NULL AND expires_at > ? ORDER BY created_at DESC",
+        (school_id, _now_iso()),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def revoke_invite(code: str, school_id: str) -> bool:
+    conn = _get_db()
+    cur = conn.execute(
+        "DELETE FROM invites WHERE code = ? AND school_id = ? AND used_by IS NULL", (code, school_id)
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def get_usable_invite(code: str) -> Optional[dict]:
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM invites WHERE code = ? AND used_by IS NULL AND expires_at > ?", (code, _now_iso())
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def redeem_invite(code: str, user_id: str) -> bool:
+    """Mark an invite used. Single-use: False if it was taken in the meantime."""
+    conn = _get_db()
+    cur = conn.execute(
+        "UPDATE invites SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL AND expires_at > ?",
+        (user_id, _now_iso(), code, _now_iso()),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
@@ -159,6 +249,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     user = get_user_by_id(payload.get("sub"))
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role", ROLE_ADMIN) != ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Only a school admin can do this")
     return user
 
 

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import type { BrainSummary } from "@/lib/types";
+import type { BrainSummary, Invite } from "@/lib/types";
 
 export default function SettingsPage() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -12,6 +12,9 @@ export default function SettingsPage() {
   const [summary, setSummary] = useState<BrainSummary | null>(null);
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
   const [error, setError] = useState("");
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviting, setInviting] = useState(false);
+  const isAdmin = user?.role === "admin";
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (type: string, message: string) => {
@@ -57,6 +60,55 @@ export default function SettingsPage() {
       controller.abort();
     };
   }, [authLoading, user]);
+
+  useEffect(() => {
+    if (authLoading || !isAdmin) return;
+
+    const controller = new AbortController();
+    api
+      .listInvites(controller.signal)
+      .then(setInvites)
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setError(err instanceof Error ? err.message : "Failed to load invites");
+        }
+      });
+    return () => controller.abort();
+  }, [authLoading, isAdmin]);
+
+  const inviteLink = (code: string) => `${window.location.origin}/signup?invite=${encodeURIComponent(code)}`;
+
+  const handleCreateInvite = async () => {
+    setInviting(true);
+    try {
+      const invite = await api.createInvite();
+      setInvites((prev) => [invite, ...prev]);
+      showToast("success", "Invite created. Send the link to your teacher.");
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not create invite");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleCopyInvite = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(inviteLink(code));
+      showToast("success", "Invite link copied");
+    } catch {
+      showToast("error", "Could not copy. Select the code and copy it by hand.");
+    }
+  };
+
+  const handleRevokeInvite = async (code: string) => {
+    try {
+      await api.revokeInvite(code);
+      setInvites((prev) => prev.filter((i) => i.code !== code));
+      showToast("success", "Invite revoked");
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not revoke invite");
+    }
+  };
 
   const handleSaveBrain = async () => {
     setSaving(true);
@@ -126,11 +178,66 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center justify-between py-3.5">
               <span className="body text-text-secondary">Role</span>
-               <span className="badge badge-neutral">Not specified</span>
+              <span className="badge badge-neutral">{isAdmin ? "School admin" : "Teacher"}</span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Teachers (admin only) */}
+      {isAdmin && (
+        <div className="card">
+          <div className="card-body">
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <div>
+                <h2 className="heading-2 text-navy">Invite a Teacher</h2>
+                <p className="caption text-text-muted">
+                  Each link lets one teacher join {user?.school_name || "your school"} and expires after 7 days
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCreateInvite}
+                disabled={inviting}
+                aria-busy={inviting}
+                className="btn btn-primary"
+              >
+                {inviting ? "Creating..." : "Create Invite"}
+              </button>
+            </div>
+
+            {invites.length === 0 ? (
+              <p className="caption text-text-muted">No pending invites</p>
+            ) : (
+              <ul className="space-y-2">
+                {invites.map((invite) => (
+                  <li key={invite.code} className="flex flex-wrap items-center justify-between gap-3 p-4 bg-surface-elevated rounded-xl">
+                    <div className="min-w-0">
+                      <div className="font-mono text-sm text-navy break-all">{invite.code}</div>
+                      <div className="caption text-text-muted mt-0.5">
+                        Expires {new Date(invite.expires_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => handleCopyInvite(invite.code)} className="btn btn-secondary btn-sm">
+                        Copy Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRevokeInvite(invite.code)}
+                        aria-label={`Revoke invite ${invite.code}`}
+                        className="btn btn-ghost btn-sm text-danger"
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Algorithm Status */}
       {summary && (

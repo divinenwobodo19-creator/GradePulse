@@ -448,7 +448,37 @@ Force save brain state to disk.
 
 ---
 
+## Invites
+
+Admin only. A school's admin is whoever created it at signup; teachers join with an invite and get the `teacher` role. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.
+
+### POST /invites
+
+Create a single-use invite for the caller's school. Expires after 7 days.
+
+```json
+{ "code": "k3J9xQ2mVb1A", "created_at": "2026-10-12T09:00:00+00:00", "expires_at": "2026-10-19T09:00:00+00:00" }
+```
+
+A teacher redeems it by sending `invite_code` to `POST /auth/signup` (`school_name` is then ignored). An unknown, used or expired code returns 400 and no account is created.
+
+### GET /invites
+
+List the school's pending (unused, unexpired) invites.
+
+### DELETE /invites/{code}
+
+Revoke a pending invite. 404 if it is not a pending invite of the caller's school.
+
+### Admin-only school actions
+
+`PUT /schools/{school_id}`, `DELETE /schools/{school_id}` and `DELETE /classes/{school_id}/{class_id}` return 403 for teachers.
+
+---
+
 ## Backups
+
+These endpoints act on every school's data. They require the `X-Operator-Key` header to match the server's `OPERATOR_KEY`; a school login is neither needed nor sufficient. With `OPERATOR_KEY` unset they return 403.
 
 ### POST /backup
 
