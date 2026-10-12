@@ -93,6 +93,15 @@ export interface TriageResult {
   scope: string;
 }
 
+export interface IngestResult {
+  status: string;
+  report: {
+    stats: Record<string, number>;
+    errors: string[];
+    warnings: string[];
+  };
+}
+
 export interface RewardResult {
   reward: number;
 }

@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
+import RosterImportDialog from "@/components/RosterImportDialog";
 import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
 import type { Student, SchoolClass } from "@/lib/types";
-import { SUBJECTS } from "@/lib/types";
+import { SUBJECTS, getStudentClassId } from "@/lib/types";
 
 export default function StudentsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -20,9 +21,13 @@ export default function StudentsPage() {
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
   const [newTopic, setNewTopic] = useState("MATH");
+  const [newClass, setNewClass] = useState("");
+  // The student being edited; null while the dialog is adding a new one.
+  const [editing, setEditing] = useState<Student | null>(null);
   const [adding, setAdding] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newIdInput = useRef<HTMLInputElement>(null);
@@ -37,8 +42,28 @@ export default function StudentsPage() {
     setNewId("");
     setNewName("");
     setNewTopic("MATH");
+    setNewClass("");
+    setEditing(null);
     setShowModal(false);
   }, []);
+
+  const openAdd = () => {
+    setEditing(null);
+    setNewClass(selectedClass);
+    setShowModal(true);
+  };
+
+  const openEdit = (student: Student) => {
+    setEditing(student);
+    setNewId(student.student_id);
+    setNewName(student.name);
+    setNewTopic(student.current_topic || "MATH");
+    setNewClass(getStudentClassId(student) ?? "");
+    setShowModal(true);
+  };
+
+  const classLabel = (student: Student) =>
+    classes.find((c) => c.class_id === getStudentClassId(student))?.label ?? "";
 
   useEffect(() => {
     return () => {
@@ -161,24 +186,33 @@ export default function StudentsPage() {
     if (!newId.trim() || !newName.trim()) return;
     setAdding(true);
     try {
-      await api.addStudent({
-        student_id: newId.trim(),
-        name: newName.trim(),
-        current_topic: newTopic,
-        ...(selectedClass ? { metadata: { class_id: selectedClass } } : {}),
-      });
-      showToast("success", `Added ${newName.trim()} successfully`);
+      if (editing) {
+        await api.updateStudent(editing.student_id, {
+          name: newName.trim(),
+          current_topic: newTopic,
+          class_id: newClass,
+        });
+        showToast("success", `Saved ${newName.trim()}`);
+      } else {
+        await api.addStudent({
+          student_id: newId.trim(),
+          name: newName.trim(),
+          current_topic: newTopic,
+          ...(newClass ? { metadata: { class_id: newClass } } : {}),
+        });
+        showToast("success", `Added ${newName.trim()} successfully`);
+      }
       resetForm();
       refreshStudents();
     } catch (err) {
-      showToast("error", err instanceof Error ? err.message : "Failed to add student");
+      showToast("error", err instanceof Error ? err.message : "Failed to save student");
     } finally {
       setAdding(false);
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+    if (!confirm(`Remove ${name} from your school? Their scores will no longer appear in reports.`)) return;
     try {
       await api.deleteStudent(id);
       showToast("success", `Deleted ${name}`);
@@ -224,17 +258,22 @@ export default function StudentsPage() {
             Manage your student roster and track performance
           </p>
         </div>
-         <button
-           type="button"
-           onClick={() => setShowModal(true)}
-           className="btn btn-primary"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Add Student
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setShowImport(true)} className="btn btn-secondary">
+            Import Class List
+          </button>
+          <button
+            type="button"
+            onClick={openAdd}
+            className="btn btn-primary"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Student
+          </button>
+        </div>
       </div>
 
       {/* Filters & Search */}
@@ -292,7 +331,7 @@ export default function StudentsPage() {
               {search ? "Try a different search term" : "Add your first student to get started"}
             </p>
             {!search && (
-               <button type="button" onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">
+               <button type="button" onClick={openAdd} className="btn btn-primary btn-sm">
                 Add Student
               </button>
             )}
@@ -310,8 +349,9 @@ export default function StudentsPage() {
                  <tr>
                    <th scope="col">Student</th>
                    <th scope="col">ID</th>
+                   <th scope="col">Class</th>
                    <th scope="col" className="text-right">Score</th>
-                   <th scope="col">Topic</th>
+                   <th scope="col">Subject</th>
                    <th scope="col" className="text-right">Actions</th>
                  </tr>
                </thead>
@@ -327,13 +367,22 @@ export default function StudentsPage() {
                       </div>
                     </td>
                     <td className="font-mono text-xs text-text-muted">{s.student_id}</td>
+                    <td className="text-text-secondary">{classLabel(s) || "—"}</td>
                     <td className="text-right">
                       <span className="badge badge-info font-mono">
                         {overallPercentLabel(s)}
                       </span>
                     </td>
                     <td className="text-text-secondary">{s.current_topic}</td>
-                    <td className="text-right">
+                    <td className="text-right whitespace-nowrap">
+                       <button
+                         type="button"
+                         onClick={() => openEdit(s)}
+                         aria-label={`Edit ${s.name}`}
+                         className="text-xs text-navy hover:text-gold transition-colors font-medium mr-3"
+                       >
+                         Edit
+                       </button>
                        <button
                          type="button"
                          onClick={() => handleDelete(s.student_id, s.name)}
@@ -351,6 +400,19 @@ export default function StudentsPage() {
         )}
       </div>
 
+      {showImport && (
+        <RosterImportDialog
+          onClose={() => setShowImport(false)}
+          onImported={(count) => {
+            setShowImport(false);
+            showToast("success", `Imported ${count} student${count !== 1 ? "s" : ""}`);
+            // The file may have created classes as well as students.
+            if (selectedSchool) api.getClasses(selectedSchool).then(setClasses).catch(() => undefined);
+            refreshStudents();
+          }}
+        />
+      )}
+
       {/* Add Student Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => !adding && resetForm()}>
@@ -363,11 +425,11 @@ export default function StudentsPage() {
           >
             <div className="px-6 py-5 border-b border-border">
               <div className="flex items-center justify-between">
-                <h2 id="add-student-title" className="heading-2 text-navy">Add New Student</h2>
+                <h2 id="add-student-title" className="heading-2 text-navy">{editing ? "Edit Student" : "Add New Student"}</h2>
                 <button
                   type="button"
                   onClick={() => !adding && resetForm()}
-                  aria-label="Close add student dialog"
+                  aria-label="Close student dialog"
                   className="text-text-muted hover:text-text-primary transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -391,9 +453,12 @@ export default function StudentsPage() {
                    placeholder="e.g. S001, STU005"
                    autoComplete="off"
                    aria-describedby="student-id-hint"
+                   disabled={editing !== null}
                    required
                  />
-                 <span id="student-id-hint" className="input-hint">Unique identifier for this student</span>
+                 <span id="student-id-hint" className="input-hint">
+                   {editing ? "The ID cannot be changed" : "Unique within your school, e.g. an admission number"}
+                 </span>
               </div>
 
               <div className="input-group">
@@ -425,6 +490,22 @@ export default function StudentsPage() {
                 </select>
               </div>
 
+              <div className="input-group">
+                <label className="input-label" htmlFor="student-class">Class</label>
+                <select
+                  id="student-class"
+                  name="class_id"
+                  value={newClass}
+                  onChange={(e) => setNewClass(e.target.value)}
+                  className="input select"
+                >
+                  <option value="">No class</option>
+                  {classes.map((c) => (
+                    <option key={c.class_id} value={c.class_id}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
@@ -443,8 +524,10 @@ export default function StudentsPage() {
                   {adding ? (
                     <>
                       <div className="spinner spinner-sm" style={{ borderTopColor: 'var(--color-navy)' }} />
-                      Adding...
+                      Saving...
                     </>
+                  ) : editing ? (
+                    "Save Changes"
                   ) : (
                     "Add Student"
                   )}
