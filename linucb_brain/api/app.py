@@ -726,7 +726,7 @@ def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
     # Triage is a school report over recorded scores: only the caller's own
     # students who have been assessed in the subject are tiered.
     results = []
-    for rec in store.list_students(user.get("school_id", "")):
+    for rec in store.list_students(user.get("school_id", ""), request.class_id or ""):
         grades = rec.grade_history.get(request.subject, [])
         if grades:
             results.append({

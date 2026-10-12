@@ -83,10 +83,10 @@ function SignupForm() {
             {/* Feature List */}
             <div className="space-y-4 text-left max-w-xs mx-auto mb-12">
               {[
-                { icon: "01", text: "AI-powered performance triaging" },
-                { icon: "02", text: "Personalized content recommendations" },
-                { icon: "03", text: "Real-time student progress tracking" },
-                { icon: "04", text: "LinUCB + Neural Hybrid engine" },
+                { icon: "01", text: "Weekly tiers on WAEC grade bands" },
+                { icon: "02", text: "Grades that update with every test" },
+                { icon: "03", text: "Progress tracking for every student" },
+                { icon: "04", text: "Invite your teachers with one link" },
               ].map((feature) => (
                 <div key={feature.icon} className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-lg bg-gold/15 flex items-center justify-center text-gold text-xs font-bold shrink-0">
@@ -227,6 +227,10 @@ function SignupForm() {
             Already have an account?{" "}
             <Link href="/login" className="text-gold font-semibold hover:text-gold-dark transition-colors">
               Sign in
+            </Link>
+            {" · "}
+            <Link href="/pricing" className="text-gold font-semibold hover:text-gold-dark transition-colors">
+              Pricing
             </Link>
           </p>
         </div>

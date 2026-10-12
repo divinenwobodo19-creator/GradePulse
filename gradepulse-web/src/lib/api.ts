@@ -275,8 +275,13 @@ class ApiClient {
     });
   }
 
-  async triage(subject: string, signal?: AbortSignal) {
-    return this.request<TriageResult>("POST", "/triage", { subject }, signal);
+  async triage(subject: string, signal?: AbortSignal, classId?: string) {
+    return this.request<TriageResult>(
+      "POST",
+      "/triage",
+      { subject, ...(classId ? { class_id: classId } : {}) },
+      signal
+    );
   }
 
   async summary(signal?: AbortSignal) {

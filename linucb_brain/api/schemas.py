@@ -138,6 +138,7 @@ class ScoreRecord(BaseModel):
 
 class TriageRequest(BaseModel):
     subject: str
+    class_id: Optional[str] = None  # limit the report to one class
 
 class UpdateStudentRequest(BaseModel):
     name: Optional[str] = None

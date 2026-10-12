@@ -145,7 +145,7 @@ export default function DashboardLayout({
             <Image src="/logo.png" alt="GradePulse" width={32} height={32} className="w-8 h-8 rounded-lg" />
             <div>
               <span className="text-base font-bold tracking-tight text-white">GradePulse</span>
-              <div className="text-[10px] text-white/30 font-medium uppercase tracking-widest">AI Engine</div>
+              <div className="text-[10px] text-white/30 font-medium uppercase tracking-widest">Student Performance</div>
             </div>
           </Link>
         </div>
@@ -168,14 +168,6 @@ export default function DashboardLayout({
             );
           })}
         </nav>
-
-        {/* Engine Status */}
-        <div className="mx-3 mb-2 px-3 py-2.5 bg-white/[0.04] rounded-lg">
-          <div className="flex items-center gap-2">
-            <span className="status-dot active" />
-            <span className="text-[11px] text-white/40 font-medium">Engine Running</span>
-          </div>
-        </div>
 
         {/* User Section */}
         <div className="px-4 py-4 border-t border-white/[0.08]">

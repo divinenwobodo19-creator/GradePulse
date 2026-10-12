@@ -378,6 +378,8 @@ Every recorded score for one student, oldest first.
 
 ### POST /triage
 
+Optional `class_id` in the body limits the report to one class of the caller's school.
+
 Group students by predicted performance.
 
 **Request:**

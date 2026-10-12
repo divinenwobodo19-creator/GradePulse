@@ -165,3 +165,17 @@ def test_recommend_works_for_a_stored_student(client, school):
     }).status_code == 200
     r = client.post("/recommend", headers=school["h"], json={"student_id": "S001", "top_n": 1})
     assert r.status_code == 200 and len(r.json()) == 1
+
+
+def test_triage_can_be_limited_to_one_class(client, school):
+    class_id = client.post(f"/classes/{school['id']}", headers=school["h"], json={"label": "JSS2B"}).json()["class_id"]
+    _add(client, school, "IN", class_id=class_id)
+    _add(client, school, "OUT")
+    _enter(client, school, 0.2, "IN")
+    _enter(client, school, 0.9, "OUT")
+
+    whole = client.post("/triage", headers=school["h"], json={"subject": "MATH"}).json()
+    one = client.post("/triage", headers=school["h"], json={"subject": "MATH", "class_id": class_id}).json()
+    assert whole["total_students"] == 2
+    assert one["total_students"] == 1
+    assert [s["student_id"] for s in one["tiers"]["remediation"]["students"]] == ["IN"]

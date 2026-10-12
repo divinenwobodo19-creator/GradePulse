@@ -56,7 +56,7 @@ export default function TriagePage() {
         <div className="page-header-left">
           <h1 className="heading-display text-navy">Student Triage</h1>
           <p className="body text-text-secondary">
-            Classify students into performance tiers using the AI engine
+            Group students by their average score in a subject, on WAEC grade bands
           </p>
         </div>
       </div>
@@ -66,7 +66,6 @@ export default function TriagePage() {
         <div className="card-body">
           <div className="flex flex-wrap items-end gap-4">
             <div className="input-group">
-              <label className="input-label">Subject</label>
               <label className="input-label" htmlFor="triage-subject">Subject</label>
               <select
                 id="triage-subject"

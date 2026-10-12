@@ -55,15 +55,15 @@ export default function LoginPage() {
             </div>
 
             <p className="text-lg text-white/60 leading-relaxed mb-12">
-              AI-powered student performance intelligence built for Nigerian schools
+See every week which students are falling behind, in every subject
             </p>
 
             {/* Feature Pills */}
             <div className="space-y-3 text-left max-w-xs mx-auto mb-12">
               {[
-                "LinUCB + Neural Hybrid recommendation engine",
-                "Automated performance triage by subject",
-                "Real-time brain state persistence",
+                "Enter the weekly test scores you already collect",
+                "Students grouped by WAEC grade bands, per subject",
+                "Each school's data is private to its own teachers",
               ].map((feature) => (
                 <div key={feature} className="flex items-center gap-3">
                   <div className="w-5 h-5 rounded-full bg-gold/20 flex items-center justify-center shrink-0">
@@ -74,19 +74,6 @@ export default function LoginPage() {
               ))}
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-6 pt-8 border-t border-white/10">
-              {[
-                { value: "94%", label: "Accuracy" },
-                { value: "3,120", label: "Sessions" },
-                { value: "5x", label: "Faster" },
-              ].map((stat) => (
-                <div key={stat.label} className="text-center">
-                  <div className="text-2xl font-bold text-gold">{stat.value}</div>
-                  <div className="text-xs text-white/40 mt-1 uppercase tracking-wider">{stat.label}</div>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>
@@ -173,16 +160,12 @@ export default function LoginPage() {
             <Link href="/signup" className="text-gold font-semibold hover:text-gold-dark transition-colors">
               Create one
             </Link>
+            {" · "}
+            <Link href="/pricing" className="text-gold font-semibold hover:text-gold-dark transition-colors">
+              Pricing
+            </Link>
           </p>
 
-          {process.env.NODE_ENV !== "production" && (
-            <div className="mt-6 p-4 bg-surface-elevated rounded-lg border border-border">
-              <p className="text-xs font-medium text-text-secondary mb-2">Demo Credentials</p>
-              <div className="space-y-1">
-                <p className="text-xs text-text-muted font-mono">demo@gradepulse.com / demo1234</p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

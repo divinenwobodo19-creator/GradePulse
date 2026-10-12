@@ -13,7 +13,7 @@ const plans = [
       "1 teacher account",
       "Up to 30 students",
       "1 school",
-      "AI-powered recommendations",
+      "Weekly tiers by subject",
       "Student triage",
       "Score entry",
       "Progress tracking",

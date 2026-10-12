@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Student } from "@/lib/types";
-import { SUBJECTS } from "@/lib/types";
+import type { SchoolClass, Student } from "@/lib/types";
+import { SUBJECTS, getStudentClassId } from "@/lib/types";
 import { scoreToGrade } from "@/lib/types";
 import {
   NO_SCORE_LABEL,
@@ -23,6 +23,8 @@ export default function ScoresPage() {
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
   const [subject, setSubject] = useState("MATH");
   const [assessedOn, setAssessedOn] = useState(todayIsoDate);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [classId, setClassId] = useState("");
   const [label, setLabel] = useState("");
   const [scores, setScores] = useState<Record<string, string>>({});
   const [modified, setModified] = useState<Set<string>>(new Set());
@@ -69,6 +71,9 @@ export default function ScoresPage() {
         const data = await api.getStudents(undefined, undefined, controller.signal);
         if (cancelled) return;
         applyStudents(data);
+        if (user?.school_id) {
+          api.getClasses(user.school_id, controller.signal).then(setClasses).catch(() => undefined);
+        }
       } catch (err) {
         if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
           setError(err instanceof Error ? err.message : "Failed to load students");
@@ -139,6 +144,9 @@ export default function ScoresPage() {
   };
 
   const modifiedCount = modified.size;
+  // Scores already typed for students outside the chosen class are kept and
+  // still saved; the filter only shortens the list on screen.
+  const visible = classId ? students.filter((s) => getStudentClassId(s) === classId) : students;
 
   if (authLoading || loading) {
     return (
@@ -198,6 +206,23 @@ export default function ScoresPage() {
                 </select>
               </div>
 
+              {classes.length > 0 && (
+                <div className="input-group">
+                  <label className="input-label" htmlFor="score-class">Class</label>
+                  <select
+                    id="score-class"
+                    value={classId}
+                    onChange={(e) => setClassId(e.target.value)}
+                    className="input select w-auto min-w-[140px]"
+                  >
+                    <option value="">All classes</option>
+                    {classes.map((c) => (
+                      <option key={c.class_id} value={c.class_id}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="input-group">
                 <label className="input-label" htmlFor="score-date">Test date</label>
                 <input
@@ -246,7 +271,7 @@ export default function ScoresPage() {
 
         {/* Score Table */}
         <div className="table-wrapper">
-          {students.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -257,14 +282,18 @@ export default function ScoresPage() {
               </div>
               <h3 className="heading-3 text-navy mb-1">No students found</h3>
               <p className="body-sm text-text-muted">
-                Go to <strong>Students</strong> to add students first.
+                {classId ? (
+                  "No students in this class yet."
+                ) : (
+                  <>Go to <strong>Students</strong> to add students first.</>
+                )}
               </p>
             </div>
           ) : (
             <>
               <div className="px-5 py-3 border-b border-border flex items-center justify-between">
                 <span className="body-sm text-text-secondary">
-                  {students.length} student{students.length !== 1 ? "s" : ""} &middot; {subject}
+                  {visible.length} student{visible.length !== 1 ? "s" : ""} &middot; {subject}
                 </span>
                 {modifiedCount > 0 && (
                   <button
@@ -300,7 +329,7 @@ export default function ScoresPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((s) => {
+                  {visible.map((s) => {
                     const last = latestSubjectScore(s, subject);
                     const lastPct = last === null ? null : scoreToPercent(last);
                     const grade = lastPct === null ? NO_SCORE_LABEL : scoreToGrade(lastPct);
