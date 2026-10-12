@@ -6,6 +6,8 @@
 
 > **Status banner (2026-09-27):** `/recommend` now **always returns a JSON array** (see §8 + `/recommend` row). Class membership (`class_id`/`metadata.class_id`) and the triage payload were resolved end-to-end on 2026-09-27 (class_id + school_id are on every student response). All school/student/class/brain endpoints are now **school-scoped server-side** (Phase 2): cross-school requests → 403, `GET /students` ignores a foreign `school_id` filter, unclaimed students (`school_id: ""`) stay visible to any authenticated user until claimed, signup/login are rate-limited (429), and every user must **re-login once** (old tokens invalidated by `iss`/`aud`/`iat` validation). Backend suite: **352 passed / 0 failed** (315 offline + 37 live on `:8000`).
 
+> **Contract change (2026-10-10, unreleased):** `POST /auth/signup` now returns **422** for a malformed email or a password under 8 characters, and always creates a **new** school for the caller — it never attaches the account to an existing school with the same name. `POST /triage` and `GET /summary` `student_count` are scoped to the caller's school. `POST /students` returns **409** when the student ID already belongs to another school. Response shapes are unchanged. Teachers joining an existing school will come through invites (not built yet).
+
 ---
 
 ## 1. TL;DR

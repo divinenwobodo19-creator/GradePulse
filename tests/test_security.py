@@ -97,10 +97,19 @@ def test_foreign_student_actions_blocked(client):
                        json={"entries": [{"student_id": sid, "subject": "Math", "score": 0.5}]}).status_code == 403
 
     # triage is scoped to the caller's own (and unclaimed) students
+    # (B's student needs a Science score, or triage would skip it regardless.)
+    assert client.post("/bulk-update", headers=_hdr(tok_b), json={
+        "entries": [{"student_id": sid, "subject": "Science", "score": 0.2}],
+    }).status_code == 200
     triage = client.post("/triage", headers=_hdr(tok_a), json={"subject": "Science"}).json()
-    all_ids = {s["student_id"] for tier in triage.values()
-               if isinstance(tier, dict) for s in tier.get("students", [])}
+    all_ids = {s["student_id"] for tier in triage["tiers"].values() for s in tier["students"]}
     assert sid not in all_ids
+    assert triage["total_students"] == len(all_ids)
+    assert all(tier["count"] == len(tier["students"]) for tier in triage["tiers"].values())
+
+    # ...and B does see their own student there.
+    own = client.post("/triage", headers=_hdr(tok_b), json={"subject": "Science"}).json()
+    assert sid in {s["student_id"] for s in own["tiers"]["remediation"]["students"]}
 
 
 def test_school_and_class_crud_scoped(client):
@@ -205,3 +214,87 @@ def test_dev_placeholder_secret_warns_but_boots():
     )
     assert r.returncode == 0
     assert "OK" in r.stdout
+
+# ── Signup: no joining by name, validated credentials ─────────────────────
+
+def test_signup_with_existing_school_name_creates_a_separate_school(client):
+    name = f"Shared Name {uuid.uuid4().hex[:6]}"
+    owner = client.post("/auth/signup", json={
+        "email": f"owner_{uuid.uuid4().hex[:6]}@sec.local", "password": "Passw0rd!", "school_name": name,
+    }).json()
+    sid = f"own_{uuid.uuid4().hex[:6]}"
+    assert client.post("/students", headers=_hdr(owner["token"]), json={
+        "student_id": sid, "name": "Owner Student",
+    }).status_code == 200
+
+    stranger = client.post("/auth/signup", json={
+        "email": f"stranger_{uuid.uuid4().hex[:6]}@sec.local", "password": "Passw0rd!",
+        "school_name": name.lower(),
+    }).json()
+    assert stranger["school_id"] != owner["school_id"]
+    assert client.get("/students", headers=_hdr(stranger["token"])).json() == []
+
+
+def test_default_school_is_not_shared_between_signups(client):
+    ids = {
+        client.post("/auth/signup", json={
+            "email": f"nodefault_{uuid.uuid4().hex[:6]}@sec.local", "password": "Passw0rd!",
+        }).json()["school_id"]
+        for _ in range(2)
+    }
+    assert len(ids) == 2
+
+
+@pytest.mark.parametrize("payload", [
+    {"email": "short@sec.local", "password": "1234567"},
+    {"email": "not-an-email", "password": "Passw0rd!"},
+])
+def test_signup_rejects_weak_password_and_bad_email(client, payload):
+    assert client.post("/auth/signup", json=payload).status_code == 422
+
+
+def test_signup_email_is_case_insensitive(client):
+    local = f"case_{uuid.uuid4().hex[:6]}"
+    assert client.post("/auth/signup", json={
+        "email": f"{local}@sec.local", "password": "Passw0rd!",
+    }).status_code == 200
+    r = client.post("/auth/signup", json={"email": f"{local.upper()}@SEC.local", "password": "Passw0rd!"})
+    assert r.status_code == 400
+
+
+def test_summary_student_count_is_per_school(client):
+    tok_a, _ = _signup(client, "eta")
+    tok_b, _ = _signup(client, "theta")
+    for i in range(2):
+        assert client.post("/students", headers=_hdr(tok_a), json={
+            "student_id": f"eta_{uuid.uuid4().hex[:6]}", "name": f"Eta {i}",
+        }).status_code == 200
+    assert client.get("/summary", headers=_hdr(tok_a)).json()["student_count"] == 2
+    assert client.get("/summary", headers=_hdr(tok_b)).json()["student_count"] == 0
+
+
+# ── Student IDs are global: a clash must never expose or move a student ────
+
+def test_student_id_clash_across_schools_is_rejected(client):
+    tok_a, sch_a = _signup(client, "iota")
+    tok_b, _ = _signup(client, "kappa")
+    sid = f"clash_{uuid.uuid4().hex[:6]}"
+    assert client.post("/students", headers=_hdr(tok_a), json={
+        "student_id": sid, "name": "A Original",
+    }).status_code == 200
+
+    r = client.post("/students", headers=_hdr(tok_b), json={"student_id": sid, "name": "B Copy"})
+    assert r.status_code == 409
+    assert "A Original" not in r.text
+
+    # A roster upload from B cannot take the student over either.
+    r = client.post(
+        "/ingest", headers=_hdr(tok_b),
+        files={"file": ("roster.csv", f"student_id,name\n{sid},B Copy\n".encode(), "text/csv")},
+        data={"type": "students"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["report"]["stats"]["students_skipped"] == 1
+    owned = client.get("/students", headers=_hdr(tok_a)).json()
+    assert [(s["student_id"], s["name"], s["school_id"]) for s in owned] == [(sid, "A Original", sch_a)]
+    assert client.get("/students", headers=_hdr(tok_b)).json() == []

@@ -131,6 +131,14 @@ def ensure_school(registry: dict, name: str = DEFAULT_SCHOOL) -> dict:
     return school
 
 
+def create_school(registry: dict, name: str = DEFAULT_SCHOOL) -> dict:
+    """Always create a new school. Names are labels, not identifiers, so two
+    schools may share one; membership is never granted by matching a name."""
+    school = {"school_id": _new_id(), "name": normalize_label(name) or DEFAULT_SCHOOL, "classes": []}
+    registry["schools"].append(school)
+    return school
+
+
 def add_class(registry: dict, school_id: str, label: str) -> Optional[dict]:
     """Add a class to a school if the label doesn't already collide within that school."""
     school = get_school_by_id(registry, school_id)

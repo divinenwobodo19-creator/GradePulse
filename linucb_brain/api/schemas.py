@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -57,10 +58,28 @@ class BrainSummary(BaseModel):
     cumulative_regret: float
     last_neural_score: Optional[float]
 
+PASSWORD_MIN_LENGTH = 8
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 class SignupRequest(BaseModel):
     email: str
     password: str
     school_name: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not _EMAIL_RE.match(value):
+            raise ValueError("Enter a valid email address")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def _check_password(cls, value: str) -> str:
+        if len(value) < PASSWORD_MIN_LENGTH:
+            raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
+        return value
 
 class LoginRequest(BaseModel):
     email: str
