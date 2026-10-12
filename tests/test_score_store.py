@@ -220,3 +220,19 @@ def test_roster_dry_run_reports_without_saving(client, school):
     assert (stats["students_valid"], stats["students_skipped"]) == (1, 1)
     assert client.get("/students", headers=school["h"]).json() == []
     assert client.get(f"/classes/{school['id']}", headers=school["h"]).json() == []
+
+
+def test_class_list_can_be_uploaded_as_an_excel_file(client, school, tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.Workbook()
+    for row in (["Student ID", "Name", "Class Label"], ["X1", "Ada Obi", "JSS1A"], ["X2", "Tobi Ade", "JSS1A"]):
+        workbook.active.append(row)
+    path = tmp_path / "class_list.xlsx"
+    workbook.save(path)
+
+    r = client.post("/ingest", headers=school["h"], data={"type": "students"},
+                    files={"file": ("class_list.xlsx", path.read_bytes(),
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 200, r.text
+    assert r.json()["report"]["stats"]["students_valid"] == 2
+    assert sorted(s["student_id"] for s in client.get("/students", headers=school["h"]).json()) == ["X1", "X2"]

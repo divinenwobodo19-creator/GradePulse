@@ -119,10 +119,35 @@ class ValidationReport:
 
 # ── File Readers ───────────────────────────────────────────────────────────────
 
+def _clean_header(name) -> str:
+    """'  Student ID ' -> 'student_id', so hand-made spreadsheets match the expected columns."""
+    return "_".join(str(name).strip().lower().split())
+
+
+def _clean_rows(raw_rows) -> List[Dict]:
+    """Normalise headers, trim values, and drop columns with no header and rows with no values
+    (spreadsheets often carry blank, formatted rows below the data)."""
+    rows = []
+    for raw in raw_rows:
+        row = {}
+        for key, value in raw.items():
+            if key is None:
+                continue
+            header = _clean_header(key)
+            if not header or header.startswith("unnamed:"):
+                continue
+            row[header] = value.strip() if isinstance(value, str) else value
+        if any(v not in ("", None) for v in row.values()):
+            rows.append(row)
+    return rows
+
+
 def read_csv(filepath: str) -> List[Dict]:
     """Read CSV file, handling various encodings and edge cases."""
     rows = []
-    encodings = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+    # utf-8-sig first: Excel's "CSV UTF-8" export starts with a byte-order mark
+    # that would otherwise end up glued to the first header.
+    encodings = ["utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]
     for enc in encodings:
         try:
             with open(filepath, "r", encoding=enc, newline="") as f:
@@ -133,11 +158,7 @@ def read_csv(filepath: str) -> List[Dict]:
                     dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
                 except csv.Error:
                     dialect = csv.excel
-                reader = csv.DictReader(f, dialect=dialect)
-                for row in reader:
-                    # Strip whitespace from keys and values
-                    cleaned = {k.strip(): v.strip() if isinstance(v, str) else v for k, v in row.items() if k}
-                    rows.append(cleaned)
+                rows = _clean_rows(csv.DictReader(f, dialect=dialect))
             return rows
         except (UnicodeDecodeError, UnicodeError):
             continue
@@ -150,9 +171,10 @@ def read_excel(filepath: str) -> List[Dict]:
         import pandas as pd
     except ImportError:
         raise ImportError("pandas is required for Excel files. Install with: pip install pandas openpyxl")
+    # .xlsx is read with openpyxl and .xls with xlrd; both are in requirements.txt.
     df = pd.read_excel(filepath, dtype=str)
     df = df.fillna("")
-    return df.to_dict("records")
+    return _clean_rows(df.to_dict("records"))
 
 
 def read_data_file(filepath: str) -> List[Dict]:

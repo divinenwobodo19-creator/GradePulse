@@ -486,3 +486,49 @@ class TestValidationReport:
             report.error(f"Error {i}")
         summary = report.summary()
         assert "... and 5 more" in summary
+
+
+# ── Spreadsheets as teachers actually make them ──────────────────────────────
+
+def _write_xlsx(path, rows):
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    for row in rows:
+        sheet.append(row)
+    workbook.save(path)
+
+
+class TestSpreadsheetFiles:
+    def test_read_xlsx_with_messy_headers_and_blank_rows(self, tmp_path):
+        path = tmp_path / "class_list.xlsx"
+        _write_xlsx(path, [
+            [" Student ID ", "Name", "Class Label", None],
+            [1001, "  Ada Obi ", "JSS1A", None],
+            ["1002", "Tobi Ade", "JSS1A", None],
+            [None, None, None, None],          # blank formatted row
+        ])
+        assert read_data_file(str(path)) == [
+            {"student_id": "1001", "name": "Ada Obi", "class_label": "JSS1A"},
+            {"student_id": "1002", "name": "Tobi Ade", "class_label": "JSS1A"},
+        ]
+
+    def test_csv_saved_from_excel_with_byte_order_mark(self, tmp_path):
+        path = tmp_path / "class_list.csv"
+        path.write_bytes("﻿Student ID,Name\r\nS1,Ada Obi\r\n,\r\n".encode("utf-8"))
+        assert read_data_file(str(path)) == [{"student_id": "S1", "name": "Ada Obi"}]
+
+    def test_xlsx_roster_ingests_like_csv(self, tmp_path):
+        path = tmp_path / "class_list.xlsx"
+        _write_xlsx(path, [
+            ["student_id", "name", "class_label", "grade_history_math"],
+            ["S1", "Ada Obi", "JSS1A", "0.5;0.7"],
+            ["S2", "Tobi Ade", "JSS1B", ""],
+        ])
+        registry = {"term_subjects": [], "schools": [{"school_id": "sch1", "name": "TEST", "classes": []}]}
+        students = {}
+        report = ingest_students(str(path), registry, students, school_id="sch1")
+        assert report.errors == []
+        assert report.stats["students_valid"] == 2
+        assert students["S1"].grade_history == {"MATH": [0.5, 0.7]}
+        assert {c["label"] for c in registry["schools"][0]["classes"]} == {"JSS1A", "JSS1B"}

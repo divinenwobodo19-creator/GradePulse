@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Excel class lists failed to import** ("Missing optional dependency 'openpyxl'"). `openpyxl` (for .xlsx) and `xlrd` (for .xls) are now in `requirements.txt`, so the Docker image can read them too.
+- **CSV files saved from Excel as "CSV UTF-8"** lost their first column to a hidden byte-order mark, so `student_id` was reported missing.
+- **Spreadsheet headers are matched loosely**: `Student ID`, ` student_id ` and `STUDENT_ID` all work. Blank rows below the data, which spreadsheets often carry, are skipped instead of reported as errors.
+
 ### Security
 
 - **Signup no longer joins an existing school by name.** `POST /auth/signup`, `POST /schools` and a first roster `POST /ingest` always create a new school owned by the caller; school names are labels and may repeat. Previously anyone who signed up with an existing school's name (or with no name, landing in the shared `MY SCHOOL`) could read that school's students.
