@@ -17,7 +17,8 @@ from ..core.reward import calculate_reward
 from ..sync import BrainSynchronizer
 from ..backup import BackupManager
 from ..registry import (
-    load_registry, save_registry, ensure_school, add_class, remove_class,
+    load_registry, save_registry, add_class, remove_class,
+    create_school as registry_create_school,
     get_schools, get_classes, get_school_by_id, get_class_by_id,
 )
 from .auth import (
@@ -288,7 +289,10 @@ def signup(request: Request, signup_request: SignupRequest):
         raise HTTPException(status_code=429, detail="Too many signups from this address — try again later")
     user = create_user(signup_request.email, signup_request.password)
     registry = _get_registry()
-    school = ensure_school(registry, f"{signup_request.school_name.strip().upper()}" if signup_request.school_name else "MY SCHOOL")
+    # Signup always creates the caller's OWN school. Matching an existing
+    # school by name used to attach the new account to it, which let anyone
+    # who knew a school's name read its students.
+    school = registry_create_school(registry, signup_request.school_name or "MY SCHOOL")
     update_user_school(user["id"], school["school_id"])
     _save_registry(registry)
     token = create_access_token({"sub": user["id"]})
@@ -341,7 +345,7 @@ def list_schools(user: dict = Depends(get_current_user)):
 @app.post("/schools", response_model=SchoolResponse)
 def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current_user)):
     registry = _get_registry()
-    school = ensure_school(registry, request.name.strip().upper())
+    school = registry_create_school(registry, request.name)
     _save_registry(registry)
     if not user.get("school_id"):
         update_user_school(user["id"], school["school_id"])
@@ -460,6 +464,11 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
         class_id = student.metadata.get("class_id") or student.class_id or ""
         if class_id:
             _validate_class_belongs_to_user(user, class_id)
+        # Student IDs are still global, and add_student() returns the existing
+        # record on a clash — which would hand back another school's student.
+        existing = brain_instance.students.get(student.student_id)
+        if existing is not None and existing.school_id and existing.school_id != user.get("school_id", ""):
+            raise HTTPException(status_code=409, detail="That student ID is already in use — choose a different one")
         brain_instance.add_student(
             student.student_id, student.name,
             grade_history=student.grade_history,
@@ -566,15 +575,12 @@ def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_use
 
 @app.post("/triage")
 def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
-    result = brain_instance.triage(request.subject)
-    # Triage is a school report: only the caller's own (and unclaimed) students.
-    for tier_name, tier in result.items():
-        if isinstance(tier, dict) and isinstance(tier.get("students"), list):
-            tier["students"] = [
-                s for s in tier["students"]
-                if _owns_or_unclaimed(brain_instance.students.get(s["student_id"]), user)
-            ]
-    return result
+    # Triage is a school report: only the caller's own (and unclaimed)
+    # students are tiered, so the counts are scoped as well as the names.
+    return brain_instance.triage(
+        request.subject,
+        student_filter=lambda s: _owns_or_unclaimed(s, user),
+    )
 
 
 @app.post("/calculate-reward")
@@ -589,8 +595,9 @@ def get_reward(request: RewardRequest, user: dict = Depends(get_current_user)):
 @app.get("/summary", response_model=BrainSummary)
 def get_summary(user: dict = Depends(get_current_user)):
     score = brain_instance.last_neural_score
+    user_school = user.get("school_id", "")
     return {
-        "student_count": len(brain_instance.students),
+        "student_count": len(_get_class_students(school_id=user_school)) if user_school else 0,
         "content_count": len(brain_instance.contents),
         "total_sessions": brain_instance.update_count,
         "model_type": brain_instance.model_type,
@@ -753,16 +760,18 @@ async def ingest_data(
                     dry_run=dry_run,
                 )
             else:
-                # No school yet (or a dangling one): resolve from the form
-                # (or default) and attach it.
+                # No school yet (or a dangling one): the roster goes into a
+                # NEW school owned by the caller. A form school/school_id is
+                # only a label here and can never attach them to an existing
+                # school. (On dry_run the registry is not saved.)
+                new_school = registry_create_school(registry, school or "MY SCHOOL")
                 report = ingest_students(
                     tmp_path, registry, brain_instance.students,
-                    school_id=school_id, school_name=school,
+                    school_id=new_school["school_id"], school_name=None,
                     dry_run=dry_run,
                 )
                 if not dry_run:
-                    resolved = school_id or ensure_school(registry, (school or "MY SCHOOL").strip().upper())["school_id"]
-                    update_user_school(user["id"], resolved)
+                    update_user_school(user["id"], new_school["school_id"])
         else:
             report = ingest_content(
                 tmp_path, brain_instance.contents,

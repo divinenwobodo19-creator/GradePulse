@@ -4,6 +4,20 @@ All notable changes to GradePulse will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Security
+
+- **Signup no longer joins an existing school by name.** `POST /auth/signup`, `POST /schools` and a first roster `POST /ingest` always create a new school owned by the caller; school names are labels and may repeat. Previously anyone who signed up with an existing school's name (or with no name, landing in the shared `MY SCHOOL`) could read that school's students.
+- **`/triage` is scoped before tiering.** The old post-filter never ran, so every school's students were returned; `total_students` and tier `count` now cover only the caller's (and unclaimed) students.
+- **`/summary` `student_count` is per school** (was platform-wide).
+- **Student ID clashes are rejected.** IDs are still global, so `POST /students` now returns **409** when the ID belongs to another school (it used to return that school's student), and a roster `POST /ingest` skips such rows with an error instead of moving the student into the uploader's school. Interim guard until IDs become per-school.
+- **Signup validation:** emails are format-checked and lower-cased, passwords need at least 8 characters (HTTP 422 otherwise). A duplicate email in different letter case now returns 400 instead of a 500.
+
+### Changed
+
+- Frontend signup form enforces the same 8-character minimum.
+
 ## [0.2.1] - 2026-09-30
 
 ### Added

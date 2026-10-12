@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 
+// Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
+const PASSWORD_MIN_LENGTH = 8;
+
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,8 +25,8 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`);
       return;
     }
     setLoading(true);
@@ -160,11 +163,12 @@ export default function SignupPage() {
                  value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={PASSWORD_MIN_LENGTH}
                 className="input"
-                placeholder="At least 6 characters"
+                placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
               />
-              {password.length > 0 && password.length < 6 && (
-                 <span id="signup-password-hint" className="text-xs text-danger mt-1">Password must be at least 6 characters</span>
+              {password.length > 0 && password.length < PASSWORD_MIN_LENGTH && (
+                 <span id="signup-password-hint" className="text-xs text-danger mt-1">Password must be at least {PASSWORD_MIN_LENGTH} characters</span>
               )}
             </div>
 

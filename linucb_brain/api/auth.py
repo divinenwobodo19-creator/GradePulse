@@ -106,6 +106,7 @@ def decode_token(token: str) -> Optional[dict]:
 
 
 def create_user(email: str, password: str) -> dict:
+    email = email.lower().strip()
     conn = _get_db()
     existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
     if existing:
@@ -116,7 +117,7 @@ def create_user(email: str, password: str) -> dict:
     password_hash = hash_password(password)
     conn.execute(
         "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)",
-        (user_id, email.lower().strip(), password_hash),
+        (user_id, email, password_hash),
     )
     conn.commit()
     user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()

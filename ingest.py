@@ -339,6 +339,14 @@ def ingest_students(
                 s_id = school["school_id"]
                 report.stats["schools_created"] += 1
 
+        # Student IDs are still global: never let a roster take over a
+        # student that already belongs to a different school.
+        existing = brain_students.get(sid)
+        if existing is not None and existing.school_id and existing.school_id != s_id:
+            report.error(f"Row {i}: student_id '{sid}' is already in use by another school — choose a different ID")
+            report.stats["students_skipped"] += 1
+            continue
+
         # Determine class
         class_label = row.get("class_label", "").strip()
         grade_level = row.get("grade_level", "").strip().upper()

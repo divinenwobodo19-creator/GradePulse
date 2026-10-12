@@ -3,7 +3,7 @@ import uuid
 import threading
 from collections import deque
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 from .models.student import Student
 from .models.content import Content
 from .models.session import Session
@@ -447,7 +447,7 @@ class Brain:
             self.add_content(cid, f"{topic} Practice", topic, 3, "exercise")
         return cid
 
-    def triage(self, subject: str, n_tiers: int = 3) -> Dict:
+    def triage(self, subject: str, n_tiers: int = 3, student_filter: Optional[Callable[[Student], bool]] = None) -> Dict:
         """
         Group students by predicted performance in a subject using absolute thresholds.
 
@@ -461,10 +461,15 @@ class Brain:
         Only students with actual scores for the subject are tiered. Students
         with no data for the subject are excluded from tiering (reports must
         not imply a grade for a subject the student never took).
+
+        `student_filter` limits the report to a subset of students (the API
+        passes the caller's school), so counts and tiers never include others.
         """
         with self._lock:
             results = []
             for sid, student in self.students.items():
+                if student_filter is not None and not student_filter(student):
+                    continue
                 n_attempts = len(student.grade_history.get(subject, []))
                 if n_attempts == 0:
                     continue  # never assessed in this subject → skip tiering
