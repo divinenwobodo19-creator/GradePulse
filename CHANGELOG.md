@@ -32,6 +32,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`GRADEPULSE_ENV`** is the setting's name; the misspelt `GRADEPULPE_ENV` is still read, with a warning. Config files and docs use the new name.
 - **Docs.** README, `PROJECT_INDEX.md` and `INVESTOR_CHECKLIST.md` (now a demo checklist) rewritten to match the product.
 
+### Fixed
+
+- **Excel class lists failed to import** ("Missing optional dependency 'openpyxl'"). `openpyxl` (for .xlsx) and `xlrd` (for .xls) are now in `requirements.txt`, so the Docker image can read them too.
+- **CSV files saved from Excel as "CSV UTF-8"** lost their first column to a hidden byte-order mark, so `student_id` was reported missing.
+- **Spreadsheet headers are matched loosely**: `Student ID`, ` student_id ` and `STUDENT_ID` all work. Blank rows below the data, which spreadsheets often carry, are skipped instead of reported as errors.
+
 
 ### Security
 
