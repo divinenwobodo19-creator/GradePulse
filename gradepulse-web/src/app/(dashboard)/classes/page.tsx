@@ -1,5 +1,6 @@
 "use client";
 
+import EmptyState from "@/components/ui/EmptyState";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -182,14 +183,14 @@ export default function ClassesPage() {
 
       <div className="table-wrapper">
         {classes.length === 0 ? (
-          <div className="empty-state">
-            <h3 className="heading-3 text-navy mb-1">No classes yet</h3>
-            <p className="body-sm text-text-muted">
-              {isAdmin
+          <EmptyState
+            heading="No classes yet"
+            body={
+              isAdmin
                 ? "Add your first class above, then put students in it."
-                : "You have not been given a class yet. Ask your school admin to add you in Settings → People."}
-            </p>
-          </div>
+                : "You have not been given a class yet. Ask your school admin to add you in Settings → People."
+            }
+          />
         ) : (
           <table className="data-table">
             <caption className="sr-only">Classes in your school</caption>

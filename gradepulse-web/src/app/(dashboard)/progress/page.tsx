@@ -1,5 +1,6 @@
 "use client";
 
+import EmptyState from "@/components/ui/EmptyState";
 import { useEffect, useRef, useState } from "react";
 import { api, type Recommendation } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -416,18 +417,16 @@ export default function ProgressPage() {
             </>
           ) : (
             <div className="card">
-              <div className="empty-state">
-                <div className="empty-state-icon">
+              <EmptyState
+                icon={
                   <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                     <circle cx="9" cy="7" r="4" />
                   </svg>
-                </div>
-                <h3 className="heading-3 text-navy mb-1">Select a student</h3>
-                <p className="body-sm text-text-muted">
-                  Choose a student from the list to see their test history
-                </p>
-              </div>
+                }
+                heading="Select a student"
+                body="Choose a student from the list to see their test history"
+              />
             </div>
           )}
         </div>
