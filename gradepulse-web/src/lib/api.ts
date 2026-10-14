@@ -4,6 +4,8 @@ import type {
   BrainSummary,
   IngestResult,
   Invite,
+  Member,
+  PasswordResetLink,
   SchoolClass,
   Student,
   TriageResult,
@@ -149,6 +151,34 @@ class ApiClient {
 
   async me() {
     return this.request<Omit<AuthResponse, "token">>("GET", "/auth/me");
+  }
+
+  // ─── Passwords ───
+  // Signs every other session out; this one continues on the new token.
+  async changePassword(currentPassword: string, newPassword: string) {
+    const data = await this.request<AuthResponse>("POST", "/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    this.setToken(data.token);
+    return data;
+  }
+
+  async resetPassword(code: string, newPassword: string) {
+    return this.request<{ status: string }>("POST", "/auth/reset-password", {
+      code,
+      new_password: newPassword,
+    });
+  }
+
+  // ─── School members (admin only) ───
+  async listMembers(signal?: AbortSignal) {
+    return this.request<Member[]>("GET", "/members", undefined, signal);
+  }
+
+  // A single-use reset code for one teacher. It is only returned here, once.
+  async createMemberPasswordReset(userId: string) {
+    return this.request<PasswordResetLink>("POST", `/members/${encodeURIComponent(userId)}/password-reset`);
   }
 
   // ─── Invites (school admin only) ───

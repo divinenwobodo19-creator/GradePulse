@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import type { BrainSummary, Invite } from "@/lib/types";
+import type { BrainSummary, Invite, Member } from "@/lib/types";
 import { rememberSubjects, useSubjects } from "@/lib/subjects";
+
+// Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
+const PASSWORD_MIN_LENGTH = 8;
 
 export default function SettingsPage() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -14,6 +17,12 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviting, setInviting] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
+  // The reset link just created for a teacher; shown once so it can be copied.
+  const [resetLink, setResetLink] = useState<{ memberId: string; url: string } | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
   const loadedSubjects = useSubjects();
   // Set once the admin edits the list here; until then show what was loaded.
   const [editedSubjects, setEditedSubjects] = useState<string[] | null>(null);
@@ -71,6 +80,7 @@ export default function SettingsPage() {
     if (authLoading || !isAdmin) return;
 
     const controller = new AbortController();
+    api.listMembers(controller.signal).then(setMembers).catch(() => undefined);
     api
       .listInvites(controller.signal)
       .then(setInvites)
@@ -102,6 +112,46 @@ export default function SettingsPage() {
     const name = newSubject.trim();
     if (!name) return;
     if (await saveSubjects([...subjects, name])) setNewSubject("");
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      showToast("error", `The new password must be at least ${PASSWORD_MIN_LENGTH} characters`);
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      showToast("success", "Password changed. Other devices have been signed out.");
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not change the password");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleResetMember = async (member: Member) => {
+    try {
+      const { code } = await api.createMemberPasswordReset(member.id);
+      setResetLink({
+        memberId: member.id,
+        url: `${window.location.origin}/reset-password?code=${encodeURIComponent(code)}`,
+      });
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not create a reset link");
+    }
+  };
+
+  const copyText = async (text: string, message: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("success", message);
+    } catch {
+      showToast("error", "Could not copy. Select the text and copy it by hand.");
+    }
   };
 
   const inviteLink = (code: string) => `${window.location.origin}/signup?invite=${encodeURIComponent(code)}`;
@@ -197,6 +247,47 @@ export default function SettingsPage() {
               <span className="badge badge-neutral">{isAdmin ? "School admin" : "Teacher"}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Change password */}
+      <div className="card">
+        <div className="card-body">
+          <div className="mb-4">
+            <h2 className="heading-2 text-navy">Change Password</h2>
+            <p className="caption text-text-muted">Changing it signs you out on every other device</p>
+          </div>
+          <form onSubmit={handleChangePassword} className="flex flex-wrap items-end gap-3">
+            <div className="input-group flex-1 min-w-[180px]">
+              <label className="input-label" htmlFor="current-password">Current password</label>
+              <input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                className="input"
+              />
+            </div>
+            <div className="input-group flex-1 min-w-[180px]">
+              <label className="input-label" htmlFor="new-password">New password</label>
+              <input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+                className="input"
+                placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
+              />
+            </div>
+            <button type="submit" disabled={changingPassword} aria-busy={changingPassword} className="btn btn-primary">
+              {changingPassword ? "Saving..." : "Change"}
+            </button>
+          </form>
         </div>
       </div>
 
@@ -303,6 +394,58 @@ export default function SettingsPage() {
                 ))}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* People in the school (admin only) */}
+      {isAdmin && members.length > 0 && (
+        <div className="card">
+          <div className="card-body">
+            <div className="mb-4">
+              <h2 className="heading-2 text-navy">People</h2>
+              <p className="caption text-text-muted">
+                If a teacher forgets their password, create a reset link and send it to them. It works once and
+                expires after 24 hours.
+              </p>
+            </div>
+            <ul className="divide-y divide-border">
+              {members.map((member) => (
+                <li key={member.id} className="py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="body font-medium text-navy truncate">{member.email}</div>
+                      <div className="caption text-text-muted">
+                        {member.role === "admin" ? "School admin" : "Teacher"}
+                        {member.id === user?.id && " (you)"}
+                      </div>
+                    </div>
+                    {member.id !== user?.id && (
+                      <button type="button" onClick={() => handleResetMember(member)} className="btn btn-secondary btn-sm">
+                        Reset Password
+                      </button>
+                    )}
+                  </div>
+                  {resetLink?.memberId === member.id && (
+                    <div role="status" className="mt-3 p-3 bg-surface-elevated rounded-lg">
+                      <div className="caption text-text-secondary mb-1">
+                        Send this link to {member.email}. It is shown only once.
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="font-mono text-xs text-navy break-all flex-1 min-w-0">{resetLink.url}</code>
+                        <button
+                          type="button"
+                          onClick={() => copyText(resetLink.url, "Reset link copied")}
+                          className="btn btn-primary btn-sm"
+                        >
+                          Copy Link
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       )}

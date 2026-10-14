@@ -61,6 +61,12 @@ class BrainSummary(BaseModel):
 PASSWORD_MIN_LENGTH = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+def _valid_new_password(value: str) -> str:
+    if len(value) < PASSWORD_MIN_LENGTH:
+        raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
+    return value
+
+
 class SignupRequest(BaseModel):
     email: str
     password: str
@@ -78,13 +84,35 @@ class SignupRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def _check_password(cls, value: str) -> str:
-        if len(value) < PASSWORD_MIN_LENGTH:
-            raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
-        return value
+        return _valid_new_password(value)
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    _check_new = field_validator("new_password")(classmethod(lambda cls, v: _valid_new_password(v)))
+
+class ResetPasswordRequest(BaseModel):
+    code: str
+    new_password: str
+
+    _check_new = field_validator("new_password")(classmethod(lambda cls, v: _valid_new_password(v)))
+
+class OperatorResetRequest(BaseModel):
+    email: str
+
+class PasswordResetLink(BaseModel):
+    code: str
+    expires_at: str
+
+class MemberResponse(BaseModel):
+    id: str
+    email: str
+    role: str
 
 class UserResponse(BaseModel):
     id: str

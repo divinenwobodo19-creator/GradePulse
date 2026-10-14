@@ -8,6 +8,17 @@ export interface User {
   role: UserRole;
 }
 
+export interface Member {
+  id: string;
+  email: string;
+  role: UserRole;
+}
+
+export interface PasswordResetLink {
+  code: string;
+  expires_at: string;
+}
+
 export interface Invite {
   code: string;
   created_at: string;

@@ -186,6 +186,17 @@ curl -X POST http://localhost:8000/backup -H "X-Operator-Key: $OPERATOR_KEY"    
 curl http://localhost:8000/backups -H "X-Operator-Key: $OPERATOR_KEY"           # list
 ```
 
+### A locked-out school admin
+
+Teachers get reset links from their school admin in Settings. If the admin themselves is locked out, issue a code with the operator key and send them the link:
+
+```bash
+curl -X POST http://localhost:8000/auth/operator-reset \
+  -H "X-Operator-Key: $OPERATOR_KEY" -H "Content-Type: application/json" \
+  -d '{"email":"admin@school.ng"}'
+# -> {"code":"...","expires_at":"..."}   link: https://<your-site>/reset-password?code=<code>
+```
+
 ### Backup from the host
 
 ```bash
