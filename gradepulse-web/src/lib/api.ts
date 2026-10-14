@@ -217,8 +217,9 @@ class ApiClient {
   }
 
   // ─── Invites (school admin only) ───
-  async createInvite() {
-    return this.request<Invite>("POST", "/invites");
+  // classIds: the classes the invited teacher will teach (they join straight into them).
+  async createInvite(classIds: string[] = []) {
+    return this.request<Invite>("POST", "/invites", { class_ids: classIds });
   }
 
   async listInvites(signal?: AbortSignal) {

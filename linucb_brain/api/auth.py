@@ -2,6 +2,7 @@
 Authentication module — JWT + bcrypt + SQLite user store.
 """
 import hashlib
+import json
 import logging
 import os
 import secrets
@@ -103,6 +104,9 @@ def init_db():
             used_at TEXT
         )
     """)
+    # Classes the invited teacher is put into on joining (JSON list).
+    if "class_ids" not in {row["name"] for row in conn.execute("PRAGMA table_info(invites)")}:
+        conn.execute("ALTER TABLE invites ADD COLUMN class_ids TEXT NOT NULL DEFAULT '[]'")
     conn.commit()
     conn.close()
 
@@ -269,7 +273,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_invite(school_id: str, created_by: str) -> dict:
+def create_invite(school_id: str, created_by: str, class_ids: Optional[list] = None) -> dict:
+    """A single-use invite. `class_ids` are the classes the teacher is put
+    into when they join (the caller checks they belong to the school)."""
     now = datetime.now(timezone.utc)
     invite = {
         "code": secrets.token_urlsafe(9),
@@ -277,11 +283,12 @@ def create_invite(school_id: str, created_by: str) -> dict:
         "created_by": created_by,
         "created_at": now.isoformat(),
         "expires_at": (now + timedelta(days=INVITE_TTL_DAYS)).isoformat(),
+        "class_ids": list(class_ids or []),
     }
     conn = _get_db()
     conn.execute(
-        "INSERT INTO invites (code, school_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-        tuple(invite.values()),
+        "INSERT INTO invites (code, school_id, created_by, created_at, expires_at, class_ids) VALUES (?, ?, ?, ?, ?, ?)",
+        (*list(invite.values())[:5], json.dumps(invite["class_ids"])),
     )
     conn.commit()
     conn.close()
@@ -291,12 +298,12 @@ def create_invite(school_id: str, created_by: str) -> dict:
 def list_pending_invites(school_id: str) -> list:
     conn = _get_db()
     rows = conn.execute(
-        "SELECT code, created_at, expires_at FROM invites "
+        "SELECT code, created_at, expires_at, class_ids FROM invites "
         "WHERE school_id = ? AND used_by IS NULL AND expires_at > ? ORDER BY created_at DESC",
         (school_id, _now_iso()),
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "class_ids": json.loads(r["class_ids"] or "[]")} for r in rows]
 
 
 def revoke_invite(code: str, school_id: str) -> bool:

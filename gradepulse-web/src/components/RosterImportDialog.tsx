@@ -5,9 +5,9 @@ import { api } from "@/lib/api";
 import type { IngestResult } from "@/lib/types";
 
 const TEMPLATE_CSV =
-  "student_id,name,class_label,current_topic\n" +
-  "ADM001,Adebayo Olawale,JSS1A,MATH\n" +
-  "ADM002,Chidinma Eze,JSS1A,ENGLISH\n";
+  "student_id,name,class_label\n" +
+  "ADM001,Adebayo Olawale,JSS1A\n" +
+  "ADM002,Chidinma Eze,JSS1A\n";
 const TEMPLATE_HREF = `data:text/csv;charset=utf-8,${encodeURIComponent(TEMPLATE_CSV)}`;
 const MAX_MESSAGES = 8;
 

@@ -266,8 +266,10 @@ export default function ProgressPage() {
                       </div>
                     </div>
                     <div>
-                      <div className="caption text-text-muted mb-1">Subject</div>
-                      <div className="heading-2 text-navy">{currentStudent.current_topic}</div>
+                      <div className="caption text-text-muted mb-1">Tests recorded</div>
+                      <div className="heading-2 text-navy">
+                        {Object.values(currentStudent.grade_history ?? {}).reduce((n, scores) => n + scores.length, 0)}
+                      </div>
                     </div>
                     <div>
                       <div className="caption text-text-muted mb-1">Class</div>

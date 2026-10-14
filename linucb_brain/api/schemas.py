@@ -130,6 +130,10 @@ class InviteResponse(BaseModel):
     code: str
     created_at: str
     expires_at: str
+    class_ids: List[str] = []  # classes the teacher joins
+
+class InviteRequest(BaseModel):
+    class_ids: List[str] = Field(default_factory=list, max_length=200)
 
 class SchoolResponse(BaseModel):
     school_id: str

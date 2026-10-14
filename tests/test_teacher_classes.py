@@ -130,3 +130,18 @@ def test_class_assignment_is_admin_only_and_for_teachers_only(client, school):
     admin_id = next(m["id"] for m in client.get("/members", headers=a).json() if m["role"] == "admin")
     assert client.put(f"/members/{admin_id}/classes", headers=a, json={"class_ids": []}).status_code == 400
     assert client.put("/members/nobody/classes", headers=a, json={"class_ids": []}).status_code == 404
+
+
+def test_invite_can_put_the_teacher_straight_into_classes(client, school):
+    a = school["admin"]
+    r = client.post("/invites", headers=a, json={"class_ids": [school["b"]]})
+    assert r.status_code == 200 and r.json()["class_ids"] == [school["b"]]
+    assert client.get("/invites", headers=a).json()[0]["class_ids"] == [school["b"]]
+
+    teacher = client.post("/auth/signup", json={
+        "email": f"inv_{uuid.uuid4().hex[:6]}@tc.local", "password": "Passw0rd!", "invite_code": r.json()["code"],
+    }).json()
+    assert _ids(client.get("/students", headers=_hdr(teacher["token"])).json()) == ["IN_B"]
+
+    assert client.post("/invites", headers=a, json={"class_ids": ["not-a-class"]}).status_code == 400
+    assert client.post("/invites", headers=a).json()["class_ids"] == []  # no classes chosen: still allowed
