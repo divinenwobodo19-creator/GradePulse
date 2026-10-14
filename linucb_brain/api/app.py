@@ -20,11 +20,7 @@ from ..models.student import Student
 from ..core.reward import calculate_reward
 from ..sync import BrainSynchronizer
 from ..backup import BackupManager
-from ..registry import (
-    load_registry, save_registry, add_class, remove_class,
-    create_school as registry_create_school,
-    get_schools, get_classes, get_school_by_id, get_class_by_id,
-)
+from ..registry import load_registry
 from .auth import (
     create_user, authenticate_user, create_access_token,
     get_current_user, optional_user, update_user_school, get_user_by_id,
@@ -39,6 +35,7 @@ from .schemas import (
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
     UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
+    SubjectsPayload,
 )
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
@@ -147,13 +144,6 @@ def _seed_demo_data(brain: Brain):
             brain.update(sid, rec.content_id, 0.5 + 0.5 * np.random.random())
 
 
-def _get_registry():
-    return load_registry(CONFIG_PATH)
-
-
-def _save_registry(registry):
-    save_registry(registry, CONFIG_PATH)
-
 
 # ── Students live in the store; the Brain only borrows them ─────────────────
 # Features the engine reads that the roster import can supply.
@@ -206,10 +196,15 @@ def _clamp_scores(history: Dict[str, List[float]]) -> Dict[str, List[float]]:
     return {subject: [min(1.0, max(0.0, float(v))) for v in values] for subject, values in history.items()}
 
 
-def _ingest_roster(filepath: str, registry: dict, school_id: str, dry_run: bool):
-    """Run a roster file through ingest.py against this school's students,
-    then save what it added or changed to the store."""
+def _ingest_roster(filepath: str, school: dict, dry_run: bool):
+    """Run a roster file through ingest.py against this school's classes and
+    students, then save what it added or changed to the store."""
     from ingest import ingest_students
+
+    school_id = school["school_id"]
+    # ingest.py works on the old registry shape; hand it this school only.
+    registry = {"term_subjects": [], "schools": [{**school, "classes": [dict(c) for c in school["classes"]]}]}
+    known_classes = {c["class_id"] for c in school["classes"]}
 
     existing = {rec.student_id: rec for rec in store.list_students(school_id)}
     # grade_history starts empty so that, afterwards, a non-empty subject is
@@ -231,6 +226,10 @@ def _ingest_roster(filepath: str, registry: dict, school_id: str, dry_run: bool)
     report = ingest_students(filepath, registry, roster, school_id=school_id, school_name=None, dry_run=dry_run)
     if dry_run:
         return report
+
+    for cls in registry["schools"][0]["classes"]:
+        if cls["class_id"] not in known_classes:
+            store.add_class(school_id, cls["label"], class_id=cls["class_id"])
 
     for sid, s in roster.items():
         history = _clamp_scores(s.grade_history)
@@ -321,8 +320,7 @@ def _validate_class_belongs_to_user(user: dict, class_id: str):
     user_school = user.get("school_id", "")
     if not user_school:
         raise HTTPException(status_code=403, detail="User has no school — create/join a school first")
-    registry = _get_registry()
-    if not get_class_by_id(registry, class_id, user_school):
+    if not store.get_class(user_school, class_id):
         raise HTTPException(status_code=400, detail="Class does not belong to your school")
 
 
@@ -332,6 +330,11 @@ async def lifespan(app: FastAPI):
     
     # Load brain state for this worker
     brain_instance = _load_brain()
+    if os.path.exists(CONFIG_PATH):
+        # One-off upgrade from class_config.json; a no-op once schools exist.
+        moved = store.adopt_legacy_registry(load_registry(CONFIG_PATH))
+        if moved:
+            print(f"Worker {os.getpid()}: moved {moved} schools from {CONFIG_PATH} into the store")
     adopted = _adopt_legacy_students(brain_instance)
     if adopted:
         print(f"Worker {os.getpid()}: moved {adopted} students from the brain state into the store")
@@ -403,12 +406,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 def signup(request: Request, signup_request: SignupRequest):
     if not SIGNUP_LIMITER.allow(_client_host(request)):
         raise HTTPException(status_code=429, detail="Too many signups from this address — try again later")
-    registry = _get_registry()
     invite_code = (signup_request.invite_code or "").strip()
     if invite_code:
         # Joining an existing school is only possible with an admin's invite.
         invite = get_usable_invite(invite_code)
-        school = get_school_by_id(registry, invite["school_id"]) if invite else None
+        school = store.get_school(invite["school_id"]) if invite else None
         if not school:
             raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
         user = create_user(signup_request.email, signup_request.password)
@@ -420,8 +422,7 @@ def signup(request: Request, signup_request: SignupRequest):
         # Without an invite, signup always creates the caller's OWN school.
         # Matching an existing school by name used to attach the new account
         # to it, which let anyone who knew a school's name read its students.
-        school = registry_create_school(registry, signup_request.school_name or "MY SCHOOL")
-        _save_registry(registry)
+        school = store.create_school(signup_request.school_name or "MY SCHOOL")
         role = ROLE_ADMIN
     update_user_school(user["id"], school["school_id"], role=role)
     token = create_access_token({"sub": user["id"]})
@@ -440,7 +441,7 @@ def login(request: Request, login_request: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     school = None
     if user.get("school_id"):
-        school = get_school_by_id(_get_registry(), user["school_id"])
+        school = store.get_school(user["school_id"])
     token = create_access_token({"sub": user["id"]})
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
@@ -453,7 +454,7 @@ def login(request: Request, login_request: LoginRequest):
 def me(user: dict = Depends(get_current_user)):
     school = None
     if user.get("school_id"):
-        school = get_school_by_id(_get_registry(), user["school_id"])
+        school = store.get_school(user["school_id"])
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
             "school_name": school["name"] if school else "",
@@ -494,18 +495,13 @@ def revoke_school_invite(code: str, user: dict = Depends(require_admin)):
 
 @app.get("/schools", response_model=List[SchoolResponse])
 def list_schools(user: dict = Depends(get_current_user)):
-    registry = _get_registry()
-    user_school = user.get("school_id", "")
-    if not user_school:
-        return []
-    return [s for s in get_schools(registry) if s["school_id"] == user_school]
+    school = store.get_school(user.get("school_id", ""))
+    return [school] if school else []
 
 
 @app.post("/schools", response_model=SchoolResponse)
 def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current_user)):
-    registry = _get_registry()
-    school = registry_create_school(registry, request.name)
-    _save_registry(registry)
+    school = store.create_school(request.name)
     if not user.get("school_id"):
         update_user_school(user["id"], school["school_id"], role=ROLE_ADMIN)
     return school
@@ -514,26 +510,35 @@ def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current
 @app.put("/schools/{school_id}", response_model=SchoolResponse)
 def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    school = get_school_by_id(registry, school_id)
-    if not school:
+    if not store.get_school(school_id):
         raise HTTPException(status_code=404, detail="School not found")
-    school["name"] = request.name.strip().upper()
-    _save_registry(registry)
-    return school
+    store.rename_school(school_id, request.name)
+    return store.get_school(school_id)
 
 
 @app.delete("/schools/{school_id}")
 def delete_school(school_id: str, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    school = get_school_by_id(registry, school_id)
-    if not school:
+    if not store.get_school(school_id):
         raise HTTPException(status_code=404, detail="School not found")
     store.archive_school(school_id)
-    registry["schools"] = [s for s in registry["schools"] if s["school_id"] != school_id]
-    _save_registry(registry)
     return {"status": "deleted"}
+
+
+# ── Subjects: each school keeps its own list ────────────────────────────────
+
+@app.get("/subjects", response_model=SubjectsPayload)
+def list_subjects(user: dict = Depends(get_current_user)):
+    return {"subjects": store.get_subjects(user.get("school_id", ""))}
+
+
+@app.put("/subjects", response_model=SubjectsPayload)
+def replace_subjects(request: SubjectsPayload, user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    subjects = store.set_subjects(school_id, request.subjects)
+    if not subjects:
+        raise HTTPException(status_code=400, detail="Keep at least one subject")
+    return {"subjects": subjects}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -543,49 +548,37 @@ def delete_school(school_id: str, user: dict = Depends(require_admin)):
 @app.get("/classes/{school_id}", response_model=List[ClassResponse])
 def list_classes(school_id: str, user: dict = Depends(get_current_user)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    classes = get_classes(registry, school_id=school_id)
-    return classes
+    return store.list_classes(school_id)
 
 
 @app.post("/classes/{school_id}", response_model=ClassResponse)
 def create_class(school_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    cls = add_class(registry, school_id, request.label.strip().upper())
+    cls = store.add_class(school_id, request.label)
     if not cls:
         raise HTTPException(status_code=400, detail="Class already exists in this school")
-    _save_registry(registry)
     return cls
 
 
 @app.put("/classes/{school_id}/{class_id}", response_model=ClassResponse)
 def update_class(school_id: str, class_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    cls = get_class_by_id(registry, class_id, school_id)
-    if not cls:
+    if not store.get_class(school_id, class_id):
         raise HTTPException(status_code=404, detail="Class not found")
-    label = request.label.strip().upper()
-    if not label:
+    if not request.label.strip():
         raise HTTPException(status_code=400, detail="Class name cannot be empty")
-    if any(c["label"] == label and c["class_id"] != class_id for c in get_classes(registry, school_id=school_id)):
+    cls = store.rename_class(school_id, class_id, request.label)
+    if not cls:
         raise HTTPException(status_code=400, detail="Class already exists in this school")
-    cls["label"] = label
-    _save_registry(registry)
     return cls
 
 
 @app.delete("/classes/{school_id}/{class_id}")
 def delete_class(school_id: str, class_id: str, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    cls = get_class_by_id(registry, class_id, school_id)
-    if not cls:
+    if not store.get_class(school_id, class_id):
         raise HTTPException(status_code=404, detail="Class not found")
     store.archive_class(school_id, class_id)
-    remove_class(registry, school_id, class_id)
-    _save_registry(registry)
     return {"status": "deleted"}
 
 
@@ -900,9 +893,6 @@ async def ingest_data(
         # raised ImportError beyond the top-level package.)
         from ingest import ingest_content
         
-        # Load existing state
-        registry = _get_registry()
-        
         # Run ingestion
         if type == "students":
             # Phase 2: a user can only ingest rosters into THEIR OWN school.
@@ -911,23 +901,25 @@ async def ingest_data(
             # outlives registry restores), in which case fall back to the
             # form and re-attach the resolved school to the account.
             user_school = user.get("school_id", "")
-            own_school = get_school_by_id(registry, user_school) if user_school else None
+            own_school = store.get_school(user_school)
             if own_school:
                 if school_id and school_id != user_school:
                     raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
                 if school and own_school["name"] != school.strip().upper():
                     raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
                 # Force-school to the caller's own school regardless of form.
-                report = _ingest_roster(tmp_path, registry, user_school, dry_run)
+                report = _ingest_roster(tmp_path, own_school, dry_run)
             else:
                 # No school yet (or a dangling one): the roster goes into a
                 # NEW school owned by the caller. A form school/school_id is
                 # only a label here and can never attach them to an existing
-                # school. (On dry_run the registry is not saved.)
-                new_school = registry_create_school(registry, school or "MY SCHOOL")
-                report = _ingest_roster(tmp_path, registry, new_school["school_id"], dry_run)
-                if not dry_run:
+                # school. (A dry run checks against a placeholder instead.)
+                if dry_run:
+                    new_school = {"school_id": "dry-run", "name": school or "MY SCHOOL", "classes": []}
+                else:
+                    new_school = store.create_school(school or "MY SCHOOL")
                     update_user_school(user["id"], new_school["school_id"], role=ROLE_ADMIN)
+                report = _ingest_roster(tmp_path, new_school, dry_run)
         else:
             report = ingest_content(
                 tmp_path, brain_instance.contents,
@@ -936,11 +928,7 @@ async def ingest_data(
         
         # Save if not dry run
         if not dry_run:
-            # Save registry with file lock
-            with synchronizer._config_lock:
-                _save_registry(registry)
-            
-            # Save brain state with file lock
+            # Content lives in the engine state; rosters are already saved.
             synchronizer.save_brain(brain_instance.save)
         
         return IngestResponse(

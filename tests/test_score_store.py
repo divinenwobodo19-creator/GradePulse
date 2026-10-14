@@ -220,3 +220,81 @@ def test_roster_dry_run_reports_without_saving(client, school):
     assert (stats["students_valid"], stats["students_skipped"]) == (1, 1)
     assert client.get("/students", headers=school["h"]).json() == []
     assert client.get(f"/classes/{school['id']}", headers=school["h"]).json() == []
+
+
+# ── Schools, classes and subjects in the store ─────────────────────────────
+
+def test_school_starts_with_default_subjects_and_admin_can_replace_them(client, school):
+    assert client.get("/subjects", headers=school["h"]).json() == {
+        "subjects": ["MATH", "ENGLISH", "SCIENCE", "HISTORY"]
+    }
+    r = client.put("/subjects", headers=school["h"], json={
+        "subjects": ["Mathematics", " basic science ", "MATHEMATICS", "", "Yoruba"],
+    })
+    assert r.status_code == 200
+    assert r.json() == {"subjects": ["MATHEMATICS", "BASIC SCIENCE", "YORUBA"]}
+    assert client.get("/subjects", headers=school["h"]).json() == r.json()
+
+    assert client.put("/subjects", headers=school["h"], json={"subjects": [" "]}).status_code == 400
+    assert client.put("/subjects", headers=school["h"], json={"subjects": ["x" * 41]}).status_code == 422
+
+
+def test_subjects_are_per_school_and_only_admins_change_them(client, school):
+    client.put("/subjects", headers=school["h"], json={"subjects": ["IGBO"]})
+
+    code = client.post("/invites", headers=school["h"]).json()["code"]
+    teacher = client.post("/auth/signup", json={
+        "email": f"subj_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!", "invite_code": code,
+    }).json()
+    t = {"Authorization": f"Bearer {teacher['token']}"}
+    assert client.get("/subjects", headers=t).json() == {"subjects": ["IGBO"]}
+    assert client.put("/subjects", headers=t, json={"subjects": ["FRENCH"]}).status_code == 403
+
+    other = client.post("/auth/signup", json={
+        "email": f"other_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!",
+    }).json()
+    assert "IGBO" not in client.get("/subjects", headers={"Authorization": f"Bearer {other['token']}"}).json()["subjects"]
+
+
+def test_class_name_is_free_again_after_the_class_is_deleted(client, school):
+    url = f"/classes/{school['id']}"
+    first = client.post(url, headers=school["h"], json={"label": "SS1 Gold"}).json()
+    assert (first["label"], first["grade_level"]) == ("SS1 GOLD", "")
+    assert client.post(url, headers=school["h"], json={"label": "ss1 gold"}).status_code == 400
+    assert client.delete(f"{url}/{first['class_id']}", headers=school["h"]).status_code == 200
+    again = client.post(url, headers=school["h"], json={"label": "SS1 Gold"})
+    assert again.status_code == 200 and again.json()["class_id"] != first["class_id"]
+    assert [c["label"] for c in client.get(url, headers=school["h"]).json()] == ["SS1 GOLD"]
+
+
+def test_roster_import_creates_classes_in_the_store(client, school):
+    csv = b"student_id,name,class_label\nR1,Ada Obi,JSS2A\nR2,Tobi Ade,JSS2A\nR3,Yemi Bello,JSS2B\n"
+    r = client.post("/ingest", headers=school["h"], data={"type": "students"},
+                    files={"file": ("roster.csv", csv, "text/csv")})
+    assert r.status_code == 200, r.text
+    classes = {c["label"]: c["class_id"] for c in client.get(f"/classes/{school['id']}", headers=school["h"]).json()}
+    assert set(classes) == {"JSS2A", "JSS2B"}
+    by_class = {s["student_id"]: s["class_id"] for s in client.get("/students", headers=school["h"]).json()}
+    assert by_class == {"R1": classes["JSS2A"], "R2": classes["JSS2A"], "R3": classes["JSS2B"]}
+
+    # A second upload reuses the existing classes.
+    client.post("/ingest", headers=school["h"], data={"type": "students"},
+                files={"file": ("roster.csv", b"student_id,name,class_label\nR4,Kunle Ade,JSS2A\n", "text/csv")})
+    assert len(client.get(f"/classes/{school['id']}", headers=school["h"]).json()) == 2
+
+
+def test_legacy_registry_file_is_adopted_once(tmp_path, monkeypatch):
+    from linucb_brain.api import auth, store
+
+    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "fresh.db"))
+    auth.init_db()
+    store.init_store()
+    legacy = {"schools": [{"school_id": "old00001", "name": "Old School", "classes": [
+        {"class_id": "cls00001", "label": "JSS1A", "grade_level": "JSS1", "arm": "A"},
+    ]}]}
+    assert store.adopt_legacy_registry(legacy) == 1
+    assert store.get_school("old00001") == {"school_id": "old00001", "name": "OLD SCHOOL", "classes": [
+        {"class_id": "cls00001", "label": "JSS1A", "grade_level": "JSS1", "arm": "A"},
+    ]}
+    assert store.adopt_legacy_registry({"schools": [{"school_id": "new00001", "name": "Late", "classes": []}]}) == 0
+    assert store.get_school("new00001") is None

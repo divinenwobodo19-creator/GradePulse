@@ -182,6 +182,16 @@ class ApiClient {
     );
   }
 
+  // ─── Subjects (per school) ───
+  async getSubjects(signal?: AbortSignal) {
+    return this.request<{ subjects: string[] }>("GET", "/subjects", undefined, signal);
+  }
+
+  // Admin only. Replaces the school's whole list.
+  async setSubjects(subjects: string[]) {
+    return this.request<{ subjects: string[] }>("PUT", "/subjects", { subjects });
+  }
+
   // ─── Classes ───
   async getClasses(schoolId: string, signal?: AbortSignal) {
     return this.request<

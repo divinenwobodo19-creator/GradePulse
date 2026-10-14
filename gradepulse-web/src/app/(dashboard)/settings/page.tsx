@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import type { BrainSummary, Invite } from "@/lib/types";
+import { rememberSubjects, useSubjects } from "@/lib/subjects";
 
 export default function SettingsPage() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -13,6 +14,12 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviting, setInviting] = useState(false);
+  const loadedSubjects = useSubjects();
+  // Set once the admin edits the list here; until then show what was loaded.
+  const [editedSubjects, setEditedSubjects] = useState<string[] | null>(null);
+  const subjects = editedSubjects ?? loadedSubjects;
+  const [newSubject, setNewSubject] = useState("");
+  const [savingSubjects, setSavingSubjects] = useState(false);
   const isAdmin = user?.role === "admin";
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -74,6 +81,28 @@ export default function SettingsPage() {
       });
     return () => controller.abort();
   }, [authLoading, isAdmin]);
+
+  const saveSubjects = async (next: string[]) => {
+    setSavingSubjects(true);
+    try {
+      const saved = (await api.setSubjects(next)).subjects;
+      setEditedSubjects(saved);
+      rememberSubjects(user?.school_id ?? "", saved);
+      return true;
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not save subjects");
+      return false;
+    } finally {
+      setSavingSubjects(false);
+    }
+  };
+
+  const handleAddSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newSubject.trim();
+    if (!name) return;
+    if (await saveSubjects([...subjects, name])) setNewSubject("");
+  };
 
   const inviteLink = (code: string) => `${window.location.origin}/signup?invite=${encodeURIComponent(code)}`;
 
@@ -170,6 +199,58 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Subjects (admin only) */}
+      {isAdmin && (
+        <div className="card">
+          <div className="card-body">
+            <div className="mb-4">
+              <h2 className="heading-2 text-navy">Subjects</h2>
+              <p className="caption text-text-muted">
+                The subjects your teachers can enter scores for. Removing one hides it from the lists; scores
+                already entered are kept.
+              </p>
+            </div>
+
+            <ul className="flex flex-wrap gap-2 mb-4">
+              {subjects.map((subject) => (
+                <li key={subject} className="badge badge-neutral flex items-center gap-1.5">
+                  {subject}
+                  {subjects.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => saveSubjects(subjects.filter((s) => s !== subject))}
+                      disabled={savingSubjects}
+                      aria-label={`Remove ${subject}`}
+                      className="text-text-muted hover:text-danger transition-colors"
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            <form onSubmit={handleAddSubject} className="flex flex-wrap items-end gap-3">
+              <div className="input-group flex-1 min-w-[200px]">
+                <label className="input-label" htmlFor="new-subject">Add a subject</label>
+                <input
+                  id="new-subject"
+                  value={newSubject}
+                  maxLength={40}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  className="input"
+                  placeholder="e.g. Basic Science"
+                  autoComplete="off"
+                />
+              </div>
+              <button type="submit" disabled={savingSubjects || !newSubject.trim()} className="btn btn-primary">
+                Add
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Teachers (admin only) */}
       {isAdmin && (

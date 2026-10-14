@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
 import type { BrainSummary, SchoolClass, TriageResult, Student } from "@/lib/types";
-import { SUBJECTS, TIER_LABELS } from "@/lib/types";
+import { TIER_LABELS } from "@/lib/types";
+import { activeSubject, useSubjects } from "@/lib/subjects";
 
 function MetricCard({ accent, label, value, sub, icon }: {
   accent: string;
@@ -32,7 +33,9 @@ export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const [summary, setSummary] = useState<BrainSummary | null>(null);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
-  const [subject, setSubject] = useState<string>(SUBJECTS[0]);
+  const subjects = useSubjects();
+  const [pickedSubject, setSubject] = useState("");
+  const subject = activeSubject(pickedSubject, subjects);
   const [classId, setClassId] = useState("");
   const [triage, setTriage] = useState<TriageResult | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -132,7 +135,7 @@ export default function DashboardPage() {
             onChange={(e) => setSubject(e.target.value)}
             className="input select w-auto min-w-[140px]"
           >
-            {SUBJECTS.map((s) => (
+            {subjects.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>

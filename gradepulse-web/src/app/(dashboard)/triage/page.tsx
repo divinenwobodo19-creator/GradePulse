@@ -4,7 +4,8 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { TriageResult } from "@/lib/types";
-import { TIER_LABELS, SUBJECTS } from "@/lib/types";
+import { TIER_LABELS } from "@/lib/types";
+import { activeSubject, useSubjects } from "@/lib/subjects";
 
 const TIER_ICONS: Record<string, React.ReactNode> = {
   ahead: (
@@ -26,7 +27,9 @@ const TIER_ICONS: Record<string, React.ReactNode> = {
 
 export default function TriagePage() {
   const { user, loading: authLoading } = useAuth();
-  const [subject, setSubject] = useState("MATH");
+  const subjects = useSubjects();
+  const [pickedSubject, setSubject] = useState("");
+  const subject = activeSubject(pickedSubject, subjects);
   const [result, setResult] = useState<TriageResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -73,7 +76,7 @@ export default function TriagePage() {
                 onChange={(e) => setSubject(e.target.value)}
                 className="input select w-auto min-w-[160px]"
               >
-                {SUBJECTS.map((s) => (
+                {subjects.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
