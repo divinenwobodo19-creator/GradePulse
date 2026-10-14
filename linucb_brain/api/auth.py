@@ -2,6 +2,7 @@
 Authentication module — JWT + bcrypt + SQLite user store.
 """
 import hashlib
+import logging
 import os
 import secrets
 import sqlite3
@@ -20,7 +21,14 @@ PLACEHOLDER_SECRETS = {
     DEV_SECRET,
     "change-this-to-a-strong-random-secret-in-production",
 }
-ENV = os.getenv("GRADEPULPE_ENV", os.getenv("ENV", "development")).strip().lower()
+logger = logging.getLogger("gradepulse.auth")
+
+# GRADEPULSE_ENV is the setting; GRADEPULPE_ENV is the old misspelt name and
+# still works so existing deployments keep their production checks.
+_ENV_SETTING = os.getenv("GRADEPULSE_ENV") or os.getenv("GRADEPULPE_ENV") or os.getenv("ENV") or "development"
+ENV = _ENV_SETTING.strip().lower()
+if os.getenv("GRADEPULPE_ENV") and not os.getenv("GRADEPULSE_ENV"):
+    logger.warning("GRADEPULPE_ENV is deprecated; rename it to GRADEPULSE_ENV.")
 SECRET_KEY = os.getenv("JWT_SECRET", DEV_SECRET)
 
 # Fail fast: never boot a production process on a known/absent signing secret.
@@ -31,10 +39,9 @@ if ENV in ("production", "prod"):
             "random value of at least 32 characters (see .env.example)."
         )
 elif SECRET_KEY in PLACEHOLDER_SECRETS:
-    print(
-        "WARNING: using a development/placeholder JWT secret. Set JWT_SECRET "
-        "before sharing this deployment (see .env.example).",
-        file=sys.stderr,
+    logger.warning(
+        "Using a development/placeholder JWT secret. Set JWT_SECRET "
+        "before sharing this deployment (see .env.example)."
     )
 
 ALGORITHM = "HS256"

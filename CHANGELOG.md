@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Operations
+
+- **Logging.** The API logs through Python's `logging` at `LOG_LEVEL`, instead of `print`. An unexpected error is logged with its traceback, and the client gets `{"detail": "Internal server error", "error_id": "..."}` so a report can be matched to the log line.
+- **One version number.** `linucb_brain.__version__` feeds `pyproject.toml`, the FastAPI app and `/health` (which used to say 1.0.0).
+- **`GRADEPULSE_ENV`** is the setting's name; the misspelt `GRADEPULPE_ENV` is still read, with a warning. Config files and docs use the new name.
+- **Docs.** README, `PROJECT_INDEX.md` and `INVESTOR_CHECKLIST.md` (now a demo checklist) rewritten to match the product.
+
+
 ### Security
 
 - **Signup no longer joins an existing school by name.** `POST /auth/signup`, `POST /schools` and a first roster `POST /ingest` always create a new school owned by the caller; school names are labels and may repeat. Previously anyone who signed up with an existing school's name (or with no name, landing in the shared `MY SCHOOL`) could read that school's students.

@@ -28,7 +28,7 @@ services:
     environment:
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       - JWT_SECRET=${JWT_SECRET:-gradepulse-dev-secret-change-in-production}
-      - GRADEPULPE_ENV=${GRADEPULPE_ENV:-development}
+      - GRADEPULSE_ENV=${GRADEPULSE_ENV:-development}
       - BRAIN_STATE_PATH=/data/brain_state.json
       - CONFIG_PATH=/data/class_config.json
       - USER_DB_PATH=/data/gradepulse_users.db

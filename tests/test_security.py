@@ -197,8 +197,8 @@ def test_token_with_future_iat_rejected():
 
 @pytest.mark.parametrize("bad_secret", [None, "gradepulse-dev-secret-change-in-production", "change-this-to-a-strong-random-secret-in-production"])
 def test_jwt_secret_failfast_in_production(bad_secret):
-    env = dict(os.environ)
-    env["GRADEPULPE_ENV"] = "production"
+    env = {k: v for k, v in os.environ.items() if k not in ("GRADEPULSE_ENV", "GRADEPULPE_ENV")}
+    env["GRADEPULSE_ENV"] = "production"
     if bad_secret is None:
         env.pop("JWT_SECRET", None)
     else:
@@ -222,8 +222,8 @@ def test_login_rate_limited_after_burst(client):
 
 
 def test_dev_placeholder_secret_warns_but_boots():
-    env = dict(os.environ)
-    env["GRADEPULPE_ENV"] = "development"
+    env = {k: v for k, v in os.environ.items() if k not in ("GRADEPULSE_ENV", "GRADEPULPE_ENV")}
+    env["GRADEPULSE_ENV"] = "development"
     env["JWT_SECRET"] = "change-this-to-a-strong-random-secret-in-production"
     r = subprocess.run(
         [sys.executable, "-c", "import linucb_brain.api.auth; print('OK')"],
@@ -322,3 +322,15 @@ def test_two_schools_can_use_the_same_student_id_independently(client):
     b_students = client.get("/students", headers=_hdr(tok_b)).json()
     assert [(s["student_id"], s["name"], s["school_id"]) for s in b_students] == [(sid, "B REBORN", sch_b)]
     assert client.get("/students", headers=_hdr(tok_a)).json()[0]["name"] == "A Original"
+
+
+@pytest.mark.parametrize("variable", ["GRADEPULSE_ENV", "GRADEPULPE_ENV"])
+def test_production_failfast_reads_the_setting_and_its_old_spelling(variable):
+    env = {k: v for k, v in os.environ.items() if k not in ("GRADEPULSE_ENV", "GRADEPULPE_ENV", "JWT_SECRET")}
+    env[variable] = "production"
+    r = subprocess.run(
+        [sys.executable, "-c", "import linucb_brain.api.auth"],
+        capture_output=True, text=True, env=env, cwd=PROJECT_ROOT,
+    )
+    assert r.returncode != 0
+    assert "JWT_SECRET" in r.stderr

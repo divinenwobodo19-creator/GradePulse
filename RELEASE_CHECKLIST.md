@@ -22,8 +22,8 @@ Pre-release gate. Every item must be complete before tagging `v0.2.0`. Owners: *
 - [x] `docker build --target backend` succeeds; image smoke-tested (signup → login → summary in prod mode)
 - [x] uvicorn honors `HOST`/`PORT`/`WEB_CONCURRENCY`/`LOG_LEVEL` envs (Dockerfile `CMD` now shell-form)
 - [x] Health check passes: `curl http://localhost:8000/health` → `engine:"GradePulse"`
-- [x] `.env.example` complete: `GRADEPULPE_ENV`, `JWT_SECRET`, `FRONTEND_URL`, `LOG_LEVEL` documented
-- [x] `docker-compose.yml` passes `JWT_SECRET`/`GRADEPULPE_ENV` into the API; default `WEB_CONCURRENCY=1`
+- [x] `.env.example` complete: `GRADEPULSE_ENV`, `JWT_SECRET`, `FRONTEND_URL`, `LOG_LEVEL` documented
+- [x] `docker-compose.yml` passes `JWT_SECRET`/`GRADEPULSE_ENV` into the API; default `WEB_CONCURRENCY=1`
 - [x] CI `ci.yml` installs `pytest` (test job would otherwise fail); runs `npm run check` for web — first fully green run 28 Sep
 - [x] `DEPLOYMENT.md` accurate: correct repo URL, token key (`token`), HTTPS, backups/restore, rollback
 
@@ -55,7 +55,7 @@ PYTHONPATH=. python -m pytest tests/ -q --tb=short
 PYTHONPATH=. python -m pytest tests/test_load.py tests/test_backup_api.py tests/test_ingest_api.py -q
 
 # Production-mode boot check (must refuse weak secrets)
-GRADEPULPE_ENV=production JWT_SECRET="short" pip-run uvicorn ...   # expect abort
+GRADEPULSE_ENV=production JWT_SECRET="short" pip-run uvicorn ...   # expect abort
 
 # Docker
 docker build --target backend -t gradepulse-api:test .

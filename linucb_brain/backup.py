@@ -7,6 +7,7 @@ Provides:
 - Backup restoration with validation
 - Atomic file operations to prevent corruption
 """
+import logging
 import os
 import shutil
 import time
@@ -16,6 +17,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict
 from dataclasses import dataclass
+
+
+logger = logging.getLogger("gradepulse.backup")
 
 
 @dataclass
@@ -101,7 +105,7 @@ class BackupManager:
                 try:
                     self.create_backup("periodic")
                 except Exception as e:
-                    print(f"Warning: Periodic backup failed: {e}")
+                    logger.warning(f"Periodic backup failed: {e}")
     
     def create_backup(self, reason: str = "manual") -> Optional[BackupInfo]:
         """
@@ -141,7 +145,7 @@ class BackupManager:
                 temp_path.rename(dest)
                 copied_files.append(filename)
             except Exception as e:
-                print(f"Warning: Failed to backup {filename}: {e}")
+                logger.warning(f"Failed to backup {filename}: {e}")
                 if temp_path.exists():
                     temp_path.unlink()
         
@@ -200,7 +204,7 @@ class BackupManager:
             try:
                 shutil.rmtree(backup.path)
             except Exception as e:
-                print(f"Warning: Failed to remove old backup {backup.path}: {e}")
+                logger.warning(f"Failed to remove old backup {backup.path}: {e}")
     
     def list_backups(self) -> List[BackupInfo]:
         """List all available backups."""
@@ -244,13 +248,13 @@ class BackupManager:
         backup_dir = Path(backup_path)
         
         if not backup_dir.exists():
-            print(f"Error: Backup path does not exist: {backup_path}")
+            logger.error(f"Backup path does not exist: {backup_path}")
             return False
         
         # Read metadata
         meta_path = backup_dir / "_backup_meta.json"
         if not meta_path.exists():
-            print(f"Error: No backup metadata found at {meta_path}")
+            logger.error(f"No backup metadata found at {meta_path}")
             return False
         
         with open(meta_path) as f:
@@ -261,7 +265,7 @@ class BackupManager:
         for filename in meta.get("files", []):
             src = backup_dir / filename
             if not src.exists():
-                print(f"Warning: File {filename} not found in backup")
+                logger.warning(f"File {filename} not found in backup")
                 continue
             
             # Find the original path
@@ -272,7 +276,7 @@ class BackupManager:
                     break
             
             if original_path is None:
-                print(f"Warning: No registered path for {filename}")
+                logger.warning(f"No registered path for {filename}")
                 continue
             
             # Atomic restore
@@ -282,7 +286,7 @@ class BackupManager:
                 os.replace(temp_path, original_path)
                 restored.append(filename)
             except Exception as e:
-                print(f"Error restoring {filename}: {e}")
+                logger.error(f"Could not restore {filename}: {e}")
                 if os.path.exists(temp_path):
                     os.unlink(temp_path)
         

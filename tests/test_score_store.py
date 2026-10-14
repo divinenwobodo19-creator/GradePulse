@@ -338,3 +338,24 @@ def test_recommendations_can_be_switched_off(client, school, monkeypatch):
 
     monkeypatch.setattr(app_module, "RECOMMENDATIONS_ENABLED", True)
     assert client.get("/health").json()["features"] == {"recommendations": True}
+
+
+def test_health_reports_the_package_version(client):
+    from linucb_brain import __version__
+    assert client.get("/health").json()["version"] == __version__
+
+
+def test_unexpected_error_is_logged_with_a_reference_the_client_can_quote(client, school, monkeypatch, caplog):
+    from linucb_brain.api import store
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(store, "list_students", boom)
+    with TestClient(app, raise_server_exceptions=False) as quiet:
+        with caplog.at_level("ERROR", logger="gradepulse"):
+            r = quiet.get("/students", headers=school["h"])
+    assert r.status_code == 500
+    body = r.json()
+    assert body["detail"] == "Internal server error" and "disk on fire" not in r.text
+    assert any(body["error_id"] in rec.getMessage() and rec.exc_info for rec in caplog.records)

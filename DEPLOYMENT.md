@@ -63,7 +63,7 @@ nano .env   # must-haves below
 Set in `.env`:
 
 ```dotenv
-GRADEPULPE_ENV=production
+GRADEPULSE_ENV=production
 JWT_SECRET=<generate below>
 FRONTEND_URL=https://your-web-domain.com
 WEB_CONCURRENCY=1
@@ -249,7 +249,7 @@ docker compose up -d --build
 
 | Symptom | Fix |
 |---|---|
-| Container exits immediately | Check `docker compose logs api` — in `GRADEPULPE_ENV=production` a weak/missing `JWT_SECRET` aborts deliberately at boot. |
+| Container exits immediately | Check `docker compose logs api` — in `GRADEPULSE_ENV=production` a weak/missing `JWT_SECRET` aborts deliberately at boot. |
 | Port 8000 busy | `lsof -i :8000` and kill, or change `PORT` in `.env`. |
 | API recovers with empty model | A deployment starts with an empty engine when `brain_state.json` is absent (students and scores are in `gradepulse_users.db`, not in that file). Restore from `/data/backups/` if needed. |
 | Web can't reach the API | `API_URL=http://api:8000` is set in `docker-compose.yml`; only override via the `API_URL` build ARG/env. Browsers must call `/api/*` same-origin. |
