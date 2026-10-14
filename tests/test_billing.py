@@ -188,3 +188,33 @@ def test_without_paystack_settings_billing_is_off_and_never_nags(client, school,
     assert client.post("/billing/checkout", headers=school["h"], json={"students": 1}).status_code == 503
     raw, headers = _signed({"event": "charge.success", "data": {}})
     assert client.post("/billing/webhook", content=raw, headers=headers).status_code == 401
+
+
+def test_receipt_email_can_be_chosen_and_must_be_valid(client, school, fake):
+    r = client.post("/billing/checkout", headers=school["h"], json={"students": 2, "email": "bursar@school.ng"})
+    assert r.status_code == 200
+    assert fake.calls[-1][2]["email"] == "bursar@school.ng"
+    assert client.post("/billing/checkout", headers=school["h"], json={"students": 2, "email": "nope"}).status_code == 422
+
+
+def test_paystack_refusal_reason_reaches_the_admin(client, school, monkeypatch):
+    class Refusal:
+        status_code = 400
+
+        def json(self):
+            return {"status": False, "message": '"email" must be a valid email'}
+
+    monkeypatch.setattr(billing.httpx, "request", lambda *a, **k: Refusal())
+    r = client.post("/billing/checkout", headers=school["h"], json={"students": 2})
+    assert r.status_code == 502
+    assert '"email" must be a valid email' in r.json()["detail"]
+
+    class BadKey(Refusal):
+        status_code = 401
+
+        def json(self):
+            return {"status": False, "message": "Invalid key"}
+
+    monkeypatch.setattr(billing.httpx, "request", lambda *a, **k: BadKey())
+    r = client.post("/billing/checkout", headers=school["h"], json={"students": 2})
+    assert "Invalid key" not in r.json()["detail"]  # key problems are for the operator's log, not the school

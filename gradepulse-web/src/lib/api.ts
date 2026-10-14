@@ -205,9 +205,10 @@ class ApiClient {
   }
 
   // Returns Paystack's payment page to send the admin to.
-  async startCheckout(students: number) {
+  async startCheckout(students: number, email?: string) {
     return this.request<{ authorization_url: string; reference: string }>("POST", "/billing/checkout", {
       students,
+      ...(email ? { email } : {}),
     });
   }
 

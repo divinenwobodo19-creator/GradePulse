@@ -39,6 +39,7 @@ function Billing() {
 
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [students, setStudents] = useState("");
+  const [receiptEmail, setReceiptEmail] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [paying, setPaying] = useState(false);
@@ -93,7 +94,7 @@ function Billing() {
     setError("");
     setPaying(true);
     try {
-      const { authorization_url } = await api.startCheckout(count);
+      const { authorization_url } = await api.startCheckout(count, receiptEmail.trim() || undefined);
       window.location.assign(authorization_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start the payment");
@@ -167,6 +168,18 @@ function Billing() {
                       value={students === "" ? String(status.students || 1) : students}
                       onChange={(e) => setStudents(e.target.value)}
                       className="input w-40"
+                    />
+                  </div>
+                  <div className="input-group flex-1 min-w-[220px]">
+                    <label className="input-label" htmlFor="bill-email">Receipt email</label>
+                    <input
+                      id="bill-email"
+                      type="email"
+                      value={receiptEmail}
+                      onChange={(e) => setReceiptEmail(e.target.value)}
+                      placeholder={user?.email ?? "bursar@school.ng"}
+                      className="input"
+                      autoComplete="email"
                     />
                   </div>
                   <div className="pb-2">

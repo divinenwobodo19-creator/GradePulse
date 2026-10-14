@@ -20,6 +20,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -38,6 +39,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 PAYSTACK_BASE_URL = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
 CURRENCY = "NGN"
 MAX_STUDENTS = 100_000
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # ── Settings (read on each call so a restart is not needed in tests) ─────────
@@ -83,7 +85,11 @@ def paystack(method: str, path: str, payload: Optional[dict] = None) -> dict:
         logger.error("Paystack %s %s failed: %s", method, path, exc)
         raise HTTPException(status_code=502, detail="Could not reach Paystack. Try again in a moment.")
     if response.status_code >= 400 or not body.get("status"):
-        logger.error("Paystack %s %s refused: %s %s", method, path, response.status_code, body.get("message"))
+        message = str(body.get("message") or "").strip()
+        logger.error("Paystack %s %s refused: %s %s", method, path, response.status_code, message)
+        if 400 <= response.status_code < 500 and response.status_code not in (401, 403) and message:
+            # Paystack's own explanation (e.g. a bad receipt email) helps the admin fix it.
+            raise HTTPException(status_code=502, detail=f"Paystack did not accept the payment: {message}")
         raise HTTPException(status_code=502, detail="Paystack did not accept the request. Try again in a moment.")
     return body.get("data") or {}
 
@@ -114,6 +120,8 @@ def _apply_charge(data: dict) -> None:
 
 class CheckoutRequest(BaseModel):
     students: int = Field(..., ge=1, le=MAX_STUDENTS)
+    # Where Paystack sends the receipt, e.g. the school bursar; the admin's own by default.
+    email: Optional[str] = Field(None, max_length=200)
 
 
 class VerifyRequest(BaseModel):
@@ -188,12 +196,15 @@ def checkout(request: CheckoutRequest, user: dict = Depends(require_admin)):
     school_id = _admin_school_id(user)
     if not _configured():
         raise HTTPException(status_code=503, detail="Online payment is not set up on this server yet")
+    email = (request.email or user["email"]).strip()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="Enter a valid email address for the receipt")
     amount_kobo = request.students * _price_naira() * 100
     reference = f"gp_{uuid.uuid4().hex[:20]}"
     store.create_payment(reference, school_id, request.students, amount_kobo, user["id"])
     frontend = os.getenv("FRONTEND_URL", "http://localhost:3000").split(",")[0].strip().rstrip("/")
     data = paystack("POST", "/transaction/initialize", {
-        "email": user["email"],
+        "email": email,
         "amount": amount_kobo,
         "currency": CURRENCY,
         "reference": reference,
