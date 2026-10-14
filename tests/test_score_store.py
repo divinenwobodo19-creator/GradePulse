@@ -327,3 +327,14 @@ def test_school_scores_feed_reports_and_stay_inside_the_school(client, school):
     assert client.get("/scores", headers=other_h).json() == []
     assert client.get("/scores", headers=other_h, params={"class_id": class_id}).json() == []
     assert client.get("/scores").status_code == 401
+
+
+def test_recommendations_can_be_switched_off(client, school, monkeypatch):
+    _add(client, school)
+    monkeypatch.setattr(app_module, "RECOMMENDATIONS_ENABLED", False)
+    r = client.post("/recommend", headers=school["h"], json={"student_id": "S001", "top_n": 1})
+    assert r.status_code == 404
+    assert client.get("/health").json()["features"] == {"recommendations": False}
+
+    monkeypatch.setattr(app_module, "RECOMMENDATIONS_ENABLED", True)
+    assert client.get("/health").json()["features"] == {"recommendations": True}

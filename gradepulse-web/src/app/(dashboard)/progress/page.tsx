@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/auth";
 import type { SchoolClass, Student } from "@/lib/types";
 import { scoreToGrade, scoreToPercentage, GRADE_COLORS, getStudentClassId } from "@/lib/types";
 import { NO_SCORE_LABEL, hasScores, overallPercentLabel } from "@/lib/scores";
+import { useSubjects } from "@/lib/subjects";
+import ScoreHistory, { type StudentScore } from "@/components/ScoreHistory";
 
 export default function ProgressPage() {
   const { user, loading: authLoading } = useAuth();
@@ -16,6 +18,11 @@ export default function ProgressPage() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [recLoading, setRecLoading] = useState(false);
+  // Content suggestions only show when the server has them switched on.
+  const [recsEnabled, setRecsEnabled] = useState(false);
+  const subjects = useSubjects();
+  const [history, setHistory] = useState<{ studentId: string; scores: StudentScore[] } | null>(null);
+  const [historyError, setHistoryError] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
 
@@ -52,6 +59,32 @@ export default function ProgressPage() {
   useEffect(() => {
     return () => recommendationController.current?.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .health(controller.signal)
+      .then((h) => setRecsEnabled(Boolean(h.features?.recommendations)))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (authLoading || !user || !selected) return;
+    const controller = new AbortController();
+    api
+      .getStudentScores(selected, controller.signal)
+      .then((scores) => {
+        setHistory({ studentId: selected, scores });
+        setHistoryError("");
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setHistoryError(err instanceof Error ? err.message : "Could not load test history");
+        }
+      });
+    return () => controller.abort();
+  }, [authLoading, user, selected]);
 
   const getRecommendation = async (studentId: string) => {
     if (authLoading || !user) return;
@@ -104,7 +137,7 @@ export default function ProgressPage() {
         <div className="page-header-left">
           <h1 className="heading-display text-navy">Student Progress</h1>
           <p className="body text-text-secondary">
-            View individual student progress and suggested materials
+            Each student&apos;s test results over time, subject by subject
           </p>
         </div>
       </div>
@@ -258,6 +291,7 @@ export default function ProgressPage() {
                     </div>
                   </div>
 
+                  {recsEnabled && (
                   <button
                     type="button"
                     onClick={() => getRecommendation(currentStudent.student_id)}
@@ -279,11 +313,31 @@ export default function ProgressPage() {
                       </>
                     )}
                   </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Test history */}
+              <div className="card">
+                <div className="card-body">
+                  <div className="mb-4">
+                    <h3 className="heading-2 text-navy">Test History</h3>
+                    <p className="caption text-text-muted">
+                      Every recorded test, by subject. Dashed lines mark 40% and 75%.
+                    </p>
+                  </div>
+                  {historyError ? (
+                    <p role="alert" className="body-sm text-danger">{historyError}</p>
+                  ) : history?.studentId === currentStudent.student_id ? (
+                    <ScoreHistory scores={history.scores} subjects={subjects} />
+                  ) : (
+                    <div className="h-24 skeleton" />
+                  )}
                 </div>
               </div>
 
               {/* Recommendations */}
-              {recommendations.length > 0 && (
+              {recsEnabled && recommendations.length > 0 && (
                 <div className="card">
                   <div className="card-body">
                     <div className="flex items-center justify-between mb-4">
@@ -347,7 +401,7 @@ export default function ProgressPage() {
               )}
 
               {/* Loading State */}
-              {recLoading && (
+              {recsEnabled && recLoading && (
                 <div className="card">
                   <div className="card-body">
                     <div className="flex items-center justify-center py-8 gap-3">
@@ -369,7 +423,7 @@ export default function ProgressPage() {
                 </div>
                 <h3 className="heading-3 text-navy mb-1">Select a student</h3>
                 <p className="body-sm text-text-muted">
-                  Choose a student from the list to view their progress and recommendations
+                  Choose a student from the list to see their test history
                 </p>
               </div>
             </div>

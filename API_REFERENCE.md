@@ -305,6 +305,8 @@ Add a content item.
 
 ### POST /recommend
 
+**Off by default.** Returns 404 ("Content suggestions are switched off on this server") unless the server runs with `RECOMMENDATIONS_ENABLED=true`. `GET /health` reports the setting as `features.recommendations`.
+
 Get content recommendations for a student.
 
 **Request:**

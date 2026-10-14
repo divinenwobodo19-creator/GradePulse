@@ -57,6 +57,11 @@ BACKUP_INTERVAL = float(os.getenv("BACKUP_INTERVAL", "21600"))  # 6 hours
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # roster / content files
 
+# Content suggestions (POST /recommend) stay off until schools have a content
+# library and teachers can record whether a suggestion helped; until then the
+# engine has no real signal to learn from.
+RECOMMENDATIONS_ENABLED = os.getenv("RECOMMENDATIONS_ENABLED", "false").lower() == "true"
+
 SEED_DEMO_DATA = os.getenv("SEED_DEMO_DATA", "false").lower() == "true"
 
 brain_instance: Optional[Brain] = None
@@ -733,6 +738,8 @@ def add_content(content: ContentSchema, user: dict = Depends(get_current_user)):
 
 @app.post("/recommend")
 def recommend(request: RecommendationRequest, user: dict = Depends(get_current_user)):
+    if not RECOMMENDATIONS_ENABLED:
+        raise HTTPException(status_code=404, detail="Content suggestions are switched off on this server")
     try:
         # API contract: ALWAYS return a JSON array, even for top_n=1.
         # The bare-object-vs-array polymorphism was normalised at the HTTP
@@ -1026,6 +1033,8 @@ def health_check():
         "expected_workers": worker_count,
         "backup_status": backup_status,
         "backup_count": backup_count,
+        # Lets the web app hide screens for features this server has switched off.
+        "features": {"recommendations": RECOMMENDATIONS_ENABLED},
     }
 
 

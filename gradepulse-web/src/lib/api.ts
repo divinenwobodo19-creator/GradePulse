@@ -1,4 +1,5 @@
 import type { ScoreRow } from "./reports";
+import type { StudentScore } from "@/components/ScoreHistory";
 import type {
   AuthResponse,
   BrainSummary,
@@ -230,6 +231,16 @@ class ApiClient {
     >("GET", `/classes/${schoolId}`, undefined, signal);
   }
 
+  // Every recorded test for one student, oldest first.
+  async getStudentScores(studentId: string, signal?: AbortSignal) {
+    return this.request<StudentScore[]>(
+      "GET",
+      `/students/${encodeURIComponent(studentId)}/scores`,
+      undefined,
+      signal
+    );
+  }
+
   async createClass(schoolId: string, label: string) {
     return this.request<{
       class_id: string;
@@ -376,6 +387,8 @@ class ApiClient {
       status: string;
       engine: string;
       version: string;
+      // Features this server has switched on or off.
+      features?: { recommendations?: boolean };
     }>("GET", "/health", undefined, signal);
   }
 }
