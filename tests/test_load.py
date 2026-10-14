@@ -39,8 +39,12 @@ def _get_token():
     return resp.json()["token"]
 
 
+OPERATOR_KEY = os.getenv("TEST_OPERATOR_KEY", "")
+
+
 def _headers(token):
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    # Seeding content is operator-only; TEST_OPERATOR_KEY is the server's OPERATOR_KEY.
+    return {**{"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, "X-Operator-Key": OPERATOR_KEY}
 
 
 def _seed_students(token, count=10):
@@ -95,8 +99,17 @@ def seeded_data(token):
 
 # ── Test: Concurrent Recommendations ──────────────────────────────────────────
 
+def _skip_without_recommendations():
+    if not OPERATOR_KEY:
+        pytest.skip("Set TEST_OPERATOR_KEY so the test can seed content")
+    features = requests.get(f"{BASE_URL}/health").json().get("features", {})
+    if not features.get("recommendations", True):
+        pytest.skip("Content suggestions are switched off on this server (RECOMMENDATIONS_ENABLED)")
+
+
 class TestConcurrentRecommendations:
     def test_concurrent_recommend_no_errors(self, token, seeded_data):
+        _skip_without_recommendations()
         students = seeded_data["students"]
         errors = []
         latencies = []
@@ -122,6 +135,7 @@ class TestConcurrentRecommendations:
         print(f"\n  Recommend latency — p50: {p50:.3f}s, p95: {p95:.3f}s, max: {max(latencies):.3f}s")
 
     def test_concurrent_recommend_same_student(self, token, seeded_data):
+        _skip_without_recommendations()
         sid = seeded_data["students"][0]
         errors = []
 
@@ -192,6 +206,7 @@ class TestConcurrentBulkUpdates:
 
 class TestConcurrentReadWrite:
     def test_mixed_read_write_load(self, token, seeded_data):
+        _skip_without_recommendations()  # the mix includes /recommend
         students = seeded_data["students"]
         content = seeded_data["content"]
         errors = []
@@ -291,6 +306,7 @@ class TestResponseTimes:
 
 class TestSustainedLoad:
     def test_sustained_requests_no_corruption(self, token, seeded_data):
+        _skip_without_recommendations()  # the mix includes /recommend
         students = seeded_data["students"]
         content = seeded_data["content"]
         total_requests = 0

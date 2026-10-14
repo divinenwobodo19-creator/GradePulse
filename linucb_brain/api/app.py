@@ -311,7 +311,20 @@ LOGIN_HOST_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIM
 SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_SIGNUP_HOST", 30), window_seconds=60)
 
 
+# Behind the web app's /api proxy every request arrives from the proxy, so the
+# per-address sign-in limits would cover all users at once. The proxy does not
+# add the visitor's address itself; it passes on whatever X-Forwarded-For it
+# received, which a visitor can set. So the header is only used when the
+# operator says the front proxy (nginx) overwrites it and the app ports are not
+# reachable except through that proxy. See DEPLOYMENT.md.
+TRUST_FORWARDED_FOR = os.getenv("TRUST_FORWARDED_FOR", "false").lower() == "true"
+
+
 def _client_host(request: Request) -> str:
+    if TRUST_FORWARDED_FOR:
+        forwarded = [a.strip() for a in request.headers.get("x-forwarded-for", "").split(",") if a.strip()]
+        if forwarded:
+            return forwarded[-1]  # the entry added by the proxy closest to us
     return request.client.host if request.client else "unknown"
 
 
@@ -732,8 +745,10 @@ def list_student_scores(student_id: str, user: dict = Depends(get_current_user))
 # CONTENT
 # ══════════════════════════════════════════════════════════════════════════════
 
+# The content catalogue is shared by every school until per-school content
+# libraries exist, so only the deployment's operator may change it.
 @app.post("/content", response_model=ContentSchema)
-def add_content(content: ContentSchema, user: dict = Depends(get_current_user)):
+def add_content(content: ContentSchema, _: None = Depends(require_operator)):
     try:
         brain_instance.add_content(
             content.content_id, content.title, content.topic,
@@ -833,7 +848,9 @@ def get_summary(user: dict = Depends(get_current_user)):
     return {
         "student_count": store.count_students(user_school) if user_school else 0,
         "content_count": len(brain_instance.contents),
-        "total_sessions": brain_instance.update_count,
+        # Scores recorded in the caller's school (the engine's own counter
+        # covered every school).
+        "total_sessions": store.count_scores(user_school) if user_school else 0,
         "model_type": brain_instance.model_type,
         "current_alpha": brain_instance.alpha,
         "current_gamma": brain_instance.gamma,
@@ -843,7 +860,7 @@ def get_summary(user: dict = Depends(get_current_user)):
 
 
 @app.post("/save")
-def save_brain_state(user: dict = Depends(get_current_user)):
+def save_brain_state(_: None = Depends(require_operator)):
     synchronizer.save_brain(brain_instance.save)
     return {"status": "saved", "path": BRAIN_STATE_PATH}
 
@@ -928,6 +945,7 @@ def restore_backup(backup_path: str, _: None = Depends(require_operator)):
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest_data(
+    request: Request,
     file: UploadFile = File(...),
     type: str = Form(...),
     school: Optional[str] = Form(None),
@@ -948,6 +966,8 @@ async def ingest_data(
     # Validate type parameter
     if type not in ("students", "content"):
         raise HTTPException(status_code=400, detail="type must be 'students' or 'content'")
+    if type == "content":
+        require_operator(request)  # shared catalogue: operator only, like POST /content
     
     # Validate file extension
     filename = file.filename or "upload.csv"

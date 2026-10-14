@@ -319,16 +319,6 @@ class ApiClient {
     return this.request<ScoreRow[]>("GET", `/scores${qs}`, undefined, signal);
   }
 
-  // ─── Content ───
-  async addContent(data: {
-    content_id: string;
-    title: string;
-    topic: string;
-    difficulty: number;
-    content_type: string;
-  }) {
-    return this.request<{ content_id: string }>("POST", "/content", data);
-  }
 
   // ─── Brain Operations ───
   // /recommend always returns a JSON array, including at top_n=1.
@@ -378,9 +368,6 @@ class ApiClient {
     return this.request<{ reward: number }>("POST", "/calculate-reward", data);
   }
 
-  async save() {
-    return this.request<{ status: string }>("POST", "/save");
-  }
 
   async health(signal?: AbortSignal) {
     return this.request<{

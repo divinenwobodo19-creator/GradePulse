@@ -282,6 +282,8 @@ Delete a student.
 
 ### POST /content
 
+**Operator only.** Requires `X-Operator-Key`. The content catalogue is shared by every school.
+
 Add a content item.
 
 **Request:**
@@ -497,6 +499,8 @@ Get brain state summary.
 
 ### POST /save
 
+**Operator only.** Requires `X-Operator-Key`. The engine state is also saved automatically.
+
 Force save brain state to disk.
 
 **Response (200):**
@@ -623,6 +627,8 @@ Restore from a backup.
 ## Data Ingestion
 
 ### POST /ingest
+
+Importing `type=content` is operator-only (`X-Operator-Key`); importing `type=students` uses the caller's login and school.
 
 Upload CSV/Excel file for ingestion.
 
