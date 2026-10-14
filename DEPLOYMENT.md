@@ -118,7 +118,7 @@ server {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
@@ -133,6 +133,7 @@ server {
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
@@ -143,6 +144,8 @@ ln -s /etc/nginx/sites-available/gradepulse /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 certbot --nginx -d api.yourdomain.com -d web.yourdomain.com
 ```
+
+**Sign-in rate limits behind nginx.** The limits count attempts per visitor address. Behind a proxy every request looks like it comes from the proxy, so by default all visitors share one allowance. The web app's `/api` proxy does not add the visitor's address itself; it passes on whatever `X-Forwarded-For` it receives, which a visitor can set. The nginx config above *overwrites* that header with the real address (`$remote_addr`). Once that is in place **and** ports 3000 and 8000 are not reachable from outside except through nginx (firewall them, or publish them on `127.0.0.1` only), set `TRUST_FORWARDED_FOR=true` in `.env`. Leave it `false` otherwise.
 
 ### 1.5 Firewall
 

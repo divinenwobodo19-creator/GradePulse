@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Operations
 
+- **Content and engine-state changes are operator-only.** `POST /content`, content imports (`POST /ingest` with `type=content`) and `POST /save` need `X-Operator-Key`; any school login could change the shared content catalogue before. `deploy/pilot_seed.py` takes `--operator-key` (or `$OPERATOR_KEY`) to load the catalogue and skips it otherwise.
+- **`/summary` `total_sessions`** counts the caller's school's recorded scores (it was the engine's platform-wide counter). `content_count` remains the size of the shared catalogue.
+- **`TRUST_FORWARDED_FOR`** (default `false`) lets the sign-in rate limits use `X-Forwarded-For` behind a front proxy that overwrites it. Without it, every visitor behind the web app's proxy shares one allowance. `DEPLOYMENT.md` explains when it is safe to turn on.
 - **Logging.** The API logs through Python's `logging` at `LOG_LEVEL`, instead of `print`. An unexpected error is logged with its traceback, and the client gets `{"detail": "Internal server error", "error_id": "..."}` so a report can be matched to the log line.
 - **One version number.** `linucb_brain.__version__` feeds `pyproject.toml`, the FastAPI app and `/health` (which used to say 1.0.0).
 - **`GRADEPULSE_ENV`** is the setting's name; the misspelt `GRADEPULPE_ENV` is still read, with a warning. Config files and docs use the new name.

@@ -45,12 +45,14 @@ GRADE_LEVELS = {
 DEFAULT_CONFIG = os.path.join(os.path.dirname(__file__), "pilot_schools.json")
 
 
-def _request(base, method, path, token=None, payload=None, files=None, form=None, timeout=60):
+def _request(base, method, path, token=None, payload=None, files=None, form=None, timeout=60, operator_key=None):
     url = base.rstrip("/") + path
     headers = {"Accept": "application/json"}
     data = None
     if token:
         headers["Authorization"] = "Bearer " + token
+    if operator_key:
+        headers["X-Operator-Key"] = operator_key
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -137,10 +139,10 @@ def _student_csv(school_name, students):
     return buf.getvalue().encode("utf-8")
 
 
-def _ingest(base, token, kind, csv_bytes):
+def _ingest(base, token, kind, csv_bytes, operator_key=None):
     files = ("students.csv" if kind == "students" else "content.csv", csv_bytes, "text/csv")
     status, body = _request(base, "POST", "/ingest", token=token,
-                            files=files, form={"type": kind})
+                            files=files, form={"type": kind}, operator_key=operator_key)
     if status != 200:
         raise SystemExit(f"/ingest {kind} failed: HTTP {status} {body}")
     if body and body.get("status") != "success":
@@ -187,6 +189,8 @@ def main():
     parser.add_argument("--api", default="http://localhost:8000", help="Base API URL")
     parser.add_argument("--config", default=DEFAULT_CONFIG, help="Pilot schools JSON")
     parser.add_argument("--scores", action="store_true", help="Run recommend->update rounds")
+    parser.add_argument("--operator-key", default=os.getenv("OPERATOR_KEY", ""),
+                        help="Server's OPERATOR_KEY; needed to load the content catalogue (default: $OPERATOR_KEY)")
     parser.add_argument("--rounds", type=int, default=4, help="Rounds per student (with --scores)")
     args = parser.parse_args()
 
@@ -211,6 +215,7 @@ def main():
         raise SystemExit(f"No GradePulse API at {args.api} (engine check failed) — start the demo/prod stack first")
 
     total_students = total_rewards = 0
+    content_skipped_note = False
     for school in config["schools"]:
         name = school["name"].strip().upper()
         print(f"Seeding {name}")
@@ -220,7 +225,13 @@ def main():
         cfg = _ingest(args.api, token, "students", _student_csv(name, school["students"]))
         stats = (cfg or {}).get("report", {}).get("stats", {})
         print(f"  students ingested: {stats.get('students_valid', 0)} valid / {stats.get('students_read', 0)} read")
-        _ingest(args.api, token, "content", content_bytes)
+        # The content catalogue is shared and operator-only; it only matters
+        # when content suggestions are switched on.
+        if args.operator_key:
+            _ingest(args.api, token, "content", content_bytes, operator_key=args.operator_key)
+        elif not content_skipped_note:
+            print("  content catalogue skipped (pass --operator-key or set OPERATOR_KEY to load it)")
+            content_skipped_note = True
         if args.scores:
             total_rewards += _simulate(args.api, token, school["students"], args.rounds)
         _verify(args.api, token, school_id, name)

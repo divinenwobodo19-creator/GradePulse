@@ -18,6 +18,8 @@ import io
 import pytest
 import requests
 
+OPERATOR_KEY = os.getenv("TEST_OPERATOR_KEY", "")
+
 from live_api import is_real_api
 
 BASE_URL = os.getenv("TEST_API_URL", "http://localhost:8000")
@@ -44,7 +46,8 @@ def _get_token():
 
 
 def _headers(token):
-    return {"Authorization": f"Bearer {token}"}
+    # Content import is operator-only; TEST_OPERATOR_KEY is the server's OPERATOR_KEY.
+    return {**{"Authorization": f"Bearer {token}"}, "X-Operator-Key": OPERATOR_KEY}
 
 
 def _make_student_csv(rows):
@@ -149,6 +152,8 @@ class TestIngestImportBug:
         assert body["report"]["stats"]["students_valid"] == 2
 
     def test_valid_content_csv_succeeds(self, token):
+        if not OPERATOR_KEY:
+            pytest.skip("Set TEST_OPERATOR_KEY to run content import tests")
         csv_data = _make_content_csv([
             {"content_id": "APIC001", "title": "API Test Content", "topic": "Math", "difficulty": "3", "content_type": "video"},
         ])
@@ -216,6 +221,8 @@ class TestIngestPostFix:
         assert resp.status_code == 200
 
     def test_content_csv_after_fix(self, token):
+        if not OPERATOR_KEY:
+            pytest.skip("Set TEST_OPERATOR_KEY to run content import tests")
         csv_data = _make_content_csv([
             {"content_id": "FIXC001", "title": "Post Fix Content", "topic": "Math", "difficulty": "3", "content_type": "video"},
         ])

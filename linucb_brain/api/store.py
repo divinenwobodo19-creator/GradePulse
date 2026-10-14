@@ -373,6 +373,18 @@ def count_students(school_id: str = "") -> int:
     return n
 
 
+def count_scores(school_id: str) -> int:
+    """Scores recorded for the school's current students."""
+    conn = _get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM scores sc JOIN students st ON st.id = sc.student_pk "
+        "WHERE st.school_id = ? AND st.archived_at IS NULL",
+        (school_id,),
+    ).fetchone()[0]
+    conn.close()
+    return n
+
+
 def list_scores(student_pk: int) -> List[dict]:
     conn = _get_db()
     rows = conn.execute(

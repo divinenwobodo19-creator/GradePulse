@@ -17,6 +17,7 @@ os.environ.setdefault("BRAIN_STATE_PATH", "/tmp/test_api_brain.json")
 os.environ.setdefault("CONFIG_PATH", "/tmp/test_api_config.json")
 
 from linucb_brain.api.app import app
+from conftest import OPERATOR_HEADERS
 
 TEST_EMAIL = f"apitest_{uuid.uuid4().hex[:8]}@test.com"
 TEST_PASSWORD = "TestPass123!"
@@ -86,7 +87,7 @@ def test_add_content():
             "difficulty": 3,
             "content_type": "video"
         }
-        response = client.post("/content", json=content_data, headers=headers)
+        response = client.post("/content", json=content_data, headers={**headers, **OPERATOR_HEADERS})
         assert response.status_code == 200
         data = response.json()
         assert data["content_id"] == cid
@@ -104,7 +105,7 @@ def test_recommendation_endpoint():
         client.post("/content", json={
             "content_id": cid, "title": "Rec Content",
             "topic": "Math", "difficulty": 3, "content_type": "video"
-        }, headers=headers)
+        }, headers={**headers, **OPERATOR_HEADERS})
         response = client.post("/recommend", json={
             "student_id": sid, "top_n": 1
         }, headers=headers)

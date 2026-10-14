@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from linucb_brain.api import app as app_module
 from linucb_brain.api.app import app
+from conftest import OPERATOR_HEADERS
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +97,7 @@ def test_scores_are_ordered_by_test_date_not_entry_order(client, school):
 def test_engine_reward_is_not_recorded_as_a_grade(client, school):
     _add(client, school)
     cid = f"C_{uuid.uuid4().hex[:6]}"
-    assert client.post("/content", headers=school["h"], json={
+    assert client.post("/content", headers={**school["h"], **OPERATOR_HEADERS}, json={
         "content_id": cid, "title": "Fractions", "topic": "MATH", "difficulty": 2, "content_type": "video",
     }).status_code == 200
     assert client.post("/update", headers=school["h"], json={
@@ -159,7 +160,7 @@ def test_roster_import_keeps_teacher_scores_and_replaces_imported_history(client
 
 def test_recommend_works_for_a_stored_student(client, school):
     _add(client, school)
-    assert client.post("/content", headers=school["h"], json={
+    assert client.post("/content", headers={**school["h"], **OPERATOR_HEADERS}, json={
         "content_id": f"C_{uuid.uuid4().hex[:6]}", "title": "Algebra", "topic": "MATH",
         "difficulty": 2, "content_type": "video",
     }).status_code == 200
@@ -359,3 +360,35 @@ def test_unexpected_error_is_logged_with_a_reference_the_client_can_quote(client
     body = r.json()
     assert body["detail"] == "Internal server error" and "disk on fire" not in r.text
     assert any(body["error_id"] in rec.getMessage() and rec.exc_info for rec in caplog.records)
+
+
+def test_summary_counts_only_this_schools_scores(client, school):
+    _add(client, school)
+    _enter(client, school, 0.5)
+    _enter(client, school, 0.6, subject="ENGLISH")
+    assert client.get("/summary", headers=school["h"]).json()["total_sessions"] == 2
+
+
+def test_content_import_needs_the_operator_key(client, school):
+    csv = b"content_id,title,topic,difficulty,content_type\nZ1,Fractions,MATH,2,video\n"
+    r = client.post("/ingest", headers=school["h"], data={"type": "content"},
+                    files={"file": ("content.csv", csv, "text/csv")})
+    assert r.status_code == 403
+    r = client.post("/ingest", headers={**school["h"], **OPERATOR_HEADERS}, data={"type": "content"},
+                    files={"file": ("content.csv", csv, "text/csv")})
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("trusted, forwarded, expected", [
+    (False, "6.6.6.6", "testclient"),             # header ignored unless trusted
+    (True, "6.6.6.6", "6.6.6.6"),
+    (True, "1.1.1.1, 6.6.6.6", "6.6.6.6"),         # right-most: added by the nearest proxy
+    (True, "", "testclient"),
+])
+def test_client_address_for_rate_limits(monkeypatch, trusted, forwarded, expected):
+    from starlette.requests import Request
+
+    monkeypatch.setattr(app_module, "TRUST_FORWARDED_FOR", trusted)
+    headers = [(b"x-forwarded-for", forwarded.encode())] if forwarded else []
+    request = Request({"type": "http", "headers": headers, "client": ("testclient", 50000)})
+    assert app_module._client_host(request) == expected
