@@ -14,6 +14,8 @@
 
 > **Contract addition (2026-10-12, unreleased) — passwords:** `POST /auth/change-password` returns a new token (store it; older tokens stop working). `GET /members` and `POST /members/{id}/password-reset` (admin) issue a single-use reset code that `POST /auth/reset-password` redeems. A 401 on any request can now also mean "password changed elsewhere". See `API_REFERENCE.md` → Passwords.
 
+> **Contract change (2026-10-14, unreleased) — teacher scope:** a teacher's student, score, triage, report and class listings now cover only the classes assigned in `PUT /members/{id}/classes` (`GET /members` returns `class_ids`). Teachers get 403 on `DELETE /students/{id}`, class-list imports, and `POST`/`PUT /classes`; a class outside their scope given as `class_id` is 403, and a student outside it is 404.
+
 ---
 
 ## 1. TL;DR

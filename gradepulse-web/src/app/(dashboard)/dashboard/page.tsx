@@ -125,7 +125,11 @@ export default function DashboardPage() {
         <div className="page-header-left">
           <h1 className="heading-display text-navy">Dashboard</h1>
           <p className="body text-text-secondary">
-            Who needs help, who is on track and who is ahead{user?.school_name ? ` at ${user.school_name}` : ""}
+            {user?.role === "admin"
+              ? `Who needs help, who is on track and who is ahead${user?.school_name ? ` at ${user.school_name}` : ""}`
+              : classes.length > 0
+                ? `Your classes: ${classes.map((c) => c.label).join(", ")}`
+                : "You have not been given a class yet. Ask your school admin to add you in Settings → People."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -159,7 +163,7 @@ export default function DashboardPage() {
           accent="var(--color-gold)"
           label="Students"
           value={summary?.student_count ?? students.length}
-          sub="In your school"
+          sub={user?.role === "admin" ? "In your school" : "In your classes"}
           icon={<svg className="w-4 h-4 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}
         />
         <MetricCard

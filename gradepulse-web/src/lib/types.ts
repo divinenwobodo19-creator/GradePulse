@@ -12,6 +12,8 @@ export interface Member {
   id: string;
   email: string;
   role: UserRole;
+  // A teacher's classes (what they can see); empty for admins, who see every class.
+  class_ids: string[];
 }
 
 export interface PasswordResetLink {

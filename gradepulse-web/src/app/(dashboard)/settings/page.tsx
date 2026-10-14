@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import type { BrainSummary, Invite, Member } from "@/lib/types";
+import type { BrainSummary, Invite, Member, SchoolClass } from "@/lib/types";
 import { rememberSubjects, useSubjects } from "@/lib/subjects";
 
 // Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
@@ -18,6 +18,8 @@ export default function SettingsPage() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviting, setInviting] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
+  const [assigning, setAssigning] = useState("");
   // The reset link just created for a teacher; shown once so it can be copied.
   const [resetLink, setResetLink] = useState<{ memberId: string; url: string } | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -76,11 +78,16 @@ export default function SettingsPage() {
     };
   }, [authLoading, user]);
 
+  const schoolId = user?.school_id ?? "";
+
   useEffect(() => {
     if (authLoading || !isAdmin) return;
 
     const controller = new AbortController();
     api.listMembers(controller.signal).then(setMembers).catch(() => undefined);
+    if (schoolId) {
+      api.getClasses(schoolId, controller.signal).then(setSchoolClasses).catch(() => undefined);
+    }
     api
       .listInvites(controller.signal)
       .then(setInvites)
@@ -90,7 +97,7 @@ export default function SettingsPage() {
         }
       });
     return () => controller.abort();
-  }, [authLoading, isAdmin]);
+  }, [authLoading, isAdmin, schoolId]);
 
   const saveSubjects = async (next: string[]) => {
     setSavingSubjects(true);
@@ -130,6 +137,21 @@ export default function SettingsPage() {
       showToast("error", err instanceof Error ? err.message : "Could not change the password");
     } finally {
       setChangingPassword(false);
+    }
+  };
+
+  const toggleMemberClass = async (member: Member, classId: string) => {
+    const next = member.class_ids.includes(classId)
+      ? member.class_ids.filter((id) => id !== classId)
+      : [...member.class_ids, classId];
+    setAssigning(member.id);
+    try {
+      const updated = await api.setMemberClasses(member.id, next);
+      setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not update classes");
+    } finally {
+      setAssigning("");
     }
   };
 
@@ -405,8 +427,8 @@ export default function SettingsPage() {
             <div className="mb-4">
               <h2 className="heading-2 text-navy">People</h2>
               <p className="caption text-text-muted">
-                If a teacher forgets their password, create a reset link and send it to them. It works once and
-                expires after 24 hours.
+                Tick the classes each teacher teaches; they see only those students, scores and reports. If a
+                teacher forgets their password, create a reset link (it works once and expires after 24 hours).
               </p>
             </div>
             <ul className="divide-y divide-border">
@@ -426,6 +448,30 @@ export default function SettingsPage() {
                       </button>
                     )}
                   </div>
+                  {member.role === "teacher" && (
+                    <fieldset className="mt-2" disabled={assigning === member.id}>
+                      <legend className="caption text-text-secondary mb-1">Classes</legend>
+                      {schoolClasses.length === 0 ? (
+                        <p className="caption text-text-muted">Add classes on the Classes page first.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          {schoolClasses.map((cls) => (
+                            <label key={cls.class_id} className="flex items-center gap-1.5 body-sm text-navy">
+                              <input
+                                type="checkbox"
+                                checked={member.class_ids.includes(cls.class_id)}
+                                onChange={() => toggleMemberClass(member, cls.class_id)}
+                              />
+                              {cls.label}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      {schoolClasses.length > 0 && member.class_ids.length === 0 && (
+                        <p className="caption text-danger mt-1">No classes yet, so this teacher sees no students.</p>
+                      )}
+                    </fieldset>
+                  )}
                   {resetLink?.memberId === member.id && (
                     <div role="status" className="mt-3 p-3 bg-surface-elevated rounded-lg">
                       <div className="caption text-text-secondary mb-1">

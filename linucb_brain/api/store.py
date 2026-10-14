@@ -90,6 +90,14 @@ def init_store():
         CREATE UNIQUE INDEX IF NOT EXISTS classes_school_label
             ON classes (school_id, label) WHERE archived_at IS NULL;
 
+        -- Which classes a teacher teaches. Admins are not listed: they see
+        -- every class in their school.
+        CREATE TABLE IF NOT EXISTS teacher_classes (
+            user_id TEXT NOT NULL,
+            class_id TEXT NOT NULL,
+            PRIMARY KEY (user_id, class_id)
+        );
+
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             school_id TEXT NOT NULL,
@@ -247,6 +255,37 @@ def rename_class(school_id: str, class_id: str, label: str) -> Optional[dict]:
     return get_class(school_id, class_id)
 
 
+def get_teacher_classes(user_id: str, school_id: str) -> List[str]:
+    """IDs of the current classes a teacher is assigned to in their school."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT tc.class_id FROM teacher_classes tc JOIN classes c ON c.class_id = tc.class_id "
+        "WHERE tc.user_id = ? AND c.school_id = ? AND c.archived_at IS NULL ORDER BY c.created_at, c.rowid",
+        (user_id, school_id),
+    ).fetchall()
+    conn.close()
+    return [r["class_id"] for r in rows]
+
+
+def set_teacher_classes(user_id: str, school_id: str, class_ids: Iterable[str]) -> List[str]:
+    """Replace a teacher's classes. IDs that are not current classes of the
+    school are ignored. Returns the classes now assigned."""
+    valid = {c["class_id"] for c in list_classes(school_id)}
+    conn = _get_db()
+    conn.execute(
+        "DELETE FROM teacher_classes WHERE user_id = ? AND class_id IN "
+        "(SELECT class_id FROM classes WHERE school_id = ?)",
+        (user_id, school_id),
+    )
+    conn.executemany(
+        "INSERT OR IGNORE INTO teacher_classes (user_id, class_id) VALUES (?, ?)",
+        [(user_id, cid) for cid in class_ids if cid in valid],
+    )
+    conn.commit()
+    conn.close()
+    return get_teacher_classes(user_id, school_id)
+
+
 def get_subjects(school_id: str) -> List[str]:
     conn = _get_db()
     row = conn.execute("SELECT subjects FROM schools WHERE school_id = ?", (school_id,)).fetchone()
@@ -345,14 +384,29 @@ def get_student(school_id: str, student_id: str) -> Optional[StudentRecord]:
     return records[0] if records else None
 
 
-def list_students(school_id: str, class_id: str = "") -> List[StudentRecord]:
+def _class_filter(column: str, class_id: str, class_ids: Optional[Iterable[str]]) -> Tuple[str, list]:
+    """SQL for "in this class" and/or "in one of these classes" (a teacher's)."""
+    sql, params = "", []
+    if class_id:
+        sql += f" AND {column} = ?"
+        params.append(class_id)
+    if class_ids is not None:
+        class_ids = list(class_ids)
+        if not class_ids:
+            return " AND 0", []
+        sql += f" AND {column} IN ({','.join('?' * len(class_ids))})"
+        params.extend(class_ids)
+    return sql, params
+
+
+def list_students(school_id: str, class_id: str = "", class_ids: Optional[Iterable[str]] = None) -> List[StudentRecord]:
+    """Current students of a school; optionally one class, and/or only the
+    classes in `class_ids` (None means no such limit)."""
     if not school_id:
         return []
-    query = "SELECT * FROM students WHERE school_id = ? AND archived_at IS NULL"
-    params = [school_id]
-    if class_id:
-        query += " AND class_id = ?"
-        params.append(class_id)
+    extra, extra_params = _class_filter("class_id", class_id, class_ids)
+    query = "SELECT * FROM students WHERE school_id = ? AND archived_at IS NULL" + extra
+    params = [school_id, *extra_params]
     conn = _get_db()
     rows = conn.execute(query + " ORDER BY name COLLATE NOCASE, id", params).fetchall()
     records = _attach_scores(conn, [_record(r) for r in rows])
@@ -373,13 +427,14 @@ def count_students(school_id: str = "") -> int:
     return n
 
 
-def count_scores(school_id: str) -> int:
-    """Scores recorded for the school's current students."""
+def count_scores(school_id: str, class_ids: Optional[Iterable[str]] = None) -> int:
+    """Scores recorded for the school's current students (optionally only some classes)."""
+    extra, extra_params = _class_filter("st.class_id", "", class_ids)
     conn = _get_db()
     n = conn.execute(
         "SELECT COUNT(*) FROM scores sc JOIN students st ON st.id = sc.student_pk "
-        "WHERE st.school_id = ? AND st.archived_at IS NULL",
-        (school_id,),
+        "WHERE st.school_id = ? AND st.archived_at IS NULL" + extra,
+        (school_id, *extra_params),
     ).fetchone()[0]
     conn.close()
     return n
@@ -396,19 +451,17 @@ def list_scores(student_pk: int) -> List[dict]:
     return [dict(r) for r in rows]
 
 
-def list_school_scores(school_id: str, class_id: str = "") -> List[dict]:
-    """Every recorded score in a school (or one class), oldest first, for reports."""
+def list_school_scores(school_id: str, class_id: str = "", class_ids: Optional[Iterable[str]] = None) -> List[dict]:
+    """Every recorded score in a school (or one class, or a teacher's classes), oldest first."""
     if not school_id:
         return []
+    extra, extra_params = _class_filter("st.class_id", class_id, class_ids)
     query = (
         "SELECT st.student_id, sc.subject, sc.score, sc.assessed_on, sc.label "
         "FROM scores sc JOIN students st ON st.id = sc.student_pk "
-        "WHERE st.school_id = ? AND st.archived_at IS NULL"
+        "WHERE st.school_id = ? AND st.archived_at IS NULL" + extra
     )
-    params = [school_id]
-    if class_id:
-        query += " AND st.class_id = ?"
-        params.append(class_id)
+    params = [school_id, *extra_params]
     conn = _get_db()
     rows = conn.execute(query + " ORDER BY sc.assessed_on, sc.id", params).fetchall()
     conn.close()
