@@ -16,9 +16,9 @@ Two services run together:
 
 The browser talks to the web app, which **server-side proxies** `/api/*` to the API container; the API host is never exposed to browsers. Both persist data in the `gradepulse-data` Docker volume at `/data`:
 
-- `brain_state.json` — the model (LinUCB parameters, students, sessions)
-- `class_config.json` — school/class registry
-- `gradepulse_users.db` — accounts (SQLite, WAL mode)
+- `brain_state.json` — the recommendation engine's state (model parameters, content, engine sessions)
+- `class_config.json` — legacy school/class registry. No longer written; if present it is copied into `gradepulse_users.db` on first start
+- `gradepulse_users.db` — accounts, invites, schools, classes, students and scores (SQLite, WAL mode). This is the file that matters most
 - `backups/` — automated backups (all three of the above)
 
 ---
@@ -63,7 +63,7 @@ nano .env   # must-haves below
 Set in `.env`:
 
 ```dotenv
-GRADEPULPE_ENV=production
+GRADEPULSE_ENV=production
 JWT_SECRET=<generate below>
 FRONTEND_URL=https://your-web-domain.com
 WEB_CONCURRENCY=1
@@ -118,7 +118,7 @@ server {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
@@ -133,6 +133,7 @@ server {
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
@@ -143,6 +144,8 @@ ln -s /etc/nginx/sites-available/gradepulse /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 certbot --nginx -d api.yourdomain.com -d web.yourdomain.com
 ```
+
+**Sign-in rate limits behind nginx.** The limits count attempts per visitor address. Behind a proxy every request looks like it comes from the proxy, so by default all visitors share one allowance. The web app's `/api` proxy does not add the visitor's address itself; it passes on whatever `X-Forwarded-For` it receives, which a visitor can set. The nginx config above *overwrites* that header with the real address (`$remote_addr`). Once that is in place **and** ports 3000 and 8000 are not reachable from outside except through nginx (firewall them, or publish them on `127.0.0.1` only), set `TRUST_FORWARDED_FOR=true` in `.env`. Leave it `false` otherwise.
 
 ### 1.5 Firewall
 
@@ -184,6 +187,29 @@ OPERATOR_KEY=...   # the value from .env
 
 curl -X POST http://localhost:8000/backup -H "X-Operator-Key: $OPERATOR_KEY"     # create
 curl http://localhost:8000/backups -H "X-Operator-Key: $OPERATOR_KEY"           # list
+```
+
+### Taking payments (Paystack)
+
+Schools pay per student, per term, from the Billing page (admins only). To switch it on:
+
+1. In the Paystack dashboard, copy your **secret key** (Settings → API Keys & Webhooks). Start with the `sk_test_...` key.
+2. In `.env`, set `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA` (whole naira) and, if a term is not 120 days, `TERM_DAYS`. Make sure `FRONTEND_URL` is the public web address; Paystack sends the admin back to `FRONTEND_URL/billing` after paying.
+3. In the same Paystack page, set the **webhook URL** to `https://api.yourdomain.com/billing/webhook`. Paystack signs each call with the secret key, and GradePulse rejects unsigned or forged ones. The webhook records a payment even if the admin closes the tab before returning.
+4. `docker compose up -d` to apply. Pay a test term with one of Paystack's test cards, then check the Billing page shows it.
+5. When ready, swap in the `sk_live_...` key.
+
+Limits are soft: a school that has not paid, whose term has ended, or that has more students than it paid for keeps full use; its admin sees a reminder bar.
+
+### A locked-out school admin
+
+Teachers get reset links from their school admin in Settings. If the admin themselves is locked out, issue a code with the operator key and send them the link:
+
+```bash
+curl -X POST http://localhost:8000/auth/operator-reset \
+  -H "X-Operator-Key: $OPERATOR_KEY" -H "Content-Type: application/json" \
+  -d '{"email":"admin@school.ng"}'
+# -> {"code":"...","expires_at":"..."}   link: https://<your-site>/reset-password?code=<code>
 ```
 
 ### Backup from the host
@@ -238,7 +264,7 @@ docker compose up -d --build
 
 | Symptom | Fix |
 |---|---|
-| Container exits immediately | Check `docker compose logs api` — in `GRADEPULPE_ENV=production` a weak/missing `JWT_SECRET` aborts deliberately at boot. |
+| Container exits immediately | Check `docker compose logs api` — in `GRADEPULSE_ENV=production` a weak/missing `JWT_SECRET` aborts deliberately at boot. |
 | Port 8000 busy | `lsof -i :8000` and kill, or change `PORT` in `.env`. |
 | API recovers with empty model | A deployment starts with an empty engine when `brain_state.json` is absent (students and scores are in `gradepulse_users.db`, not in that file). Restore from `/data/backups/` if needed. |
 | Web can't reach the API | `API_URL=http://api:8000` is set in `docker-compose.yml`; only override via the `API_URL` build ARG/env. Browsers must call `/api/*` same-origin. |

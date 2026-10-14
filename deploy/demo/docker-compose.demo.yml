@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - GRADEPULPE_ENV=development
+      - GRADEPULSE_ENV=development
       - JWT_SECRET=gradepulse-demo-secret-8f2e9a4c1b7d3e5f6a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f
       - WEB_CONCURRENCY=1
       - RATE_LIMIT_LOGIN_EMAIL=1000

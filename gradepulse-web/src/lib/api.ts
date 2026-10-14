@@ -1,8 +1,14 @@
+import type { ScoreRow } from "./reports";
+import type { StudentScore } from "@/components/ScoreHistory";
 import type {
   AuthResponse,
+  BillingPrice,
+  BillingStatus,
   BrainSummary,
   IngestResult,
   Invite,
+  Member,
+  PasswordResetLink,
   SchoolClass,
   Student,
   TriageResult,
@@ -150,9 +156,70 @@ class ApiClient {
     return this.request<Omit<AuthResponse, "token">>("GET", "/auth/me");
   }
 
+  // ─── Passwords ───
+  // Signs every other session out; this one continues on the new token.
+  async changePassword(currentPassword: string, newPassword: string) {
+    const data = await this.request<AuthResponse>("POST", "/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    this.setToken(data.token);
+    return data;
+  }
+
+  async resetPassword(code: string, newPassword: string) {
+    return this.request<{ status: string }>("POST", "/auth/reset-password", {
+      code,
+      new_password: newPassword,
+    });
+  }
+
+  // ─── School members (admin only) ───
+  async listMembers(signal?: AbortSignal) {
+    return this.request<Member[]>("GET", "/members", undefined, signal);
+  }
+
+  // Admin only: the classes a teacher teaches, and so can see.
+  async setMemberClasses(userId: string, classIds: string[]) {
+    return this.request<Member>("PUT", `/members/${encodeURIComponent(userId)}/classes`, {
+      class_ids: classIds,
+    });
+  }
+
+  // A single-use reset code for one teacher. It is only returned here, once.
+  async createMemberPasswordReset(userId: string) {
+    return this.request<PasswordResetLink>("POST", `/members/${encodeURIComponent(userId)}/password-reset`);
+  }
+
+  // ─── Billing (Paystack) ───
+  async getBillingPrice(signal?: AbortSignal) {
+    return this.request<BillingPrice>("GET", "/billing/price", undefined, signal);
+  }
+
+  async getBilling(signal?: AbortSignal) {
+    return this.request<BillingStatus>("GET", "/billing", undefined, signal);
+  }
+
+  async getBillingReminder(signal?: AbortSignal) {
+    return this.request<{ show: boolean; state?: string }>("GET", "/billing/reminder", undefined, signal);
+  }
+
+  // Returns Paystack's payment page to send the admin to.
+  async startCheckout(students: number, email?: string) {
+    return this.request<{ authorization_url: string; reference: string }>("POST", "/billing/checkout", {
+      students,
+      ...(email ? { email } : {}),
+    });
+  }
+
+  async verifyPayment(reference: string) {
+    return this.request<BillingStatus & { payment_status: string }>("POST", "/billing/verify", { reference });
+  }
+
   // ─── Invites (school admin only) ───
-  async createInvite() {
-    return this.request<Invite>("POST", "/invites");
+  // classIds: the classes the invited teacher will teach (they join straight into them).
+  async createInvite(classIds: string[] = []) {
+    return this.request<Invite>("POST", "/invites", { class_ids: classIds });
   }
 
   async listInvites(signal?: AbortSignal) {
@@ -182,11 +249,31 @@ class ApiClient {
     );
   }
 
+  // ─── Subjects (per school) ───
+  async getSubjects(signal?: AbortSignal) {
+    return this.request<{ subjects: string[] }>("GET", "/subjects", undefined, signal);
+  }
+
+  // Admin only. Replaces the school's whole list.
+  async setSubjects(subjects: string[]) {
+    return this.request<{ subjects: string[] }>("PUT", "/subjects", { subjects });
+  }
+
   // ─── Classes ───
   async getClasses(schoolId: string, signal?: AbortSignal) {
     return this.request<
       { class_id: string; label: string; grade_level: string; arm: string }[]
     >("GET", `/classes/${schoolId}`, undefined, signal);
+  }
+
+  // Every recorded test for one student, oldest first.
+  async getStudentScores(studentId: string, signal?: AbortSignal) {
+    return this.request<StudentScore[]>(
+      "GET",
+      `/students/${encodeURIComponent(studentId)}/scores`,
+      undefined,
+      signal
+    );
   }
 
   async createClass(schoolId: string, label: string) {
@@ -261,16 +348,12 @@ class ApiClient {
     return this.request<IngestResult>("POST", "/ingest", form);
   }
 
-  // ─── Content ───
-  async addContent(data: {
-    content_id: string;
-    title: string;
-    topic: string;
-    difficulty: number;
-    content_type: string;
-  }) {
-    return this.request<{ content_id: string }>("POST", "/content", data);
+  // Every recorded score in the school (or one class), oldest first.
+  async getSchoolScores(classId?: string, signal?: AbortSignal) {
+    const qs = classId ? `?class_id=${encodeURIComponent(classId)}` : "";
+    return this.request<ScoreRow[]>("GET", `/scores${qs}`, undefined, signal);
   }
+
 
   // ─── Brain Operations ───
   // /recommend always returns a JSON array, including at top_n=1.
@@ -320,15 +403,14 @@ class ApiClient {
     return this.request<{ reward: number }>("POST", "/calculate-reward", data);
   }
 
-  async save() {
-    return this.request<{ status: string }>("POST", "/save");
-  }
 
   async health(signal?: AbortSignal) {
     return this.request<{
       status: string;
       engine: string;
       version: string;
+      // Features this server has switched on or off.
+      features?: { recommendations?: boolean };
     }>("GET", "/health", undefined, signal);
   }
 }

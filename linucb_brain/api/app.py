@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional
 import hmac
+import json
+import logging
 import os
 import glob
 import sqlite3
@@ -14,32 +16,42 @@ import uuid
 import tempfile
 import numpy as np
 
+from .. import __version__
 from ..brain import Brain
 from ..core.triage import build_triage_report
 from ..models.student import Student
 from ..core.reward import calculate_reward
 from ..sync import BrainSynchronizer
 from ..backup import BackupManager
-from ..registry import (
-    load_registry, save_registry, add_class, remove_class,
-    create_school as registry_create_school,
-    get_schools, get_classes, get_school_by_id, get_class_by_id,
-)
+from ..registry import load_registry
 from .auth import (
     create_user, authenticate_user, create_access_token,
     get_current_user, optional_user, update_user_school, get_user_by_id,
     require_admin, create_invite, list_pending_invites, revoke_invite,
     get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
+    verify_password, set_password, get_user_by_email, list_school_members,
+    create_password_reset, redeem_password_reset,
 )
 from .ratelimit import SlidingWindowLimiter
 from . import store
+from .billing import router as billing_router
 from .schemas import (
     StudentSchema, ContentSchema, RecommendationRequest, UpdateRequest,
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
     UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
+    SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest, ClassAssignment,
+    InviteRequest,
+    OperatorResetRequest, PasswordResetLink, MemberResponse,
 )
+
+# Application log lines go to stderr next to uvicorn's own, at LOG_LEVEL.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "info").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("gradepulse")
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "class_config.json")
@@ -56,6 +68,11 @@ BACKUP_MAX_COUNT = int(os.getenv("BACKUP_MAX_COUNT", "24"))
 BACKUP_INTERVAL = float(os.getenv("BACKUP_INTERVAL", "21600"))  # 6 hours
 
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # roster / content files
+
+# Content suggestions (POST /recommend) stay off until schools have a content
+# library and teachers can record whether a suggestion helped; until then the
+# engine has no real signal to learn from.
+RECOMMENDATIONS_ENABLED = os.getenv("RECOMMENDATIONS_ENABLED", "false").lower() == "true"
 
 SEED_DEMO_DATA = os.getenv("SEED_DEMO_DATA", "false").lower() == "true"
 
@@ -84,13 +101,13 @@ def _load_brain() -> Brain:
     # Try loading from main state file
     if os.path.exists(BRAIN_STATE_PATH):
         try:
-            print(f"Worker {os.getpid()}: Loading Brain from {BRAIN_STATE_PATH}")
+            logger.info("Worker %s: loading brain state from %s", os.getpid(), BRAIN_STATE_PATH)
             brain = synchronizer.load_brain(Brain.load)
             if brain is not None:
-                print(f"Worker {os.getpid()}: Brain loaded successfully")
+                logger.info("Worker %s: brain state loaded", os.getpid())
                 return brain
         except Exception as e:
-            print(f"  Warning: Could not load {BRAIN_STATE_PATH}: {e}")
+            logger.warning("Could not load %s: %s", BRAIN_STATE_PATH, e)
     
     # Try loading from checkpoints
     checkpoints = sorted(
@@ -99,19 +116,19 @@ def _load_brain() -> Brain:
     )
     for cp in checkpoints:
         try:
-            print(f"Worker {os.getpid()}: Loading Brain from checkpoint: {cp}")
+            logger.info("Worker %s: loading brain state from checkpoint %s", os.getpid(), cp)
             brain = synchronizer.load_brain(lambda path: Brain.load(cp))
             if brain is not None:
-                print(f"Worker {os.getpid()}: Brain loaded from checkpoint")
+                logger.info("Worker %s: brain state loaded from checkpoint", os.getpid())
                 return brain
         except Exception as e:
-            print(f"  Warning: Could not load {cp}: {e}")
+            logger.warning("Could not load %s: %s", cp, e)
     
     # Start empty. Sample students/content are only seeded when asked for
     # (SEED_DEMO_DATA=true), never on a real deployment.
     brain = Brain(model_type="hybrid")
     if SEED_DEMO_DATA:
-        print(f"Worker {os.getpid()}: Seeding demo students and content (SEED_DEMO_DATA)")
+        logger.info("Worker %s: seeding demo students and content (SEED_DEMO_DATA)", os.getpid())
         _seed_demo_data(brain)
     synchronizer.set_brain(brain)
     # Save initial state so other workers can load it
@@ -147,13 +164,6 @@ def _seed_demo_data(brain: Brain):
             brain.update(sid, rec.content_id, 0.5 + 0.5 * np.random.random())
 
 
-def _get_registry():
-    return load_registry(CONFIG_PATH)
-
-
-def _save_registry(registry):
-    save_registry(registry, CONFIG_PATH)
-
 
 # ── Students live in the store; the Brain only borrows them ─────────────────
 # Features the engine reads that the roster import can supply.
@@ -172,9 +182,26 @@ def _own_student(user: dict, student_id: str) -> store.StudentRecord:
     """The caller's student with this ID. IDs are per school, so another
     school's student with the same ID is simply not found."""
     rec = store.get_student(user.get("school_id", ""), student_id)
-    if rec is None:
+    scope = _class_scope(user)
+    # A teacher's students are the ones in their classes; others are not found.
+    if rec is None or (scope is not None and rec.class_id not in scope):
         raise HTTPException(status_code=404, detail="Student not found")
     return rec
+
+
+# ── Admins see the whole school; teachers see the classes they teach ──────────
+
+def _class_scope(user: dict) -> Optional[List[str]]:
+    """None for an admin (every class); the teacher's assigned class IDs otherwise."""
+    if user.get("role", ROLE_ADMIN) == ROLE_ADMIN:
+        return None
+    return store.get_teacher_classes(user["id"], user.get("school_id", ""))
+
+
+def _require_class_in_scope(user: dict, class_id: str) -> None:
+    scope = _class_scope(user)
+    if scope is not None and class_id not in scope:
+        raise HTTPException(status_code=403, detail="That class is not one of yours")
 
 
 def _engine_student(rec: store.StudentRecord) -> str:
@@ -206,10 +233,15 @@ def _clamp_scores(history: Dict[str, List[float]]) -> Dict[str, List[float]]:
     return {subject: [min(1.0, max(0.0, float(v))) for v in values] for subject, values in history.items()}
 
 
-def _ingest_roster(filepath: str, registry: dict, school_id: str, dry_run: bool):
-    """Run a roster file through ingest.py against this school's students,
-    then save what it added or changed to the store."""
+def _ingest_roster(filepath: str, school: dict, dry_run: bool):
+    """Run a roster file through ingest.py against this school's classes and
+    students, then save what it added or changed to the store."""
     from ingest import ingest_students
+
+    school_id = school["school_id"]
+    # ingest.py works on the old registry shape; hand it this school only.
+    registry = {"term_subjects": [], "schools": [{**school, "classes": [dict(c) for c in school["classes"]]}]}
+    known_classes = {c["class_id"] for c in school["classes"]}
 
     existing = {rec.student_id: rec for rec in store.list_students(school_id)}
     # grade_history starts empty so that, afterwards, a non-empty subject is
@@ -231,6 +263,10 @@ def _ingest_roster(filepath: str, registry: dict, school_id: str, dry_run: bool)
     report = ingest_students(filepath, registry, roster, school_id=school_id, school_name=None, dry_run=dry_run)
     if dry_run:
         return report
+
+    for cls in registry["schools"][0]["classes"]:
+        if cls["class_id"] not in known_classes:
+            store.add_class(school_id, cls["label"], class_id=cls["class_id"])
 
     for sid, s in roster.items():
         history = _clamp_scores(s.grade_history)
@@ -295,7 +331,20 @@ LOGIN_HOST_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIM
 SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_SIGNUP_HOST", 30), window_seconds=60)
 
 
+# Behind the web app's /api proxy every request arrives from the proxy, so the
+# per-address sign-in limits would cover all users at once. The proxy does not
+# add the visitor's address itself; it passes on whatever X-Forwarded-For it
+# received, which a visitor can set. So the header is only used when the
+# operator says the front proxy (nginx) overwrites it and the app ports are not
+# reachable except through that proxy. See DEPLOYMENT.md.
+TRUST_FORWARDED_FOR = os.getenv("TRUST_FORWARDED_FOR", "false").lower() == "true"
+
+
 def _client_host(request: Request) -> str:
+    if TRUST_FORWARDED_FOR:
+        forwarded = [a.strip() for a in request.headers.get("x-forwarded-for", "").split(",") if a.strip()]
+        if forwarded:
+            return forwarded[-1]  # the entry added by the proxy closest to us
     return request.client.host if request.client else "unknown"
 
 
@@ -321,8 +370,7 @@ def _validate_class_belongs_to_user(user: dict, class_id: str):
     user_school = user.get("school_id", "")
     if not user_school:
         raise HTTPException(status_code=403, detail="User has no school — create/join a school first")
-    registry = _get_registry()
-    if not get_class_by_id(registry, class_id, user_school):
+    if not store.get_class(user_school, class_id):
         raise HTTPException(status_code=400, detail="Class does not belong to your school")
 
 
@@ -332,15 +380,20 @@ async def lifespan(app: FastAPI):
     
     # Load brain state for this worker
     brain_instance = _load_brain()
+    if os.path.exists(CONFIG_PATH):
+        # One-off upgrade from class_config.json; a no-op once schools exist.
+        moved = store.adopt_legacy_registry(load_registry(CONFIG_PATH))
+        if moved:
+            logger.info("Worker %s: moved %s schools from %s into the store", os.getpid(), moved, CONFIG_PATH)
     adopted = _adopt_legacy_students(brain_instance)
     if adopted:
-        print(f"Worker {os.getpid()}: moved {adopted} students from the brain state into the store")
+        logger.info("Worker %s: moved %s students from the brain state into the store", os.getpid(), adopted)
     
     # Set brain in synchronizer and start auto-save
     if synchronizer is not None:
         synchronizer.set_brain(brain_instance)
         synchronizer.start_auto_save(lambda path: brain_instance.save(path))
-        print(f"Worker {os.getpid()}: Auto-save started (every {AUTO_SAVE_INTERVAL}s)")
+        logger.info("Worker %s: auto-save every %ss", os.getpid(), AUTO_SAVE_INTERVAL)
     
     # Initialize backup manager
     if BACKUP_ENABLED:
@@ -363,7 +416,7 @@ async def lifespan(app: FastAPI):
         backup_manager.create_backup("startup")
         # Start periodic backups
         backup_manager.start()
-        print(f"Worker {os.getpid()}: Backups enabled (every {BACKUP_INTERVAL}s, max {BACKUP_MAX_COUNT})")
+        logger.info("Worker %s: backups every %ss, keeping %s", os.getpid(), BACKUP_INTERVAL, BACKUP_MAX_COUNT)
     
     yield
     
@@ -371,15 +424,17 @@ async def lifespan(app: FastAPI):
     if backup_manager is not None:
         backup_manager.stop()
         backup_manager.create_backup("shutdown")
-        print(f"Worker {os.getpid()}: Final backup created on shutdown")
+        logger.info("Worker %s: final backup created on shutdown", os.getpid())
     
     if synchronizer is not None:
         synchronizer.stop_auto_save()
         synchronizer.save_brain(brain_instance.save)
-        print(f"Worker {os.getpid()}: Brain saved on shutdown")
+        logger.info("Worker %s: brain state saved on shutdown", os.getpid())
 
 
-app = FastAPI(title="GradePulse API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="GradePulse API", version=__version__, lifespan=lifespan)
+
+app.include_router(billing_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -392,7 +447,10 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    # The client gets a short reference; the log line under it has the trace.
+    error_id = uuid.uuid4().hex[:12]
+    logger.exception("Unhandled error %s on %s %s", error_id, request.method, request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error_id": error_id})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -403,25 +461,27 @@ async def global_exception_handler(request: Request, exc: Exception):
 def signup(request: Request, signup_request: SignupRequest):
     if not SIGNUP_LIMITER.allow(_client_host(request)):
         raise HTTPException(status_code=429, detail="Too many signups from this address — try again later")
-    registry = _get_registry()
     invite_code = (signup_request.invite_code or "").strip()
     if invite_code:
         # Joining an existing school is only possible with an admin's invite.
         invite = get_usable_invite(invite_code)
-        school = get_school_by_id(registry, invite["school_id"]) if invite else None
+        school = store.get_school(invite["school_id"]) if invite else None
         if not school:
             raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
         user = create_user(signup_request.email, signup_request.password)
         if not redeem_invite(invite_code, user["id"]):
             raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
         role = ROLE_TEACHER
+        # Put the teacher straight into the classes the admin chose for the invite.
+        invite_classes = json.loads(invite.get("class_ids") or "[]")
+        if invite_classes:
+            store.set_teacher_classes(user["id"], school["school_id"], invite_classes)
     else:
         user = create_user(signup_request.email, signup_request.password)
         # Without an invite, signup always creates the caller's OWN school.
         # Matching an existing school by name used to attach the new account
         # to it, which let anyone who knew a school's name read its students.
-        school = registry_create_school(registry, signup_request.school_name or "MY SCHOOL")
-        _save_registry(registry)
+        school = store.create_school(signup_request.school_name or "MY SCHOOL")
         role = ROLE_ADMIN
     update_user_school(user["id"], school["school_id"], role=role)
     token = create_access_token({"sub": user["id"]})
@@ -440,7 +500,7 @@ def login(request: Request, login_request: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     school = None
     if user.get("school_id"):
-        school = get_school_by_id(_get_registry(), user["school_id"])
+        school = store.get_school(user["school_id"])
     token = create_access_token({"sub": user["id"]})
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
@@ -453,11 +513,78 @@ def login(request: Request, login_request: LoginRequest):
 def me(user: dict = Depends(get_current_user)):
     school = None
     if user.get("school_id"):
-        school = get_school_by_id(_get_registry(), user["school_id"])
+        school = store.get_school(user["school_id"])
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
             "school_name": school["name"] if school else "",
             "role": user.get("role", ROLE_ADMIN)}
+
+
+# ── Passwords ───────────────────────────────────────────────────────────────
+# There is no email service, so a forgotten password is recovered with a
+# single-use reset code handed over by someone already trusted: a school admin
+# for the teachers in their school, the deployment's operator for anyone.
+
+@app.post("/auth/change-password", response_model=UserResponse)
+def change_password(request: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    if not verify_password(request.current_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Your current password is not correct")
+    set_password(user["id"], request.new_password)
+    school = store.get_school(user.get("school_id", ""))
+    # Every earlier session is now signed out; this one continues on a new token.
+    return {"id": user["id"], "email": user["email"], "school_id": user.get("school_id", ""),
+            "school_name": school["name"] if school else "", "role": user.get("role", ROLE_ADMIN),
+            "token": create_access_token({"sub": user["id"]})}
+
+
+@app.post("/auth/reset-password")
+def reset_password(http_request: Request, request: ResetPasswordRequest):
+    if not LOGIN_HOST_LIMITER.allow(_client_host(http_request)):
+        raise HTTPException(status_code=429, detail="Too many attempts — try again later")
+    if not redeem_password_reset(request.code.strip(), request.new_password):
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired")
+    return {"status": "password_updated"}
+
+
+@app.post("/auth/operator-reset", response_model=PasswordResetLink)
+def operator_reset(request: OperatorResetRequest, _: None = Depends(require_operator)):
+    """For an admin who is locked out: the operator issues the reset code."""
+    account = get_user_by_email(request.email)
+    if not account:
+        raise HTTPException(status_code=404, detail="No account with that email")
+    return create_password_reset(account["id"], created_by="operator")
+
+
+@app.get("/members", response_model=List[MemberResponse])
+def list_members(user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    return [
+        {**member, "class_ids": store.get_teacher_classes(member["id"], school_id)
+         if member["role"] == ROLE_TEACHER else []}
+        for member in list_school_members(school_id)
+    ]
+
+
+@app.put("/members/{user_id}/classes", response_model=MemberResponse)
+def assign_member_classes(user_id: str, request: ClassAssignment, user: dict = Depends(require_admin)):
+    """Set which classes a teacher teaches (and so can see)."""
+    school_id = _admin_school(user)
+    member = next((m for m in list_school_members(school_id) if m["id"] == user_id), None)
+    if member is None:
+        raise HTTPException(status_code=404, detail="No such member in your school")
+    if member["role"] != ROLE_TEACHER:
+        raise HTTPException(status_code=400, detail="Admins see every class; only teachers are assigned classes")
+    return {**member, "class_ids": store.set_teacher_classes(user_id, school_id, request.class_ids)}
+
+
+@app.post("/members/{user_id}/password-reset", response_model=PasswordResetLink)
+def member_password_reset(user_id: str, user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    if user_id == user["id"]:
+        raise HTTPException(status_code=400, detail="Use Change Password for your own account")
+    if not any(member["id"] == user_id for member in list_school_members(school_id)):
+        raise HTTPException(status_code=404, detail="No such member in your school")
+    return create_password_reset(user_id, created_by=user["id"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -472,8 +599,15 @@ def _admin_school(user: dict) -> str:
 
 
 @app.post("/invites", response_model=InviteResponse)
-def create_school_invite(user: dict = Depends(require_admin)):
-    return create_invite(_admin_school(user), user["id"])
+def create_school_invite(request: Optional[InviteRequest] = None, user: dict = Depends(require_admin)):
+    """An invite link; the admin can choose the classes the teacher will teach."""
+    school_id = _admin_school(user)
+    wanted = (request.class_ids if request else []) or []
+    valid = {c["class_id"] for c in store.list_classes(school_id)}
+    unknown = [cid for cid in wanted if cid not in valid]
+    if unknown:
+        raise HTTPException(status_code=400, detail="Some of those classes are not in your school")
+    return create_invite(school_id, user["id"], class_ids=list(dict.fromkeys(wanted)))
 
 
 @app.get("/invites", response_model=List[InviteResponse])
@@ -494,18 +628,13 @@ def revoke_school_invite(code: str, user: dict = Depends(require_admin)):
 
 @app.get("/schools", response_model=List[SchoolResponse])
 def list_schools(user: dict = Depends(get_current_user)):
-    registry = _get_registry()
-    user_school = user.get("school_id", "")
-    if not user_school:
-        return []
-    return [s for s in get_schools(registry) if s["school_id"] == user_school]
+    school = store.get_school(user.get("school_id", ""))
+    return [school] if school else []
 
 
 @app.post("/schools", response_model=SchoolResponse)
 def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current_user)):
-    registry = _get_registry()
-    school = registry_create_school(registry, request.name)
-    _save_registry(registry)
+    school = store.create_school(request.name)
     if not user.get("school_id"):
         update_user_school(user["id"], school["school_id"], role=ROLE_ADMIN)
     return school
@@ -514,26 +643,35 @@ def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current
 @app.put("/schools/{school_id}", response_model=SchoolResponse)
 def update_school(school_id: str, request: CreateSchoolRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    school = get_school_by_id(registry, school_id)
-    if not school:
+    if not store.get_school(school_id):
         raise HTTPException(status_code=404, detail="School not found")
-    school["name"] = request.name.strip().upper()
-    _save_registry(registry)
-    return school
+    store.rename_school(school_id, request.name)
+    return store.get_school(school_id)
 
 
 @app.delete("/schools/{school_id}")
 def delete_school(school_id: str, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    school = get_school_by_id(registry, school_id)
-    if not school:
+    if not store.get_school(school_id):
         raise HTTPException(status_code=404, detail="School not found")
     store.archive_school(school_id)
-    registry["schools"] = [s for s in registry["schools"] if s["school_id"] != school_id]
-    _save_registry(registry)
     return {"status": "deleted"}
+
+
+# ── Subjects: each school keeps its own list ────────────────────────────────
+
+@app.get("/subjects", response_model=SubjectsPayload)
+def list_subjects(user: dict = Depends(get_current_user)):
+    return {"subjects": store.get_subjects(user.get("school_id", ""))}
+
+
+@app.put("/subjects", response_model=SubjectsPayload)
+def replace_subjects(request: SubjectsPayload, user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    subjects = store.set_subjects(school_id, request.subjects)
+    if not subjects:
+        raise HTTPException(status_code=400, detail="Keep at least one subject")
+    return {"subjects": subjects}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -543,49 +681,39 @@ def delete_school(school_id: str, user: dict = Depends(require_admin)):
 @app.get("/classes/{school_id}", response_model=List[ClassResponse])
 def list_classes(school_id: str, user: dict = Depends(get_current_user)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    classes = get_classes(registry, school_id=school_id)
-    return classes
+    classes = store.list_classes(school_id)
+    scope = _class_scope(user)
+    return classes if scope is None else [c for c in classes if c["class_id"] in scope]
 
 
 @app.post("/classes/{school_id}", response_model=ClassResponse)
-def create_class(school_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
+def create_class(school_id: str, request: CreateClassRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    cls = add_class(registry, school_id, request.label.strip().upper())
+    cls = store.add_class(school_id, request.label)
     if not cls:
         raise HTTPException(status_code=400, detail="Class already exists in this school")
-    _save_registry(registry)
     return cls
 
 
 @app.put("/classes/{school_id}/{class_id}", response_model=ClassResponse)
-def update_class(school_id: str, class_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
+def update_class(school_id: str, class_id: str, request: CreateClassRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    cls = get_class_by_id(registry, class_id, school_id)
-    if not cls:
+    if not store.get_class(school_id, class_id):
         raise HTTPException(status_code=404, detail="Class not found")
-    label = request.label.strip().upper()
-    if not label:
+    if not request.label.strip():
         raise HTTPException(status_code=400, detail="Class name cannot be empty")
-    if any(c["label"] == label and c["class_id"] != class_id for c in get_classes(registry, school_id=school_id)):
+    cls = store.rename_class(school_id, class_id, request.label)
+    if not cls:
         raise HTTPException(status_code=400, detail="Class already exists in this school")
-    cls["label"] = label
-    _save_registry(registry)
     return cls
 
 
 @app.delete("/classes/{school_id}/{class_id}")
 def delete_class(school_id: str, class_id: str, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
-    registry = _get_registry()
-    cls = get_class_by_id(registry, class_id, school_id)
-    if not cls:
+    if not store.get_class(school_id, class_id):
         raise HTTPException(status_code=404, detail="Class not found")
     store.archive_class(school_id, class_id)
-    remove_class(registry, school_id, class_id)
-    _save_registry(registry)
     return {"status": "deleted"}
 
 
@@ -604,7 +732,10 @@ def list_students(
     # the school is always derived from the authenticated user (Phase 2).
     if school_id and school_id != user_school:
         raise HTTPException(status_code=403, detail="Not authorized for this school")
-    return [_student_schema(rec) for rec in store.list_students(user_school, class_id or "")]
+    if class_id:
+        _require_class_in_scope(user, class_id)
+    students = store.list_students(user_school, class_id or "", class_ids=_class_scope(user))
+    return [_student_schema(rec) for rec in students]
 
 
 @app.post("/students", response_model=StudentSchema)
@@ -615,6 +746,10 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
     class_id = student.metadata.get("class_id") or student.class_id or ""
     if class_id:
         _validate_class_belongs_to_user(user, class_id)
+    if _class_scope(user) is not None and not class_id:
+        raise HTTPException(status_code=400, detail="Choose one of your classes for the student")
+    if class_id:
+        _require_class_in_scope(user, class_id)
     # An ID that already exists in this school returns that student unchanged.
     rec, _created = store.add_student(
         school_id, student.student_id, student.name,
@@ -636,6 +771,10 @@ def update_student(student_id: str, request: UpdateStudentRequest, user: dict = 
     if request.class_id is not None:
         if request.class_id:  # "" takes the student out of their class
             _validate_class_belongs_to_user(user, request.class_id)
+        if _class_scope(user) is not None and not request.class_id:
+            raise HTTPException(status_code=400, detail="A teacher's students must stay in one of their classes")
+        if request.class_id:
+            _require_class_in_scope(user, request.class_id)
         changes["class_id"] = request.class_id
         # Keep metadata.class_id in sync — the create path and the frontend
         # convention treat metadata as the class key too.
@@ -645,11 +784,20 @@ def update_student(student_id: str, request: UpdateStudentRequest, user: dict = 
 
 
 @app.delete("/students/{student_id}")
-def delete_student(student_id: str, user: dict = Depends(get_current_user)):
+def delete_student(student_id: str, user: dict = Depends(require_admin)):
     rec = _own_student(user, student_id)
     store.archive_student(rec.pk)
     brain_instance.students.pop(rec.engine_key, None)
     return {"status": "deleted"}
+
+
+@app.get("/scores", response_model=List[SchoolScoreRecord])
+def list_school_scores(class_id: Optional[str] = Query(None), user: dict = Depends(get_current_user)):
+    """Every recorded score in the caller's school, or one class of it — the
+    data behind class and parent reports."""
+    if class_id:
+        _require_class_in_scope(user, class_id)
+    return store.list_school_scores(user.get("school_id", ""), class_id or "", class_ids=_class_scope(user))
 
 
 @app.get("/students/{student_id}/scores", response_model=List[ScoreRecord])
@@ -662,8 +810,10 @@ def list_student_scores(student_id: str, user: dict = Depends(get_current_user))
 # CONTENT
 # ══════════════════════════════════════════════════════════════════════════════
 
+# The content catalogue is shared by every school until per-school content
+# libraries exist, so only the deployment's operator may change it.
 @app.post("/content", response_model=ContentSchema)
-def add_content(content: ContentSchema, user: dict = Depends(get_current_user)):
+def add_content(content: ContentSchema, _: None = Depends(require_operator)):
     try:
         brain_instance.add_content(
             content.content_id, content.title, content.topic,
@@ -680,6 +830,8 @@ def add_content(content: ContentSchema, user: dict = Depends(get_current_user)):
 
 @app.post("/recommend")
 def recommend(request: RecommendationRequest, user: dict = Depends(get_current_user)):
+    if not RECOMMENDATIONS_ENABLED:
+        raise HTTPException(status_code=404, detail="Content suggestions are switched off on this server")
     try:
         # API contract: ALWAYS return a JSON array, even for top_n=1.
         # The bare-object-vs-array polymorphism was normalised at the HTTP
@@ -687,7 +839,8 @@ def recommend(request: RecommendationRequest, user: dict = Depends(get_current_u
         # ML-layer callers. `[]` means "nothing to show".
         # /recommend keeps 400 for an unknown student (existing contract).
         rec = store.get_student(user.get("school_id", ""), request.student_id)
-        if rec is None:
+        scope = _class_scope(user)
+        if rec is None or (scope is not None and rec.class_id not in scope):
             raise HTTPException(status_code=400, detail=f"Student ID {request.student_id} not found.")
         result = brain_instance.recommend(_engine_student(rec), topic=request.topic, top_n=request.top_n)
         if request.top_n == 1:
@@ -733,8 +886,10 @@ def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_use
 def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
     # Triage is a school report over recorded scores: only the caller's own
     # students who have been assessed in the subject are tiered.
+    if request.class_id:
+        _require_class_in_scope(user, request.class_id)
     results = []
-    for rec in store.list_students(user.get("school_id", ""), request.class_id or ""):
+    for rec in store.list_students(user.get("school_id", ""), request.class_id or "", class_ids=_class_scope(user)):
         grades = rec.grade_history.get(request.subject, [])
         if grades:
             results.append({
@@ -758,10 +913,19 @@ def get_reward(request: RewardRequest, user: dict = Depends(get_current_user)):
 def get_summary(user: dict = Depends(get_current_user)):
     score = brain_instance.last_neural_score
     user_school = user.get("school_id", "")
+    scope = _class_scope(user)
+    if not user_school:
+        student_count = 0
+    elif scope is None:
+        student_count = store.count_students(user_school)
+    else:
+        student_count = len(store.list_students(user_school, class_ids=scope))
     return {
-        "student_count": store.count_students(user_school) if user_school else 0,
+        "student_count": student_count,
         "content_count": len(brain_instance.contents),
-        "total_sessions": brain_instance.update_count,
+        # Scores recorded in the caller's school (the engine's own counter
+        # covered every school).
+        "total_sessions": store.count_scores(user_school, class_ids=scope) if user_school else 0,
         "model_type": brain_instance.model_type,
         "current_alpha": brain_instance.alpha,
         "current_gamma": brain_instance.gamma,
@@ -771,7 +935,7 @@ def get_summary(user: dict = Depends(get_current_user)):
 
 
 @app.post("/save")
-def save_brain_state(user: dict = Depends(get_current_user)):
+def save_brain_state(_: None = Depends(require_operator)):
     synchronizer.save_brain(brain_instance.save)
     return {"status": "saved", "path": BRAIN_STATE_PATH}
 
@@ -856,6 +1020,7 @@ def restore_backup(backup_path: str, _: None = Depends(require_operator)):
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest_data(
+    request: Request,
     file: UploadFile = File(...),
     type: str = Form(...),
     school: Optional[str] = Form(None),
@@ -876,6 +1041,8 @@ async def ingest_data(
     # Validate type parameter
     if type not in ("students", "content"):
         raise HTTPException(status_code=400, detail="type must be 'students' or 'content'")
+    if type == "content":
+        require_operator(request)  # shared catalogue: operator only, like POST /content
     
     # Validate file extension
     filename = file.filename or "upload.csv"
@@ -900,34 +1067,35 @@ async def ingest_data(
         # raised ImportError beyond the top-level package.)
         from ingest import ingest_content
         
-        # Load existing state
-        registry = _get_registry()
-        
         # Run ingestion
         if type == "students":
+            if user.get("role", ROLE_ADMIN) != ROLE_ADMIN:
+                raise HTTPException(status_code=403, detail="Only a school admin can import a class list")
             # Phase 2: a user can only ingest rosters into THEIR OWN school.
             # Form school/school_id overrides are rejected unless consistent.
             # NOTE: a user's stored school_id can be dangling (the user DB
             # outlives registry restores), in which case fall back to the
             # form and re-attach the resolved school to the account.
             user_school = user.get("school_id", "")
-            own_school = get_school_by_id(registry, user_school) if user_school else None
+            own_school = store.get_school(user_school)
             if own_school:
                 if school_id and school_id != user_school:
                     raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
                 if school and own_school["name"] != school.strip().upper():
                     raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
                 # Force-school to the caller's own school regardless of form.
-                report = _ingest_roster(tmp_path, registry, user_school, dry_run)
+                report = _ingest_roster(tmp_path, own_school, dry_run)
             else:
                 # No school yet (or a dangling one): the roster goes into a
                 # NEW school owned by the caller. A form school/school_id is
                 # only a label here and can never attach them to an existing
-                # school. (On dry_run the registry is not saved.)
-                new_school = registry_create_school(registry, school or "MY SCHOOL")
-                report = _ingest_roster(tmp_path, registry, new_school["school_id"], dry_run)
-                if not dry_run:
+                # school. (A dry run checks against a placeholder instead.)
+                if dry_run:
+                    new_school = {"school_id": "dry-run", "name": school or "MY SCHOOL", "classes": []}
+                else:
+                    new_school = store.create_school(school or "MY SCHOOL")
                     update_user_school(user["id"], new_school["school_id"], role=ROLE_ADMIN)
+                report = _ingest_roster(tmp_path, new_school, dry_run)
         else:
             report = ingest_content(
                 tmp_path, brain_instance.contents,
@@ -936,11 +1104,7 @@ async def ingest_data(
         
         # Save if not dry run
         if not dry_run:
-            # Save registry with file lock
-            with synchronizer._config_lock:
-                _save_registry(registry)
-            
-            # Save brain state with file lock
+            # Content lives in the engine state; rosters are already saved.
             synchronizer.save_brain(brain_instance.save)
         
         return IngestResponse(
@@ -950,6 +1114,7 @@ async def ingest_data(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Ingestion of %s (%s) failed", filename, type)
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
     finally:
         # Clean up temp file
@@ -973,11 +1138,13 @@ def health_check():
     return {
         "status": "alive",
         "engine": "GradePulse",
-        "version": "1.0.0",
+        "version": __version__,
         "worker_pid": os.getpid(),
         "expected_workers": worker_count,
         "backup_status": backup_status,
         "backup_count": backup_count,
+        # Lets the web app hide screens for features this server has switched off.
+        "features": {"recommendations": RECOMMENDATIONS_ENABLED},
     }
 
 

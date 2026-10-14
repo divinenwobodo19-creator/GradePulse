@@ -28,13 +28,18 @@ services:
     environment:
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       - JWT_SECRET=${JWT_SECRET:-gradepulse-dev-secret-change-in-production}
-      - GRADEPULPE_ENV=${GRADEPULPE_ENV:-development}
+      - GRADEPULSE_ENV=${GRADEPULSE_ENV:-development}
       - BRAIN_STATE_PATH=/data/brain_state.json
       - CONFIG_PATH=/data/class_config.json
       - USER_DB_PATH=/data/gradepulse_users.db
       - BACKUP_DIR=/data/backups
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - OPERATOR_KEY=${OPERATOR_KEY:-}
+      - RECOMMENDATIONS_ENABLED=${RECOMMENDATIONS_ENABLED:-false}
+      - TRUST_FORWARDED_FOR=${TRUST_FORWARDED_FOR:-false}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
+      - PRICE_PER_STUDENT_NAIRA=${PRICE_PER_STUDENT_NAIRA:-}
+      - TERM_DAYS=${TERM_DAYS:-120}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - gradepulse-data:/data

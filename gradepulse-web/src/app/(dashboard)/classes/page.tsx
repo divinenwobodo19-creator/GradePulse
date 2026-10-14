@@ -143,7 +143,9 @@ export default function ClassesPage() {
         <div className="page-header-left">
           <h1 className="heading-display text-navy">Classes</h1>
           <p className="body text-text-secondary">
-            Set up the classes in {user?.school_name || "your school"}, for example JSS1A or SS2 Science
+            {isAdmin
+              ? `Set up the classes in ${user?.school_name || "your school"}, for example JSS1A or SS2 Science`
+              : "The classes you teach. Your school admin manages classes and who teaches them."}
           </p>
         </div>
       </div>
@@ -154,6 +156,7 @@ export default function ClassesPage() {
         </div>
       )}
 
+      {isAdmin && (
       <div className="card">
         <div className="card-body">
           <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
@@ -175,12 +178,17 @@ export default function ClassesPage() {
           </form>
         </div>
       </div>
+      )}
 
       <div className="table-wrapper">
         {classes.length === 0 ? (
           <div className="empty-state">
             <h3 className="heading-3 text-navy mb-1">No classes yet</h3>
-            <p className="body-sm text-text-muted">Add your first class above, then put students in it.</p>
+            <p className="body-sm text-text-muted">
+              {isAdmin
+                ? "Add your first class above, then put students in it."
+                : "You have not been given a class yet. Ask your school admin to add you in Settings → People."}
+            </p>
           </div>
         ) : (
           <table className="data-table">
@@ -220,6 +228,7 @@ export default function ClassesPage() {
                   <td className="text-right font-mono text-sm text-text-secondary">{studentCount(cls.class_id)}</td>
                   <td className="text-right">
                     <div className="flex items-center justify-end gap-3">
+                      {isAdmin && (
                       <button
                         type="button"
                         onClick={() => setRenaming({ classId: cls.class_id, label: cls.label })}
@@ -228,6 +237,7 @@ export default function ClassesPage() {
                       >
                         Rename
                       </button>
+                      )}
                       {isAdmin && (
                         <button
                           type="button"
@@ -248,7 +258,7 @@ export default function ClassesPage() {
         )}
       </div>
 
-      {unassigned > 0 && (
+      {isAdmin && unassigned > 0 && (
         <p className="caption text-text-muted">
           {unassigned} student{unassigned !== 1 ? "s are" : " is"} not in any class. Open <strong>Students</strong> and use Edit to place them.
         </p>

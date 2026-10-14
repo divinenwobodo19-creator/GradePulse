@@ -31,6 +31,7 @@ os.environ.setdefault("CONFIG_PATH", "/tmp/qa_class_config.json")
 
 from fastapi.testclient import TestClient
 from linucb_brain.api.app import app
+from conftest import OPERATOR_HEADERS
 from linucb_brain.brain import Brain
 from linucb_brain.models.student import Student, normalize_label
 from linucb_brain.models.content import Content
@@ -348,7 +349,7 @@ class TestStudentsAPI:
 class TestContentAPI:
     def test_add_content_returns_200(self, client, auth_h):
         cid = f"QAC_{uuid.uuid4().hex[:6]}"
-        r = client.post("/content", headers=auth_h, json={
+        r = client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
             "content_id": cid, "title": "QA Content", "topic": "Math",
             "difficulty": 3, "content_type": "video"
         })
@@ -356,7 +357,7 @@ class TestContentAPI:
 
     def test_add_content_echoes_fields(self, client, auth_h):
         cid = f"QAC_{uuid.uuid4().hex[:6]}"
-        r = client.post("/content", headers=auth_h, json={
+        r = client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
             "content_id": cid, "title": "Echo Content", "topic": "Science",
             "difficulty": 5, "content_type": "quiz"
         })
@@ -365,14 +366,14 @@ class TestContentAPI:
         assert data["difficulty"] == 5
 
     def test_difficulty_too_low_returns_422(self, client, auth_h):
-        r = client.post("/content", headers=auth_h, json={
+        r = client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
             "content_id": "X", "title": "X", "topic": "X",
             "difficulty": 0, "content_type": "video"
         })
         assert r.status_code == 422
 
     def test_difficulty_too_high_returns_422(self, client, auth_h):
-        r = client.post("/content", headers=auth_h, json={
+        r = client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
             "content_id": "X", "title": "X", "topic": "X",
             "difficulty": 6, "content_type": "video"
         })
@@ -381,17 +382,16 @@ class TestContentAPI:
     def test_valid_difficulty_range(self, client, auth_h):
         for d in [1, 2, 3, 4, 5]:
             cid = f"DIFF{d}_{uuid.uuid4().hex[:4]}"
-            r = client.post("/content", headers=auth_h, json={
+            r = client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
                 "content_id": cid, "title": f"Diff {d}", "topic": "Math",
                 "difficulty": d, "content_type": "video"
             })
             assert r.status_code == 200
 
-    def test_without_auth_returns_401(self, client):
-        assert client.post("/content", json={
-            "content_id": "X", "title": "X", "topic": "X",
-            "difficulty": 3, "content_type": "video"
-        }).status_code == 401
+    def test_without_operator_key_returns_403(self, client, auth_h):
+        body = {"content_id": "X", "title": "X", "topic": "X", "difficulty": 3, "content_type": "video"}
+        assert client.post("/content", json=body).status_code == 403
+        assert client.post("/content", headers=auth_h, json=body).status_code == 403  # a school login is not enough
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -409,7 +409,7 @@ class TestRecommendAPI:
         client.post("/students", headers=auth_h, json={
             "student_id": self.sid, "name": "Rec Student", "current_topic": "Math"
         })
-        client.post("/content", headers=auth_h, json={
+        client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
             "content_id": self.cid, "title": "Rec Content",
             "topic": "Math", "difficulty": 3, "content_type": "video"
         })
@@ -428,7 +428,7 @@ class TestRecommendAPI:
 
     def test_recommend_single_always_list(self):
         for _ in range(3):
-            self.c.post("/content", headers=self.h, json={
+            self.c.post("/content", headers={**self.h, **OPERATOR_HEADERS}, json={
                 "content_id": f"{self.cid}_x", "title": "X",
                 "topic": "Math", "difficulty": 3, "content_type": "video"
             })
@@ -442,7 +442,7 @@ class TestRecommendAPI:
 
     def test_recommend_top_n_3_returns_list(self):
         for i in range(3):
-            self.c.post("/content", headers=self.h, json={
+            self.c.post("/content", headers={**self.h, **OPERATOR_HEADERS}, json={
                 "content_id": f"{self.cid}_{i}", "title": f"M{i}",
                 "topic": "Math", "difficulty": 3, "content_type": "video"
             })
@@ -458,7 +458,7 @@ class TestRecommendAPI:
         assert r.status_code == 400
 
     def test_recommend_with_topic_filter(self):
-        self.c.post("/content", headers=self.h, json={
+        self.c.post("/content", headers={**self.h, **OPERATOR_HEADERS}, json={
             "content_id": f"{self.cid}_sci", "title": "Science",
             "topic": "Science", "difficulty": 3, "content_type": "video"
         })
@@ -484,7 +484,7 @@ class TestUpdateAPI:
         self.cid = f"QAUPD_C_{uuid.uuid4().hex[:6]}"
         client.post("/students", headers=auth_h,
                     json={"student_id": self.sid, "name": "Upd Student"})
-        client.post("/content", headers=auth_h, json={
+        client.post("/content", headers={**auth_h, **OPERATOR_HEADERS}, json={
             "content_id": self.cid, "title": "Upd Content",
             "topic": "Math", "difficulty": 3, "content_type": "video"
         })
@@ -582,12 +582,13 @@ class TestSummaryAPI:
 
 class TestSaveAPI:
     def test_save_returns_200(self, client, auth_h):
-        r = client.post("/save", headers=auth_h)
+        assert client.post("/save", headers=auth_h).status_code == 403  # a school login is not enough
+        r = client.post("/save", headers=OPERATOR_HEADERS)
         assert r.status_code == 200
         assert r.json()["status"] == "saved"
 
-    def test_without_auth_returns_401(self, client):
-        assert client.post("/save").status_code == 401
+    def test_without_operator_key_returns_403(self, client):
+        assert client.post("/save").status_code == 403
 
 
 class TestTriageAPI:

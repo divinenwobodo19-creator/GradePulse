@@ -10,6 +10,12 @@
 
 > **Contract change (2026-10-12, unreleased) — students and scores:** Student IDs are per school (acting on an ID outside your school → **404**, `/recommend` → 400; the 409 clash response is gone). `performance_score` is now derived (mean of the five most recent scores; the value sent at creation is only the starting point), and `grade_history` holds only recorded scores, never `/update` rewards. `POST /bulk-update` accepts optional `assessed_on` (ISO date) and `label`; the same student + subject + date + label corrects the earlier score. New: `GET /students/{student_id}/scores` → `[{subject, score, assessed_on, label, source}]`. Deletes archive. A student with an empty `grade_history` has no real score yet — the frontend shows a dash.
 
+> **Contract addition (2026-10-12, unreleased) — subjects:** `GET /subjects` → `{subjects: [...]}` for the caller's school; `PUT /subjects` (admin) replaces it. Schools and classes are now stored in SQLite; their endpoints and response shapes are unchanged.
+
+> **Contract addition (2026-10-12, unreleased) — passwords:** `POST /auth/change-password` returns a new token (store it; older tokens stop working). `GET /members` and `POST /members/{id}/password-reset` (admin) issue a single-use reset code that `POST /auth/reset-password` redeems. A 401 on any request can now also mean "password changed elsewhere". See `API_REFERENCE.md` → Passwords.
+
+> **Contract change (2026-10-14, unreleased) — teacher scope:** a teacher's student, score, triage, report and class listings now cover only the classes assigned in `PUT /members/{id}/classes` (`GET /members` returns `class_ids`). Teachers get 403 on `DELETE /students/{id}`, class-list imports, and `POST`/`PUT /classes`; a class outside their scope given as `class_id` is 403, and a student outside it is 404.
+
 ---
 
 ## 1. TL;DR

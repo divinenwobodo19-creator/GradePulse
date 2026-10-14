@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { SchoolClass, Student } from "@/lib/types";
-import { SUBJECTS, getStudentClassId } from "@/lib/types";
+import { getStudentClassId } from "@/lib/types";
+import { activeSubject, useSubjects } from "@/lib/subjects";
 import { scoreToGrade } from "@/lib/types";
 import {
   NO_SCORE_LABEL,
@@ -21,7 +22,9 @@ export default function ScoresPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
-  const [subject, setSubject] = useState("MATH");
+  const subjects = useSubjects();
+  const [pickedSubject, setSubject] = useState("");
+  const subject = activeSubject(pickedSubject, subjects);
   const [assessedOn, setAssessedOn] = useState(todayIsoDate);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [classId, setClassId] = useState("");
@@ -200,7 +203,7 @@ export default function ScoresPage() {
                   onChange={(e) => setSubject(e.target.value)}
                   className="input select w-auto min-w-[160px]"
                 >
-                  {SUBJECTS.map((s) => (
+                  {subjects.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>

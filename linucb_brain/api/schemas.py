@@ -61,6 +61,12 @@ class BrainSummary(BaseModel):
 PASSWORD_MIN_LENGTH = 8
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+def _valid_new_password(value: str) -> str:
+    if len(value) < PASSWORD_MIN_LENGTH:
+        raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
+    return value
+
+
 class SignupRequest(BaseModel):
     email: str
     password: str
@@ -78,13 +84,39 @@ class SignupRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def _check_password(cls, value: str) -> str:
-        if len(value) < PASSWORD_MIN_LENGTH:
-            raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
-        return value
+        return _valid_new_password(value)
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    _check_new = field_validator("new_password")(classmethod(lambda cls, v: _valid_new_password(v)))
+
+class ResetPasswordRequest(BaseModel):
+    code: str
+    new_password: str
+
+    _check_new = field_validator("new_password")(classmethod(lambda cls, v: _valid_new_password(v)))
+
+class OperatorResetRequest(BaseModel):
+    email: str
+
+class PasswordResetLink(BaseModel):
+    code: str
+    expires_at: str
+
+class MemberResponse(BaseModel):
+    id: str
+    email: str
+    role: str
+    class_ids: List[str] = []  # a teacher's classes; empty for admins
+
+class ClassAssignment(BaseModel):
+    class_ids: List[str] = Field(..., max_length=200)
 
 class UserResponse(BaseModel):
     id: str
@@ -98,6 +130,10 @@ class InviteResponse(BaseModel):
     code: str
     created_at: str
     expires_at: str
+    class_ids: List[str] = []  # classes the teacher joins
+
+class InviteRequest(BaseModel):
+    class_ids: List[str] = Field(default_factory=list, max_length=200)
 
 class SchoolResponse(BaseModel):
     school_id: str
@@ -135,6 +171,23 @@ class ScoreRecord(BaseModel):
     assessed_on: str
     label: str = ""
     source: str = "teacher"
+
+class SchoolScoreRecord(BaseModel):
+    student_id: str
+    subject: str
+    score: float
+    assessed_on: str
+    label: str = ""
+
+class SubjectsPayload(BaseModel):
+    subjects: List[str] = Field(..., max_length=40)
+
+    @field_validator("subjects")
+    @classmethod
+    def _check_names(cls, value: List[str]) -> List[str]:
+        if any(len(subject.strip()) > 40 for subject in value):
+            raise ValueError("A subject name can be at most 40 characters")
+        return value
 
 class TriageRequest(BaseModel):
     subject: str

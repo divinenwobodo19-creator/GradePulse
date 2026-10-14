@@ -6,11 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Billing
+
+- **Paystack payments, per student, per term.** Admins see a Billing page: the school's standing, a "Pay with Paystack" checkout for N students (card, bank transfer, USSD), and past payments. Payments are confirmed when the admin returns from Paystack and by Paystack's signed webhook. Off until `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA` are set. `DEPLOYMENT.md` has the setup.
+- **Soft limits.** An unpaid, expired or over-the-limit school keeps full use; its admin sees a reminder bar linking to Billing. Teachers never see it.
+- **Pricing page** shows the per-student, per-term price from the server.
+
+
+### Admins and teachers
+
+- **Invites can carry classes.** When creating an invite the admin ticks the classes the teacher will teach (`POST /invites` with `class_ids`); the teacher joins straight into them, with no empty first login. Pending invites show their classes.
+- **No "primary subject" on students.** The Add/Edit Student form and the student tables no longer ask for or show a single subject: secondary students take every subject, and scores are entered per subject. The Students and dashboard tables show the class instead, and a student's Progress page shows how many tests are recorded. (`current_topic` stays in the API for the recommendation engine.)
+- **Teachers see only the classes they teach.** The school admin ticks each teacher's classes in Settings → People (`PUT /members/{user_id}/classes`; `GET /members` lists them). A teacher's students, scores, triage, dashboard counts, progress and reports cover those classes only; a teacher with no classes sees no students. Admins still see the whole school.
+- **Admin-only:** deleting students, importing a class list, and creating or renaming classes (deleting classes already was). Teachers add students into one of their classes and cannot move a student out of them.
+- The sidebar shows whether the signed-in account is an admin or a teacher, and the dashboard tells a teacher which classes it covers.
+
+
+### Operations
+
+- **Content and engine-state changes are operator-only.** `POST /content`, content imports (`POST /ingest` with `type=content`) and `POST /save` need `X-Operator-Key`; any school login could change the shared content catalogue before. `deploy/pilot_seed.py` takes `--operator-key` (or `$OPERATOR_KEY`) to load the catalogue and skips it otherwise.
+- **`/summary` `total_sessions`** counts the caller's school's recorded scores (it was the engine's platform-wide counter). `content_count` remains the size of the shared catalogue.
+- **`TRUST_FORWARDED_FOR`** (default `false`) lets the sign-in rate limits use `X-Forwarded-For` behind a front proxy that overwrites it. Without it, every visitor behind the web app's proxy shares one allowance. `DEPLOYMENT.md` explains when it is safe to turn on.
+- **Logging.** The API logs through Python's `logging` at `LOG_LEVEL`, instead of `print`. An unexpected error is logged with its traceback, and the client gets `{"detail": "Internal server error", "error_id": "..."}` so a report can be matched to the log line.
+- **One version number.** `linucb_brain.__version__` feeds `pyproject.toml`, the FastAPI app and `/health` (which used to say 1.0.0).
+- **`GRADEPULSE_ENV`** is the setting's name; the misspelt `GRADEPULPE_ENV` is still read, with a warning. Config files and docs use the new name.
+- **Docs.** README, `PROJECT_INDEX.md` and `INVESTOR_CHECKLIST.md` (now a demo checklist) rewritten to match the product.
+
 ### Fixed
 
 - **Excel class lists failed to import** ("Missing optional dependency 'openpyxl'"). `openpyxl` (for .xlsx) and `xlrd` (for .xls) are now in `requirements.txt`, so the Docker image can read them too.
 - **CSV files saved from Excel as "CSV UTF-8"** lost their first column to a hidden byte-order mark, so `student_id` was reported missing.
 - **Spreadsheet headers are matched loosely**: `Student ID`, ` student_id ` and `STUDENT_ID` all work. Blank rows below the data, which spreadsheets often carry, are skipped instead of reported as errors.
+
 
 ### Security
 
@@ -25,6 +52,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Student and score store.** Students and scores now live in SQLite (same file as the accounts, so scheduled backups cover them) instead of inside `brain_state.json`. Every score is a dated row with an optional test name; `grade_history` and `performance_score` are derived from those rows. On first start, students already in `brain_state.json` that belong to a school are moved across automatically.
 - **`POST /bulk-update` takes a sitting:** optional `assessed_on` (date, today by default) and `label` (e.g. "Week 4 test"). Re-sending the same student, subject, date and label corrects the earlier score instead of adding a second one.
 - **`GET /students/{student_id}/scores`** returns a student's dated score records.
+- **Schools and classes in the database.** They moved from `class_config.json` (rewritten whole, without a lock, on every change) into the same SQLite store as students and scores. An existing `class_config.json` is copied across on first start, keeping IDs; the file is not written to any more. Deleting a class or school archives it, and a deleted class's name can be reused.
+- **Per-school subject lists.** `GET /subjects` returns the caller's school's subjects; `PUT /subjects` (admin) replaces the list. New schools start with MATH, ENGLISH, SCIENCE, HISTORY. The frontend's subject pickers use the school's list, and admins edit it in Settings.
+- **Test history on the Progress page.** Each student's recorded tests by subject, newest first, with date, test name, score and grade, a small chart against the 40% and 75% lines, and the subject average, remark and latest trend.
+- **Content suggestions are off by default.** `POST /recommend` returns 404 unless `RECOMMENDATIONS_ENABLED=true`; `/health` reports `features.recommendations`, and the Progress page hides "Suggest Materials" when it is off. The engine has no content library or feedback to learn from yet, so its suggestions and their "reward" / "recommended N times" figures were not meaningful to teachers.
+- **Change password.** `POST /auth/change-password` (current + new password) and a form in Settings. Changing or resetting a password signs out every session started before it; the session that made the change continues on a new token.
+- **Password reset without email.** A school admin creates a single-use, 24-hour reset link for a teacher in their school (`GET /members`, `POST /members/{user_id}/password-reset`; "People" in Settings), which the teacher opens at `/reset-password` (`POST /auth/reset-password`). For a locked-out admin, the deployment operator issues the code with `POST /auth/operator-reset` and the `X-Operator-Key` header. Only a hash of each code is stored.
+- **Reports** (new sidebar item): a one-page class summary (each student's average and WAEC grade per subject, overall, and the subjects they need help in) and a progress sheet per student for parents (tests taken, latest score with trend, average, grade, remark, signature lines). Both print with the menu and controls hidden; student sheets print one per page. `/reports?view=students` opens on the student sheets.
+- **`GET /scores`** returns every recorded score in the caller's school, optionally for one `class_id`.
 - **Classes screen** (new sidebar item): add and rename classes, with student counts; admins can delete a class.
 - **Edit a student** from the Students page: name, primary subject and class, including moving between classes or out of one. The Add Student dialog also has a class picker, and the table shows each student's class.
 - **Import a class list** from the Students page: upload a CSV or Excel file, check it first (nothing is saved), then import. A template can be downloaded from the dialog.

@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
 import type { BrainSummary, SchoolClass, TriageResult, Student } from "@/lib/types";
-import { SUBJECTS, TIER_LABELS } from "@/lib/types";
+import { TIER_LABELS, getStudentClassId } from "@/lib/types";
+import { activeSubject, useSubjects } from "@/lib/subjects";
 
 function MetricCard({ accent, label, value, sub, icon }: {
   accent: string;
@@ -32,7 +33,9 @@ export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const [summary, setSummary] = useState<BrainSummary | null>(null);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
-  const [subject, setSubject] = useState<string>(SUBJECTS[0]);
+  const subjects = useSubjects();
+  const [pickedSubject, setSubject] = useState("");
+  const subject = activeSubject(pickedSubject, subjects);
   const [classId, setClassId] = useState("");
   const [triage, setTriage] = useState<TriageResult | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -122,7 +125,11 @@ export default function DashboardPage() {
         <div className="page-header-left">
           <h1 className="heading-display text-navy">Dashboard</h1>
           <p className="body text-text-secondary">
-            Who needs help, who is on track and who is ahead{user?.school_name ? ` at ${user.school_name}` : ""}
+            {user?.role === "admin"
+              ? `Who needs help, who is on track and who is ahead${user?.school_name ? ` at ${user.school_name}` : ""}`
+              : classes.length > 0
+                ? `Your classes: ${classes.map((c) => c.label).join(", ")}`
+                : "You have not been given a class yet. Ask your school admin to add you in Settings → People."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -132,7 +139,7 @@ export default function DashboardPage() {
             onChange={(e) => setSubject(e.target.value)}
             className="input select w-auto min-w-[140px]"
           >
-            {SUBJECTS.map((s) => (
+            {subjects.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -156,7 +163,7 @@ export default function DashboardPage() {
           accent="var(--color-gold)"
           label="Students"
           value={summary?.student_count ?? students.length}
-          sub="In your school"
+          sub={user?.role === "admin" ? "In your school" : "In your classes"}
           icon={<svg className="w-4 h-4 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}
         />
         <MetricCard
@@ -288,7 +295,7 @@ export default function DashboardPage() {
                 <th>Student</th>
                 <th>ID</th>
                 <th className="text-right">Score</th>
-                <th>Subject</th>
+                <th>Class</th>
               </tr>
             </thead>
             <tbody>
@@ -308,7 +315,9 @@ export default function DashboardPage() {
                       {overallPercentLabel(s)}
                     </span>
                   </td>
-                  <td className="text-text-secondary">{s.current_topic}</td>
+                  <td className="text-text-secondary">
+                    {classes.find((c) => c.class_id === getStudentClassId(s))?.label ?? "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

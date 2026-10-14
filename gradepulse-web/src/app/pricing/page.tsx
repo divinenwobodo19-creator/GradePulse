@@ -2,68 +2,28 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import type { BillingPrice } from "@/lib/types";
 
-const plans = [
-  {
-    name: "Free",
-    price: "₦0",
-    period: "forever",
-    description: "Perfect for trying GradePulse with a single class",
-    features: [
-      "1 teacher account",
-      "Up to 30 students",
-      "1 school",
-      "Weekly tiers by subject",
-      "Student triage",
-      "Score entry",
-      "Progress tracking",
-      "Offline HTML tool",
-    ],
-    cta: "Get Started Free",
-    ctaStyle: "bg-white text-navy border-2 border-navy hover:bg-navy hover:text-white",
-    highlighted: false,
-  },
-  {
-    name: "Starter",
-    price: "₦5,000",
-    period: "/month",
-    description: "For teachers managing multiple classes",
-    features: [
-      "1 teacher account",
-      "Up to 150 students",
-      "3 schools",
-      "Everything in Free",
-      "Multi-class management",
-      "Printable reports",
-      "Priority support",
-      "Data ingestion (CSV/Excel)",
-    ],
-    cta: "Start Starter Plan",
-    ctaStyle: "bg-gold text-navy hover:bg-gold-light",
-    highlighted: true,
-  },
-  {
-    name: "School",
-    price: "₦15,000",
-    period: "/month",
-    description: "For schools with multiple teachers",
-    features: [
-      "Up to 10 teacher accounts",
-      "Up to 500 students",
-      "Unlimited schools",
-      "Everything in Starter",
-      "Admin dashboard",
-      "School-wide analytics",
-      "Bulk student import",
-      "Dedicated support",
-    ],
-    cta: "Contact Us",
-    ctaStyle: "bg-navy text-white hover:bg-navy-light",
-    highlighted: false,
-  },
+const FEATURES = [
+  "Every teacher and admin account the school needs",
+  "Weekly tiers by subject and class on WAEC grade bands",
+  "Score sheets, student test history and progress",
+  "Printable class reports and parent progress sheets",
+  "Class list import from Excel or CSV",
+  "Each school\u2019s data private to its own staff",
 ];
 
 export default function PricingPage() {
+  const [price, setPrice] = useState<BillingPrice | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api.getBillingPrice(controller.signal).then(setPrice).catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
   return (
     <div className="min-h-screen bg-white">
       {/* Nav */}
@@ -88,63 +48,37 @@ export default function PricingPage() {
       <div className="text-center py-16 px-6">
         <span className="badge badge-neutral mb-4">Pricing</span>
         <h1 className="heading-display text-navy mb-4">
-          Simple, transparent pricing
+          One price per student, per term
         </h1>
         <p className="body-lg text-text-secondary max-w-2xl mx-auto">
-          Start free. Upgrade when you need more. No hidden fees, no surprises.
+          Every feature for every school. The school pays for the students it has, once a term, the way it already
+          sets fees.
         </p>
       </div>
 
-      {/* Plans */}
+      {/* Price */}
       <div className="max-w-6xl mx-auto px-6 pb-20">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={`relative rounded-2xl border-2 p-8 transition-all ${
-                plan.highlighted
-                  ? "border-gold shadow-elevated scale-[1.02]"
-                  : "border-border hover:border-border-strong hover:shadow-card"
-              }`}
-            >
-              {plan.highlighted && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 badge badge-warning text-xs px-3 py-1">
-                  MOST POPULAR
-                </div>
-              )}
-
-              <h2 className="heading-2 text-navy">{plan.name}</h2>
-              <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-extrabold text-navy">{plan.price}</span>
-                <span className="text-text-secondary text-sm">{plan.period}</span>
-              </div>
-              <p className="mt-2 body-sm text-text-secondary">{plan.description}</p>
-
-              <ul className="mt-6 space-y-3">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2.5 text-sm">
-                    <svg
-                      className="w-5 h-5 text-gold shrink-0 mt-0.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-text-primary">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                href="/signup"
-                className={`mt-8 block text-center py-3 rounded-lg font-semibold text-sm transition ${plan.ctaStyle}`}
-              >
-                {plan.cta}
-              </Link>
-            </div>
-          ))}
+        <div className="max-w-md mx-auto rounded-2xl border-2 border-gold p-8 text-center shadow-elevated">
+          <div className="heading-2 text-navy">Per student, per term</div>
+          <div className="mt-4 text-4xl font-extrabold text-navy">
+            {price?.price_per_student ? `₦${price.price_per_student.toLocaleString()}` : "Contact us"}
+          </div>
+          {price?.price_per_student ? (
+            <div className="text-text-secondary text-sm mt-1">per student, each term</div>
+          ) : null}
+          <ul className="mt-6 space-y-3 text-left">
+            {FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-2.5 text-sm">
+                <svg className="w-5 h-5 text-gold shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-text-primary">{feature}</span>
+              </li>
+            ))}
+          </ul>
+          <Link href="/signup" className="btn btn-primary w-full mt-8">
+            Create your school account
+          </Link>
         </div>
 
         {/* FAQ */}
@@ -155,12 +89,12 @@ export default function PricingPage() {
           <div className="space-y-6">
             {[
               {
-                q: "Can I switch plans later?",
-                a: "Yes. Upgrade or downgrade anytime. Your data is always preserved.",
+                q: "How is the number of students counted?",
+                a: "The school admin pays for the students on the school's roster for the term. If more join during the term, everything keeps working and the admin pays for the extra students.",
               },
               {
-                q: "Is there a free trial for paid plans?",
-                a: "The Free plan is free forever. No trial needed — use it as long as you want.",
+                q: "Can we try it before paying?",
+                a: "Yes. Create your school account and use it; payment is asked for, never forced.",
               },
               {
                 q: "Do you charge for updates or support?",
@@ -168,7 +102,7 @@ export default function PricingPage() {
               },
               {
                 q: "What payment methods do you accept?",
-                a: "Bank transfer, card payments, and USSD. Details provided after signup.",
+                a: "Card, bank transfer and USSD, through Paystack. The school admin pays from the Billing page.",
               },
             ].map((faq) => (
               <div key={faq.q} className="p-5 bg-surface-elevated rounded-xl border border-border">

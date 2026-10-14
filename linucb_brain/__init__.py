@@ -1,3 +1,5 @@
+__version__ = "0.2.1"
+
 from .brain import Brain
 from .models.student import Student
 from .models.content import Content

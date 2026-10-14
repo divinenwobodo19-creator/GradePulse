@@ -1,338 +1,119 @@
-# GradePulse v0.1.0
+# GradePulse
 
-A self-learning personalization engine for education, powered by Contextual Bandit algorithms.
+See every week which students are falling behind, in every subject.
 
-## Why This Matters
+Teachers already give weekly tests. GradePulse turns those scores into a weekly picture for each class: who needs extra help, who is on track and who is ahead, on WAEC grade bands (below 40%, 40–74%, 75% and above). Schools get printable class summaries and a progress sheet per student to send home. It is built for Nigerian classrooms of 40–80 students.
 
-In Nigeria and across Africa, teachers manage 40-80 students per class with no way to personalize learning. A student struggling with fractions gets the same content as one ready for algebra. GradePulse changes that — it learns what works for each student and recommends the right content at the right time, using the teacher's existing weekly test scores as its signal.
+The repository also contains a contextual-bandit recommendation engine (LinUCB). It is switched off in the product until schools have a content library and teachers can record whether a suggestion helped; see [Content suggestions](#content-suggestions).
 
-Most LMS platforms are content repositories. GradePulse is a recommendation engine that gets smarter with every score a teacher enters.
+## What a school can do
 
-## What It Does
-
-Every student is different. Most LMS platforms serve the same content to everyone. The Brain learns **what works for whom** — adapting in real-time as each student interacts with the platform.
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
-│ Student      │────>│ Brain recommends │────>│ Student      │
-│ (context)    │     │ (explore/exploit)│     │ engages with │
-└─────────────┘     └──────────────────┘     │ content      │
-                                             └──────┬───────┘
-                                                    │
-┌─────────────┐     ┌──────────────────┐            │
-│ Brain       │<────│ Reward signal    │<───────────┘
-│ updates     │     │ (score, complete)│
-│ matrices    │     └──────────────────┘
-└─────────────┘
-```
-
-## Key Features
-
-| Capability | What It Means |
+| Area | What it does |
 |---|---|
-| **2 Algorithms** | Disjoint LinUCB and Hybrid LinUCB with online clustering |
-| **Real-time Learning** | Updates after every interaction — no batch retraining |
-| **Cold-start Ready** | Explores when it has no data; exploits when it does |
-| **Self-Diagnostics** | Neural Score measures 7 dimensions of model health |
-| **Online Clustering** | Groups similar students to share knowledge (COBART-style) |
-| **FastAPI REST API** | 29 production-ready endpoints with JWT authentication |
-| **Multi-Tenant** | School → Class → Student hierarchy with scoped data |
-| **Multi-Worker Safe** | File-based brain state sync with locking — safe for multiple uvicorn workers |
-| **Data Ingestion** | CLI + API for pilot-school data (CSV/Excel) with 17-dim context vector validation |
-| **Automated Backups** | Periodic brain state backups with rotation, atomic writes, and restore capability |
-| **Docker Ready** | Multi-stage Dockerfile + docker-compose for one-command production deployment |
-| **CI/CD Pipeline** | GitHub Actions: test on every push, Docker images built on release tags |
+| **Accounts** | The person who signs up creates the school and is its admin. Teachers join with a single-use invite link from the admin. Each school sees only its own data. |
+| **Classes and students** | Create classes; add, edit and move students; import a class list from CSV or Excel (checked before anything is saved). Student IDs are per school. |
+| **Subjects** | Each school keeps its own subject list; the admin edits it in Settings. |
+| **Scores** | Enter a test for a class in one sheet, with the test date and name. Re-entering the same test corrects it. Every score is kept as a dated record. |
+| **Dashboard and triage** | Per subject and class: students assessed, needing help, on track and ahead. |
+| **Progress** | Each student's test history by subject, with a chart, average, grade and trend. |
+| **Reports** | A one-page class summary, and one progress sheet per student for parents. Both print cleanly. |
+| **Billing** | The school admin pays per student, per term, through Paystack. Limits are soft: nothing is blocked for non-payment, the admin just sees a reminder. |
+| **Passwords** | Change password in Settings. There is no email service: a forgotten password is reset with a single-use link from the school admin, or from the operator for a locked-out admin. |
 
-## Quick Start
+## Running it locally
 
-### Option 1: Local Development
+Needs Python 3.12 and Node 22.
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/divinenwobodo19-creator/GradePulse.git
-cd GradePulse
-
-# 2. Install dependencies
+# API on :8000
 pip install -r requirements.txt
+PYTHONPATH=. uvicorn linucb_brain.api.app:app --port 8000
 
-# 3. Start the REST API
-PYTHONPATH=. uvicorn linucb_brain.api.app:app --host 0.0.0.0 --port 8000
-
-# 4. Open a new terminal and try the API
-# Sign up
-curl -X POST http://localhost:8000/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email": "teacher@school.com", "password": "password123", "school_name": "My School"}'
-
-# Add a student (use the token from signup)
-curl -X POST http://localhost:8000/students \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"student_id": "S001", "name": "Chinwe Okoro"}'
-
-# Enter a test score for them
-curl -X POST http://localhost:8000/bulk-update \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"entries": [{"student_id": "S001", "subject": "MATH", "score": 0.35}], "label": "Week 1 test"}'
-
-# See who needs help in that subject
-curl -X POST http://localhost:8000/triage \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-token>" \
-  -d '{"subject": "MATH"}'
+# Web app on :3000 (in another terminal)
+cd gradepulse-web
+npm install
+npm run dev
 ```
 
-### Option 2: Docker (Production)
+Open http://localhost:3000 and sign up; that creates your school. The web app calls the API through its own `/api` proxy, which points at `http://localhost:8000` unless `API_URL` says otherwise.
+
+To fill a fresh instance with the two pilot schools (14 students each):
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/divinenwobodo19-creator/GradePulse.git
-cd GradePulse
-cp .env.example .env
-# Edit .env — set JWT_SECRET at minimum
+python3 deploy/pilot_seed.py --api http://localhost:8000
+```
 
-# 2. Start all services
+Logins are in `deploy/pilot_schools.json`.
+
+## Running it with Docker
+
+```bash
+cp .env.example .env      # set JWT_SECRET; set OPERATOR_KEY if you want the backup endpoints
 docker compose up -d --build
-
-# 3. Verify
 curl http://localhost:8000/health
-# Frontend: http://localhost:3000
 ```
 
-### Option 3: Teacher Portal (Streamlit)
+The web app is on port 3000. `DEPLOYMENT.md` covers a production server, HTTPS, backups, restores and upgrades. `deploy/demo/` runs the published images on one laptop with no internet (`run-demo.sh prepare`, `start`, `seed`).
+
+## Configuration
+
+API (environment variables; `.env.example` has them all with comments):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GRADEPULSE_ENV` | `development` | `production` refuses to start without a strong `JWT_SECRET`. The old misspelling `GRADEPULPE_ENV` is still read. |
+| `JWT_SECRET` | dev placeholder | Signs login tokens. At least 32 random characters in production. |
+| `USER_DB_PATH` | `gradepulse_users.db` | SQLite file with accounts, schools, classes, students and scores. The file that matters most. |
+| `BRAIN_STATE_PATH` | `brain_state.json` | Recommendation engine state. |
+| `FRONTEND_URL` | `http://localhost:3000` | Allowed browser origin (CORS). |
+| `OPERATOR_KEY` | empty | Unlocks `/backup`, `/backups`, `/backup/restore` and `/auth/operator-reset`. Empty disables them. |
+| `BACKUP_ENABLED`, `BACKUP_DIR`, `BACKUP_INTERVAL`, `BACKUP_MAX_COUNT` | on, `backups/`, 6 h, 24 | Scheduled backups of the data files. |
+| `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA`, `TERM_DAYS` | empty, empty, 120 | Online payment through Paystack, per student per term. Off until the key and price are set; see `DEPLOYMENT.md`. |
+| `TRUST_FORWARDED_FOR` | `false` | Use `X-Forwarded-For` for sign-in rate limits behind nginx; see `DEPLOYMENT.md`. |
+| `RECOMMENDATIONS_ENABLED` | `false` | Turns content suggestions on. |
+| `SEED_DEMO_DATA` | `false` | Seeds sample students and content into a brand-new engine state. Demos only. |
+| `LOG_LEVEL` | `info` | Application and uvicorn log level. |
+| `RATE_LIMIT_LOGIN_EMAIL`, `RATE_LIMIT_LOGIN_HOST`, `RATE_LIMIT_SIGNUP_HOST` | 30, 120, 30 per minute | Sign-in and sign-up throttles. |
+
+Web app: `API_URL` (where the `/api` proxy points, fixed at build time) and `NEXT_PUBLIC_GRADEPULSE_API_TIMEOUT_MS` (request timeout, default 15000).
+
+## Content suggestions
+
+`POST /recommend` serves suggestions from the LinUCB engine in `linucb_brain/`. It returns 404 unless `RECOMMENDATIONS_ENABLED=true`, and the web app hides the feature while it is off. It stays off until there is a per-school content library and a way to record whether a suggestion was used and helped; without those the engine has nothing real to learn from.
+
+## Project layout
+
+```
+linucb_brain/
+  api/app.py        FastAPI app: every HTTP endpoint
+  api/store.py      SQLite store: schools, classes, subjects, students, scores
+  api/auth.py       accounts, roles, invites, password resets, JWT
+  core/             LinUCB engine, context features, triage tiering
+  brain.py          engine entry point
+  backup.py, sync.py  scheduled backups; engine-state file locking
+ingest.py           class list / content import (CSV, Excel); also a CLI
+gradepulse-web/     Next.js web app (src/app = pages, src/lib = API client and helpers)
+deploy/             pilot seed data and script, offline demo bundle
+tests/              pytest suite
+```
+
+## Tests
 
 ```bash
-# Start the teacher dashboard
-PYTHONPATH=. streamlit run teacher_portal.py
-
-# Open http://localhost:8501
+PYTHONPATH=. python3 -m pytest tests/ -q       # backend
+cd gradepulse-web && npm run check             # frontend: lint, typecheck, tests, build
 ```
 
-## API Usage Examples
+`tests/test_load.py`, `test_backup_api.py` and `test_ingest_api.py` run against a live server at `TEST_API_URL` (default `http://localhost:8000`) and are skipped when none is running. They write data into that server, so point them at a throwaway instance.
 
-### Authentication
+## More documentation
 
-```bash
-# Sign up
-curl -X POST http://localhost:8000/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email": "teacher@school.com", "password": "password123", "school_name": "Lagos Model School"}'
-
-# Login
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "teacher@school.com", "password": "password123"}'
-```
-
-### Student Management
-
-```bash
-# Add a student
-curl -X POST http://localhost:8000/students \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"student_id": "S001", "name": "Chinwe Okoro", "performance_score": 0.75, "current_topic": "MATH"}'
-
-# List students
-curl http://localhost:8000/students \
-  -H "Authorization: Bearer <token>"
-```
-
-### Recommendations
-
-```bash
-# Get a recommendation for a student
-curl -X POST http://localhost:8000/recommend \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"student_id": "S001", "top_n": 3}'
-
-# Get recommendation for a specific topic
-curl -X POST http://localhost:8000/recommend \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"student_id": "S001", "topic": "MATH", "top_n": 1}'
-```
-
-### Score Entry
-
-```bash
-# Update with a reward signal
-curl -X POST http://localhost:8000/update \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"student_id": "S001", "content_id": "C001", "reward": 0.85}'
-
-# Bulk update scores for a class
-curl -X POST http://localhost:8000/bulk-update \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"entries": [{"student_id": "S001", "subject": "MATH", "score": 0.85}, {"student_id": "S002", "subject": "MATH", "score": 0.72}]}'
-```
-
-### Student Triage
-
-```bash
-# Group students by performance
-curl -X POST http://localhost:8000/triage \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"subject": "MATH"}'
-```
-
-### Data Ingestion
-
-```bash
-# Ingest student roster via API
-curl -X POST http://localhost:8000/ingest \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@students.csv" \
-  -F "type=students" \
-  -F "school=My School"
-
-# Or use the CLI
-PYTHONPATH=. python3 ingest.py sample_data/sample_students.csv --school-name "Lagos Model School"
-```
-
-### Backups
-
-```bash
-# Backups need the deployment's operator key (OPERATOR_KEY), not a school login.
-
-# Create a backup
-curl -X POST http://localhost:8000/backup \
-  -H "X-Operator-Key: <operator-key>"
-
-# List backups
-curl http://localhost:8000/backups \
-  -H "X-Operator-Key: <operator-key>"
-
-# Restore from backup
-curl -X POST "http://localhost:8000/backup/restore?backup_path=/path/to/backup" \
-  -H "X-Operator-Key: <operator-key>"
-```
-
-## Neural Score — Built-in Diagnostics
-
-The Brain scores itself on 7 dimensions (each 0–10):
-
-```
-Exploration Efficiency  →  8.3/10  (Are we trying diverse content?)
-Reward Convergence      →  7.1/10  (Is average reward improving?)
-Context Sensitivity     →  6.8/10  (Do different students get different recs?)
-Recommendation Precision→  7.5/10  (Are recommended items getting good rewards?)
-Grade Prediction        →  6.2/10  (Can we forecast student performance?)
-Cohort Purity           →  7.0/10  (Are student clusters well-separated?)
-Objective Balance       →  7.5/10  (Are all reward signals being used?)
-─────────────────────────────────
-NEURAL SCORE            →  7.2/10
-```
-
-## Running Tests
-
-```bash
-# Run all tests (339 tests)
-PYTHONPATH=. python3 -m pytest tests/ -v
-
-# Run specific test file
-PYTHONPATH=. python3 -m pytest tests/test_brain.py -v
-
-# Run with coverage
-PYTHONPATH=. python3 -m pytest tests/ --cov=linucb_brain
-```
-
-## Project Structure
-
-```
-├── linucb_brain/           # Core engine
-│   ├── core/               # Algorithms (linucb, hybrid, clustering, reward)
-│   ├── models/             # Data models (student, content, session, school)
-│   ├── diagnostics/        # Neural Score engine
-│   ├── api/                # FastAPI application (29 endpoints)
-│   │   ├── app.py          # Main application
-│   │   ├── auth.py         # JWT authentication
-│   │   └── schemas.py      # Pydantic request/response models
-│   ├── sync.py             # Multi-worker brain state synchronization
-│   └── backup.py           # Automated backup system (rotation, restore)
-├── tests/                  # Test suite (339 tests, pytest)
-├── sample_data/            # Sample pilot-school data (CSV)
-│   ├── large/              # Large sample dataset (56 students)
-│   └── pilot_grade/        # Pilot-grade validation data
-├── .github/workflows/      # CI/CD (GitHub Actions)
-│   ├── ci.yml              # Test on push/PR to main
-│   └── docker.yml          # Build Docker images on version tags
-├── gradepulse-web/         # Next.js frontend (15 pages)
-├── ingest.py               # Data ingestion CLI tool
-├── generate_pilot_data.py  # Pilot data generation script
-├── Dockerfile              # Multi-stage Docker build (backend + frontend)
-├── docker-compose.yml      # Docker Compose orchestration
-├── DEPLOYMENT.md           # Production deployment runbook
-├── .env.example            # Production configuration variables
-├── teacher_portal.py       # Streamlit teacher dashboard
-├── generate_offline.py     # Offline HTML tool generator
-├── offline_teacher.html    # Generated standalone tool
-├── brain_state.json        # Model persistence
-└── class_config.json       # School/class registry
-```
-
-## API Endpoints
-
-| Category | Endpoint | Method | Description |
-|----------|----------|--------|-------------|
-| **Auth** | `/auth/signup` | POST | Create account |
-| | `/auth/login` | POST | Login |
-| | `/auth/me` | GET | Get current user |
-| **Schools** | `/schools` | GET/POST | List/Create schools |
-| | `/schools/{id}` | PUT/DELETE | Update/Delete school |
-| **Classes** | `/classes/{school_id}` | GET/POST | List/Create classes |
-| | `/classes/{school_id}/{class_id}` | PUT/DELETE | Update/Delete class |
-| **Students** | `/students` | GET/POST | List/Create students |
-| | `/students/{id}` | PUT/DELETE | Update/Delete student |
-| **Content** | `/content` | POST | Add content item |
-| **Brain** | `/recommend` | POST | Get recommendations |
-| | `/update` | POST | Update with reward |
-| | `/bulk-update` | POST | Bulk score entry |
-| | `/triage` | POST | Group students by performance |
-| | `/calculate-reward` | POST | Calculate reward signal |
-| | `/summary` | GET | Brain state summary |
-| | `/save` | POST | Save brain state |
-| **Backups** | `/backup` | POST | Create backup |
-| | `/backups` | GET | List backups |
-| | `/backup/restore` | POST | Restore from backup |
-| **Data** | `/ingest` | POST | Ingest CSV/Excel data |
-| **Health** | `/health` | GET | Health check |
-
-## Deployment
-
-See `DEPLOYMENT.md` for the full production runbook covering:
-- First-time VPS setup
-- Docker deployment
-- HTTPS/SSL with Nginx
-- Backup and restore procedures
-- Upgrades and troubleshooting
-
-## What's Included in v0.1.0
-
-- Core LinUCB engine (Disjoint + Hybrid)
-- 29 REST API endpoints with JWT auth
-- Multi-tenant data model (School → Class → Student)
-- Multi-worker synchronization
-- Automated backup system
-- Data ingestion pipeline (CLI + API)
-- Teacher Portal (Streamlit)
-- Next.js frontend (15 pages)
-- Docker containerization
-- CI/CD pipeline (GitHub Actions)
-- 339 tests
-
-## What's Deferred to v0.2
-
-- Thompson Sampling cold-start
-- `/group_recommendations` endpoint
-- Context diversity regularization
-- SQLite migration
-- Off-policy evaluation (OPE)
+- `API_REFERENCE.md`: every endpoint with request and response examples
+- `DEPLOYMENT.md`: production runbook
+- `FRONTEND_BACKEND_HANDOFF.md`: API contract notes and contract changes
+- `CHANGELOG.md`: release notes
+- `PROJECT_INDEX.md`: file-by-file map
+- Open work is tracked in GitHub issue #9.
 
 ## License
 

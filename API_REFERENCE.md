@@ -147,6 +147,26 @@ Delete a school and all its classes/students.
 
 ---
 
+## Subjects
+
+Each school has its own subject list. It drives the subject pickers; it does not restrict which subjects `/bulk-update` accepts.
+
+### GET /subjects
+
+```json
+{ "subjects": ["MATH", "ENGLISH", "SCIENCE", "HISTORY"] }
+```
+
+### PUT /subjects
+
+Admin only. Replaces the whole list. Names are trimmed, upper-cased and de-duplicated; at most 40 subjects of up to 40 characters each. An empty result returns 400.
+
+```json
+{ "subjects": ["Mathematics", "English Language", "Basic Science"] }
+```
+
+---
+
 ## Classes
 
 ### GET /classes/{school_id}
@@ -262,6 +282,8 @@ Delete a student.
 
 ### POST /content
 
+**Operator only.** Requires `X-Operator-Key`. The content catalogue is shared by every school.
+
 Add a content item.
 
 **Request:**
@@ -284,6 +306,8 @@ Add a content item.
 ## Brain Operations
 
 ### POST /recommend
+
+**Off by default.** Returns 404 ("Content suggestions are switched off on this server") unless the server runs with `RECOMMENDATIONS_ENABLED=true`. `GET /health` reports the setting as `features.recommendations`.
 
 Get content recommendations for a student.
 
@@ -363,6 +387,16 @@ Request body:
 | `label` | string, optional | Name of the test, e.g. `"Week 4 test"` (max 80 chars) |
 
 Each entry is saved as a dated score record. Sending the same student, subject, `assessed_on` and `label` again **corrects** the earlier score. A `student_id` that is not in the caller's school returns 404.
+
+### GET /scores
+
+Every recorded score in the caller's school, oldest first. Optional `class_id` query parameter limits it to one class. Archived students are left out. Used by the Reports page.
+
+```json
+[
+  { "student_id": "S001", "subject": "MATH", "score": 0.7, "assessed_on": "2026-09-07", "label": "Week 1 test" }
+]
+```
 
 ### GET /students/{student_id}/scores
 
@@ -465,6 +499,8 @@ Get brain state summary.
 
 ### POST /save
 
+**Operator only.** Requires `X-Operator-Key`. The engine state is also saved automatically.
+
 Force save brain state to disk.
 
 **Response (200):**
@@ -474,13 +510,83 @@ Force save brain state to disk.
 
 ---
 
+## Passwords
+
+There is no email service. A forgotten password is recovered with a single-use reset code (valid 24 hours) handed over by a school admin, or by the deployment operator.
+
+### POST /auth/change-password
+
+Authenticated. Body `{ "current_password": "...", "new_password": "..." }`. Returns the same shape as login, with a **new token**: every session started before the change is signed out. 400 if the current password is wrong; 422 if the new one is under 8 characters.
+
+### GET /members
+
+Admin only. The accounts in the caller's school: `[{ "id", "email", "role" }]`.
+
+### PUT /members/{user_id}/classes
+
+Admin only, for a teacher in the caller's school. Body `{ "class_ids": ["..."] }` replaces the teacher's classes; IDs that are not current classes of the school are ignored. Returns the member with its `class_ids`. 400 for an admin (admins see every class); 404 for an account outside the school.
+
+**What a teacher can reach.** Every student, score, triage and report endpoint is limited to the teacher's classes: other students return 404 (`/recommend` 400), and asking for another class by `class_id` returns 403. Deleting students, importing class lists and creating or renaming classes return 403 for teachers.
+
+### POST /members/{user_id}/password-reset
+
+Admin only, for another member of the caller's school. Returns `{ "code", "expires_at" }`. The code is returned once; only its hash is stored. Creating a new code cancels an earlier unused one for the same account. 404 for an account outside the school; 400 for the caller's own account.
+
+### POST /auth/reset-password
+
+Public, rate-limited. Body `{ "code": "...", "new_password": "..." }`. 400 if the code is unknown, used or expired. The web page for it is `/reset-password?code=CODE`.
+
+### POST /auth/operator-reset
+
+For an admin who is locked out. Requires the `X-Operator-Key` header. Body `{ "email": "..." }`; returns `{ "code", "expires_at" }`.
+
+---
+
+## Billing (Paystack)
+
+Schools pay per student, per term. Billing is off until the server has `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA`. Limits are soft: nothing is ever blocked for non-payment.
+
+### GET /billing/price
+
+Public. `{ "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120 }`
+
+### GET /billing
+
+Admin only. The school's standing:
+
+```json
+{ "state": "active", "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120,
+  "students": 41, "paid_students": 41, "paid_until": "2027-02-10T09:00:00+00:00",
+  "payments": [{ "reference": "gp_...", "students": 41, "amount_naira": 20500, "paid_at": "...", "period_end": "..." }] }
+```
+
+`state` is `not_configured`, `unpaid`, `active`, `over_limit` (paid, but more students now than paid for) or `expired`.
+
+### GET /billing/reminder
+
+Any signed-in user. `{ "show": true, "state": "unpaid" }` for an admin whose school is `unpaid`, `expired` or `over_limit`; `{ "show": false }` otherwise and always for teachers.
+
+### POST /billing/checkout
+
+Admin only. Body `{ "students": 41 }`. Records a pending payment of students × price and returns Paystack's payment page: `{ "authorization_url": "https://checkout.paystack.com/...", "reference": "gp_..." }`. 503 if billing is not configured.
+
+### POST /billing/verify
+
+Admin only, for the caller's school. Body `{ "reference": "gp_..." }`. Asks Paystack about a pending payment and records it if the charge succeeded for the expected amount. Returns the `GET /billing` body plus `payment_status` (`success`, `pending`, `failed`, `abandoned`, `amount_mismatch`, ...). A paid term runs `TERM_DAYS` from the payment.
+
+### POST /billing/webhook
+
+Called by Paystack. Requires a valid `x-paystack-signature` (HMAC-SHA512 of the body with the secret key); otherwise 401. Records `charge.success` events the same way as `/billing/verify`; repeats are ignored.
+
+---
+
 ## Invites
 
 Admin only. A school's admin is whoever created it at signup; teachers join with an invite and get the `teacher` role. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.
 
 ### POST /invites
 
-Create a single-use invite for the caller's school. Expires after 7 days.
+Create a single-use invite for the caller's school. Expires after 7 days. Optional body `{ "class_ids": ["..."] }`: the classes the teacher is put into when they join (400 if any is not a class of the school). The response and `GET /invites` include `class_ids`.
 
 ```json
 { "code": "k3J9xQ2mVb1A", "created_at": "2026-10-12T09:00:00+00:00", "expires_at": "2026-10-19T09:00:00+00:00" }
@@ -565,6 +671,8 @@ Restore from a backup.
 ## Data Ingestion
 
 ### POST /ingest
+
+Importing `type=content` is operator-only (`X-Operator-Key`); importing `type=students` uses the caller's login and school.
 
 Upload CSV/Excel file for ingestion.
 

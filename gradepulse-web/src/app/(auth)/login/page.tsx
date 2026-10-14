@@ -154,6 +154,10 @@ See every week which students are falling behind, in every subject
             </button>
           </form>
 
+          <p className="mt-4 text-center text-xs text-text-muted">
+            Forgot your password? Ask your school admin for a reset link.
+          </p>
+
           {/* Footer */}
           <p className="mt-8 text-center text-sm text-text-secondary">
             Don&apos;t have an account?{" "}
