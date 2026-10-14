@@ -90,6 +90,24 @@ def init_store():
         CREATE UNIQUE INDEX IF NOT EXISTS classes_school_label
             ON classes (school_id, label) WHERE archived_at IS NULL;
 
+        -- Paystack payments. A school pays per student for one term; a row
+        -- is written as "pending" when checkout starts and marked
+        -- "success" once Paystack confirms the charge.
+        CREATE TABLE IF NOT EXISTS payments (
+            reference TEXT PRIMARY KEY,
+            school_id TEXT NOT NULL,
+            students INTEGER NOT NULL,
+            amount_kobo INTEGER NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'NGN',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            paid_at TEXT,
+            period_start TEXT,
+            period_end TEXT
+        );
+        CREATE INDEX IF NOT EXISTS payments_school ON payments (school_id, status);
+
         -- Which classes a teacher teaches. Admins are not listed: they see
         -- every class in their school.
         CREATE TABLE IF NOT EXISTS teacher_classes (
@@ -284,6 +302,58 @@ def set_teacher_classes(user_id: str, school_id: str, class_ids: Iterable[str]) 
     conn.commit()
     conn.close()
     return get_teacher_classes(user_id, school_id)
+
+
+# ── Payments ───────────────────────────────────────────────────────────────
+
+def create_payment(reference: str, school_id: str, students: int, amount_kobo: int, created_by: str) -> None:
+    conn = _get_db()
+    conn.execute(
+        "INSERT INTO payments (reference, school_id, students, amount_kobo, created_by, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (reference, school_id, students, amount_kobo, created_by, _now()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_payment(reference: str) -> Optional[dict]:
+    conn = _get_db()
+    row = conn.execute("SELECT * FROM payments WHERE reference = ?", (reference,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def complete_payment(reference: str, paid_at: str, period_start: str, period_end: str) -> bool:
+    """Mark a pending payment paid. False if it was already settled (Paystack
+    can report the same charge more than once)."""
+    conn = _get_db()
+    cur = conn.execute(
+        "UPDATE payments SET status = 'success', paid_at = ?, period_start = ?, period_end = ? "
+        "WHERE reference = ? AND status = 'pending'",
+        (paid_at, period_start, period_end, reference),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def fail_payment(reference: str, status: str) -> None:
+    conn = _get_db()
+    conn.execute("UPDATE payments SET status = ? WHERE reference = ? AND status = 'pending'", (status, reference))
+    conn.commit()
+    conn.close()
+
+
+def list_paid_payments(school_id: str) -> List[dict]:
+    """Successful payments, newest first."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT * FROM payments WHERE school_id = ? AND status = 'success' ORDER BY paid_at DESC",
+        (school_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def get_subjects(school_id: str) -> List[str]:

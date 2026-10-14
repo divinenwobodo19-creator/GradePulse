@@ -37,6 +37,9 @@ services:
       - OPERATOR_KEY=${OPERATOR_KEY:-}
       - RECOMMENDATIONS_ENABLED=${RECOMMENDATIONS_ENABLED:-false}
       - TRUST_FORWARDED_FOR=${TRUST_FORWARDED_FOR:-false}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
+      - PRICE_PER_STUDENT_NAIRA=${PRICE_PER_STUDENT_NAIRA:-}
+      - TERM_DAYS=${TERM_DAYS:-120}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - gradepulse-data:/data

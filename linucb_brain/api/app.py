@@ -33,6 +33,7 @@ from .auth import (
 )
 from .ratelimit import SlidingWindowLimiter
 from . import store
+from .billing import router as billing_router
 from .schemas import (
     StudentSchema, ContentSchema, RecommendationRequest, UpdateRequest,
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
@@ -430,6 +431,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="GradePulse API", version=__version__, lifespan=lifespan)
+
+app.include_router(billing_router)
 
 app.add_middleware(
     CORSMiddleware,
