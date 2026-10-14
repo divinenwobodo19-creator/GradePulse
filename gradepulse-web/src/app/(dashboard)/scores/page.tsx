@@ -1,5 +1,6 @@
 "use client";
 
+import EmptyState from "@/components/ui/EmptyState";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -275,23 +276,23 @@ export default function ScoresPage() {
         {/* Score Table */}
         <div className="table-wrapper">
           {visible.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">
+            <EmptyState
+              icon={
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                   <path d="M12 20V10" />
                   <path d="M18 20V4" />
                   <path d="M6 20v-4" />
                 </svg>
-              </div>
-              <h3 className="heading-3 text-navy mb-1">No students found</h3>
-              <p className="body-sm text-text-muted">
-                {classId ? (
+              }
+              heading="No students found"
+              body={
+                classId ? (
                   "No students in this class yet."
                 ) : (
                   <>Go to <strong>Students</strong> to add students first.</>
-                )}
-              </p>
-            </div>
+                )
+              }
+            />
           ) : (
             <>
               <div className="px-5 py-3 border-b border-border flex items-center justify-between">

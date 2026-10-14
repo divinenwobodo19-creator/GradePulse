@@ -1,5 +1,6 @@
 "use client";
 
+import EmptyState from "@/components/ui/EmptyState";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -319,12 +320,10 @@ export default function ReportsPage() {
 
       {reports.length === 0 ? (
         <div className="card">
-          <div className="empty-state">
-            <h3 className="heading-3 text-navy mb-1">No students to report on</h3>
-            <p className="body-sm text-text-muted">
-              {classId ? "This class has no students yet." : "Add students and enter scores first."}
-            </p>
-          </div>
+          <EmptyState
+            heading="No students to report on"
+            body={classId ? "This class has no students yet." : "Add students and enter scores first."}
+          />
         </div>
       ) : view === "class" ? (
         <ClassSummary school={school} classLabel={classLabel} reports={reports} columns={columns} />
