@@ -177,6 +177,13 @@ class ApiClient {
     return this.request<Member[]>("GET", "/members", undefined, signal);
   }
 
+  // Admin only: the classes a teacher teaches, and so can see.
+  async setMemberClasses(userId: string, classIds: string[]) {
+    return this.request<Member>("PUT", `/members/${encodeURIComponent(userId)}/classes`, {
+      class_ids: classIds,
+    });
+  }
+
   // A single-use reset code for one teacher. It is only returned here, once.
   async createMemberPasswordReset(userId: string) {
     return this.request<PasswordResetLink>("POST", `/members/${encodeURIComponent(userId)}/password-reset`);

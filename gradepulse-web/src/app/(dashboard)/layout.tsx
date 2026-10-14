@@ -203,7 +203,7 @@ export default function DashboardLayout({
                 {user.email.split("@")[0]}
               </div>
               <div className="text-[11px] text-white/30 truncate">
-                {user.school_name || "No school"}
+                {user.school_name || "No school"} · {user.role === "admin" ? "Admin" : "Teacher"}
               </div>
             </div>
              <button

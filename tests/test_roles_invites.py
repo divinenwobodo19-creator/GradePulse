@@ -64,14 +64,19 @@ def test_signup_without_invite_is_admin_of_a_new_school(client):
 def test_invite_lets_a_teacher_join_the_school(client):
     admin = _admin(client, "mu")
     sid = f"mu_{uuid.uuid4().hex[:6]}"
+    class_id = client.post(f"/classes/{admin['school_id']}", headers=_hdr(admin["token"]),
+                           json={"label": "JSS1A"}).json()["class_id"]
     assert client.post("/students", headers=_hdr(admin["token"]), json={
-        "student_id": sid, "name": "Mu Student",
+        "student_id": sid, "name": "Mu Student", "class_id": class_id,
     }).status_code == 200
 
     # school_name is ignored when an invite is supplied.
     teacher = _signup(client, "mu_teacher", invite_code=_invite(client, admin), school_name="Elsewhere").json()
     assert teacher["role"] == "teacher"
     assert teacher["school_id"] == admin["school_id"]
+    # A new teacher sees no students until the admin assigns them a class.
+    assert client.get("/students", headers=_hdr(teacher["token"])).json() == []
+    client.put(f"/members/{teacher['id']}/classes", headers=_hdr(admin["token"]), json={"class_ids": [class_id]})
     assert [s["student_id"] for s in client.get("/students", headers=_hdr(teacher["token"])).json()] == [sid]
 
     login = client.post("/auth/login", json={"email": teacher["email"], "password": "Passw0rd!"}).json()
@@ -119,9 +124,8 @@ def test_teacher_cannot_do_admin_actions(client):
     teacher = _signup(client, "rho_teacher", invite_code=_invite(client, admin)).json()
     t = _hdr(teacher["token"])
 
-    cls = client.post(f"/classes/{school_id}", headers=t, json={"label": "JSS1A"})
-    assert cls.status_code == 200  # teachers can still set up classes
-    class_id = cls.json()["class_id"]
+    assert client.post(f"/classes/{school_id}", headers=t, json={"label": "JSS1A"}).status_code == 403
+    class_id = client.post(f"/classes/{school_id}", headers=_hdr(admin["token"]), json={"label": "JSS1A"}).json()["class_id"]
 
     assert client.post("/invites", headers=t).status_code == 403
     assert client.get("/invites", headers=t).status_code == 403

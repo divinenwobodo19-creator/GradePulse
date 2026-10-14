@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Admins and teachers
+
+- **Teachers see only the classes they teach.** The school admin ticks each teacher's classes in Settings → People (`PUT /members/{user_id}/classes`; `GET /members` lists them). A teacher's students, scores, triage, dashboard counts, progress and reports cover those classes only; a teacher with no classes sees no students. Admins still see the whole school.
+- **Admin-only:** deleting students, importing a class list, and creating or renaming classes (deleting classes already was). Teachers add students into one of their classes and cannot move a student out of them.
+- The sidebar shows whether the signed-in account is an admin or a teacher, and the dashboard tells a teacher which classes it covers.
+
+
 ### Operations
 
 - **Content and engine-state changes are operator-only.** `POST /content`, content imports (`POST /ingest` with `type=content`) and `POST /save` need `X-Operator-Key`; any school login could change the shared content catalogue before. `deploy/pilot_seed.py` takes `--operator-key` (or `$OPERATOR_KEY`) to load the catalogue and skips it otherwise.

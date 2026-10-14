@@ -39,7 +39,7 @@ from .schemas import (
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
     UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
-    SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest,
+    SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest, ClassAssignment,
     OperatorResetRequest, PasswordResetLink, MemberResponse,
 )
 
@@ -179,9 +179,26 @@ def _own_student(user: dict, student_id: str) -> store.StudentRecord:
     """The caller's student with this ID. IDs are per school, so another
     school's student with the same ID is simply not found."""
     rec = store.get_student(user.get("school_id", ""), student_id)
-    if rec is None:
+    scope = _class_scope(user)
+    # A teacher's students are the ones in their classes; others are not found.
+    if rec is None or (scope is not None and rec.class_id not in scope):
         raise HTTPException(status_code=404, detail="Student not found")
     return rec
+
+
+# ── Admins see the whole school; teachers see the classes they teach ──────────
+
+def _class_scope(user: dict) -> Optional[List[str]]:
+    """None for an admin (every class); the teacher's assigned class IDs otherwise."""
+    if user.get("role", ROLE_ADMIN) == ROLE_ADMIN:
+        return None
+    return store.get_teacher_classes(user["id"], user.get("school_id", ""))
+
+
+def _require_class_in_scope(user: dict, class_id: str) -> None:
+    scope = _class_scope(user)
+    if scope is not None and class_id not in scope:
+        raise HTTPException(status_code=403, detail="That class is not one of yours")
 
 
 def _engine_student(rec: store.StudentRecord) -> str:
@@ -531,7 +548,24 @@ def operator_reset(request: OperatorResetRequest, _: None = Depends(require_oper
 
 @app.get("/members", response_model=List[MemberResponse])
 def list_members(user: dict = Depends(require_admin)):
-    return list_school_members(_admin_school(user))
+    school_id = _admin_school(user)
+    return [
+        {**member, "class_ids": store.get_teacher_classes(member["id"], school_id)
+         if member["role"] == ROLE_TEACHER else []}
+        for member in list_school_members(school_id)
+    ]
+
+
+@app.put("/members/{user_id}/classes", response_model=MemberResponse)
+def assign_member_classes(user_id: str, request: ClassAssignment, user: dict = Depends(require_admin)):
+    """Set which classes a teacher teaches (and so can see)."""
+    school_id = _admin_school(user)
+    member = next((m for m in list_school_members(school_id) if m["id"] == user_id), None)
+    if member is None:
+        raise HTTPException(status_code=404, detail="No such member in your school")
+    if member["role"] != ROLE_TEACHER:
+        raise HTTPException(status_code=400, detail="Admins see every class; only teachers are assigned classes")
+    return {**member, "class_ids": store.set_teacher_classes(user_id, school_id, request.class_ids)}
 
 
 @app.post("/members/{user_id}/password-reset", response_model=PasswordResetLink)
@@ -631,11 +665,13 @@ def replace_subjects(request: SubjectsPayload, user: dict = Depends(require_admi
 @app.get("/classes/{school_id}", response_model=List[ClassResponse])
 def list_classes(school_id: str, user: dict = Depends(get_current_user)):
     _require_school_access(user, school_id)
-    return store.list_classes(school_id)
+    classes = store.list_classes(school_id)
+    scope = _class_scope(user)
+    return classes if scope is None else [c for c in classes if c["class_id"] in scope]
 
 
 @app.post("/classes/{school_id}", response_model=ClassResponse)
-def create_class(school_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
+def create_class(school_id: str, request: CreateClassRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
     cls = store.add_class(school_id, request.label)
     if not cls:
@@ -644,7 +680,7 @@ def create_class(school_id: str, request: CreateClassRequest, user: dict = Depen
 
 
 @app.put("/classes/{school_id}/{class_id}", response_model=ClassResponse)
-def update_class(school_id: str, class_id: str, request: CreateClassRequest, user: dict = Depends(get_current_user)):
+def update_class(school_id: str, class_id: str, request: CreateClassRequest, user: dict = Depends(require_admin)):
     _require_school_access(user, school_id)
     if not store.get_class(school_id, class_id):
         raise HTTPException(status_code=404, detail="Class not found")
@@ -680,7 +716,10 @@ def list_students(
     # the school is always derived from the authenticated user (Phase 2).
     if school_id and school_id != user_school:
         raise HTTPException(status_code=403, detail="Not authorized for this school")
-    return [_student_schema(rec) for rec in store.list_students(user_school, class_id or "")]
+    if class_id:
+        _require_class_in_scope(user, class_id)
+    students = store.list_students(user_school, class_id or "", class_ids=_class_scope(user))
+    return [_student_schema(rec) for rec in students]
 
 
 @app.post("/students", response_model=StudentSchema)
@@ -691,6 +730,10 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
     class_id = student.metadata.get("class_id") or student.class_id or ""
     if class_id:
         _validate_class_belongs_to_user(user, class_id)
+    if _class_scope(user) is not None and not class_id:
+        raise HTTPException(status_code=400, detail="Choose one of your classes for the student")
+    if class_id:
+        _require_class_in_scope(user, class_id)
     # An ID that already exists in this school returns that student unchanged.
     rec, _created = store.add_student(
         school_id, student.student_id, student.name,
@@ -712,6 +755,10 @@ def update_student(student_id: str, request: UpdateStudentRequest, user: dict = 
     if request.class_id is not None:
         if request.class_id:  # "" takes the student out of their class
             _validate_class_belongs_to_user(user, request.class_id)
+        if _class_scope(user) is not None and not request.class_id:
+            raise HTTPException(status_code=400, detail="A teacher's students must stay in one of their classes")
+        if request.class_id:
+            _require_class_in_scope(user, request.class_id)
         changes["class_id"] = request.class_id
         # Keep metadata.class_id in sync — the create path and the frontend
         # convention treat metadata as the class key too.
@@ -721,7 +768,7 @@ def update_student(student_id: str, request: UpdateStudentRequest, user: dict = 
 
 
 @app.delete("/students/{student_id}")
-def delete_student(student_id: str, user: dict = Depends(get_current_user)):
+def delete_student(student_id: str, user: dict = Depends(require_admin)):
     rec = _own_student(user, student_id)
     store.archive_student(rec.pk)
     brain_instance.students.pop(rec.engine_key, None)
@@ -732,7 +779,9 @@ def delete_student(student_id: str, user: dict = Depends(get_current_user)):
 def list_school_scores(class_id: Optional[str] = Query(None), user: dict = Depends(get_current_user)):
     """Every recorded score in the caller's school, or one class of it — the
     data behind class and parent reports."""
-    return store.list_school_scores(user.get("school_id", ""), class_id or "")
+    if class_id:
+        _require_class_in_scope(user, class_id)
+    return store.list_school_scores(user.get("school_id", ""), class_id or "", class_ids=_class_scope(user))
 
 
 @app.get("/students/{student_id}/scores", response_model=List[ScoreRecord])
@@ -774,7 +823,8 @@ def recommend(request: RecommendationRequest, user: dict = Depends(get_current_u
         # ML-layer callers. `[]` means "nothing to show".
         # /recommend keeps 400 for an unknown student (existing contract).
         rec = store.get_student(user.get("school_id", ""), request.student_id)
-        if rec is None:
+        scope = _class_scope(user)
+        if rec is None or (scope is not None and rec.class_id not in scope):
             raise HTTPException(status_code=400, detail=f"Student ID {request.student_id} not found.")
         result = brain_instance.recommend(_engine_student(rec), topic=request.topic, top_n=request.top_n)
         if request.top_n == 1:
@@ -820,8 +870,10 @@ def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_use
 def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
     # Triage is a school report over recorded scores: only the caller's own
     # students who have been assessed in the subject are tiered.
+    if request.class_id:
+        _require_class_in_scope(user, request.class_id)
     results = []
-    for rec in store.list_students(user.get("school_id", ""), request.class_id or ""):
+    for rec in store.list_students(user.get("school_id", ""), request.class_id or "", class_ids=_class_scope(user)):
         grades = rec.grade_history.get(request.subject, [])
         if grades:
             results.append({
@@ -845,12 +897,19 @@ def get_reward(request: RewardRequest, user: dict = Depends(get_current_user)):
 def get_summary(user: dict = Depends(get_current_user)):
     score = brain_instance.last_neural_score
     user_school = user.get("school_id", "")
+    scope = _class_scope(user)
+    if not user_school:
+        student_count = 0
+    elif scope is None:
+        student_count = store.count_students(user_school)
+    else:
+        student_count = len(store.list_students(user_school, class_ids=scope))
     return {
-        "student_count": store.count_students(user_school) if user_school else 0,
+        "student_count": student_count,
         "content_count": len(brain_instance.contents),
         # Scores recorded in the caller's school (the engine's own counter
         # covered every school).
-        "total_sessions": store.count_scores(user_school) if user_school else 0,
+        "total_sessions": store.count_scores(user_school, class_ids=scope) if user_school else 0,
         "model_type": brain_instance.model_type,
         "current_alpha": brain_instance.alpha,
         "current_gamma": brain_instance.gamma,
@@ -994,6 +1053,8 @@ async def ingest_data(
         
         # Run ingestion
         if type == "students":
+            if user.get("role", ROLE_ADMIN) != ROLE_ADMIN:
+                raise HTTPException(status_code=403, detail="Only a school admin can import a class list")
             # Phase 2: a user can only ingest rosters into THEIR OWN school.
             # Form school/school_id overrides are rejected unless consistent.
             # NOTE: a user's stored school_id can be dangling (the user DB

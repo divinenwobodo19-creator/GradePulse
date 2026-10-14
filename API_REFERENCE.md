@@ -522,6 +522,12 @@ Authenticated. Body `{ "current_password": "...", "new_password": "..." }`. Retu
 
 Admin only. The accounts in the caller's school: `[{ "id", "email", "role" }]`.
 
+### PUT /members/{user_id}/classes
+
+Admin only, for a teacher in the caller's school. Body `{ "class_ids": ["..."] }` replaces the teacher's classes; IDs that are not current classes of the school are ignored. Returns the member with its `class_ids`. 400 for an admin (admins see every class); 404 for an account outside the school.
+
+**What a teacher can reach.** Every student, score, triage and report endpoint is limited to the teacher's classes: other students return 404 (`/recommend` 400), and asking for another class by `class_id` returns 403. Deleting students, importing class lists and creating or renaming classes return 403 for teachers.
+
 ### POST /members/{user_id}/password-reset
 
 Admin only, for another member of the caller's school. Returns `{ "code", "expires_at" }`. The code is returned once; only its hash is stored. Creating a new code cancels an earlier unused one for the same account. 404 for an account outside the school; 400 for the caller's own account.

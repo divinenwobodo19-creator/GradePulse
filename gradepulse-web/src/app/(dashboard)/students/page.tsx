@@ -11,6 +11,8 @@ import { useSubjects } from "@/lib/subjects";
 
 export default function StudentsPage() {
   const { user, loading: authLoading } = useAuth();
+  // Teachers see and manage the students of their own classes only.
+  const isAdmin = user?.role === "admin";
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [selectedSchool, setSelectedSchool] = useState("");
@@ -55,7 +57,7 @@ export default function StudentsPage() {
 
   const openAdd = () => {
     setEditing(null);
-    setNewClass(selectedClass);
+    setNewClass(selectedClass || (isAdmin ? "" : classes[0]?.class_id ?? ""));
     setShowModal(true);
   };
 
@@ -265,9 +267,11 @@ export default function StudentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setShowImport(true)} className="btn btn-secondary">
-            Import Class List
-          </button>
+          {isAdmin && (
+            <button type="button" onClick={() => setShowImport(true)} className="btn btn-secondary">
+              Import Class List
+            </button>
+          )}
           <button
             type="button"
             onClick={openAdd}
@@ -334,7 +338,11 @@ export default function StudentsPage() {
             </div>
             <h3 className="heading-3 text-navy mb-1">No students found</h3>
             <p className="body-sm text-text-muted mb-4">
-              {search ? "Try a different search term" : "Add your first student to get started"}
+              {search
+                ? "Try a different search term"
+                : !isAdmin && classes.length === 0
+                  ? "You have not been given a class yet. Ask your school admin to add you in Settings → People."
+                  : "Add your first student to get started"}
             </p>
             {!search && (
                <button type="button" onClick={openAdd} className="btn btn-primary btn-sm">
@@ -389,6 +397,7 @@ export default function StudentsPage() {
                        >
                          Edit
                        </button>
+                       {isAdmin && (
                        <button
                          type="button"
                          onClick={() => handleDelete(s.student_id, s.name)}
@@ -397,6 +406,7 @@ export default function StudentsPage() {
                        >
                         Delete
                       </button>
+                       )}
                     </td>
                   </tr>
                 ))}
@@ -505,7 +515,7 @@ export default function StudentsPage() {
                   onChange={(e) => setNewClass(e.target.value)}
                   className="input select"
                 >
-                  <option value="">No class</option>
+                  {isAdmin && <option value="">No class</option>}
                   {classes.map((c) => (
                     <option key={c.class_id} value={c.class_id}>{c.label}</option>
                   ))}

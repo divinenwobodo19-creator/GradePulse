@@ -113,6 +113,10 @@ class MemberResponse(BaseModel):
     id: str
     email: str
     role: str
+    class_ids: List[str] = []  # a teacher's classes; empty for admins
+
+class ClassAssignment(BaseModel):
+    class_ids: List[str] = Field(..., max_length=200)
 
 class UserResponse(BaseModel):
     id: str
