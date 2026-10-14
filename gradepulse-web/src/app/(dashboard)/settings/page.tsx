@@ -20,6 +20,9 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [assigning, setAssigning] = useState("");
+  // Classes ticked for the next invite.
+  const [inviteClasses, setInviteClasses] = useState<string[]>([]);
+  const classLabel = (id: string) => schoolClasses.find((c) => c.class_id === id)?.label ?? "";
   // The reset link just created for a teacher; shown once so it can be copied.
   const [resetLink, setResetLink] = useState<{ memberId: string; url: string } | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -181,8 +184,9 @@ export default function SettingsPage() {
   const handleCreateInvite = async () => {
     setInviting(true);
     try {
-      const invite = await api.createInvite();
+      const invite = await api.createInvite(inviteClasses);
       setInvites((prev) => [invite, ...prev]);
+      setInviteClasses([]);
       showToast("success", "Invite created. Send the link to your teacher.");
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Could not create invite");
@@ -373,7 +377,8 @@ export default function SettingsPage() {
               <div>
                 <h2 className="heading-2 text-navy">Invite a Teacher</h2>
                 <p className="caption text-text-muted">
-                  Each link lets one teacher join {user?.school_name || "your school"} and expires after 7 days
+                  Tick the classes they will teach, then create the link. Each link lets one teacher join{" "}
+                  {user?.school_name || "your school"} straight into those classes, and expires after 7 days.
                 </p>
               </div>
               <button
@@ -387,6 +392,33 @@ export default function SettingsPage() {
               </button>
             </div>
 
+            {schoolClasses.length > 0 && (
+              <fieldset className="mb-5">
+                <legend className="caption text-text-secondary mb-1">Classes for the next invite</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {schoolClasses.map((cls) => (
+                    <label key={cls.class_id} className="flex items-center gap-1.5 body-sm text-navy">
+                      <input
+                        type="checkbox"
+                        checked={inviteClasses.includes(cls.class_id)}
+                        onChange={() =>
+                          setInviteClasses((prev) =>
+                            prev.includes(cls.class_id) ? prev.filter((id) => id !== cls.class_id) : [...prev, cls.class_id]
+                          )
+                        }
+                      />
+                      {cls.label}
+                    </label>
+                  ))}
+                </div>
+                {inviteClasses.length === 0 && (
+                  <p className="caption text-text-muted mt-1">
+                    None ticked: the teacher joins with no classes and you add them later under People.
+                  </p>
+                )}
+              </fieldset>
+            )}
+
             {invites.length === 0 ? (
               <p className="caption text-text-muted">No pending invites</p>
             ) : (
@@ -396,7 +428,10 @@ export default function SettingsPage() {
                     <div className="min-w-0">
                       <div className="font-mono text-sm text-navy break-all">{invite.code}</div>
                       <div className="caption text-text-muted mt-0.5">
-                        Expires {new Date(invite.expires_at).toLocaleDateString()}
+                        {invite.class_ids.length > 0
+                          ? `For ${invite.class_ids.map(classLabel).filter(Boolean).join(", ")} · `
+                          : "No classes yet · "}
+                        expires {new Date(invite.expires_at).toLocaleDateString()}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

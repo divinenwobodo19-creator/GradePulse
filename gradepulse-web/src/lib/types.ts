@@ -46,6 +46,8 @@ export interface Invite {
   code: string;
   created_at: string;
   expires_at: string;
+  // Classes the teacher is put into when they join.
+  class_ids: string[];
 }
 
 export interface AuthResponse {

@@ -586,7 +586,7 @@ Admin only. A school's admin is whoever created it at signup; teachers join with
 
 ### POST /invites
 
-Create a single-use invite for the caller's school. Expires after 7 days.
+Create a single-use invite for the caller's school. Expires after 7 days. Optional body `{ "class_ids": ["..."] }`: the classes the teacher is put into when they join (400 if any is not a class of the school). The response and `GET /invites` include `class_ids`.
 
 ```json
 { "code": "k3J9xQ2mVb1A", "created_at": "2026-10-12T09:00:00+00:00", "expires_at": "2026-10-19T09:00:00+00:00" }

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional
 import hmac
+import json
 import logging
 import os
 import glob
@@ -41,6 +42,7 @@ from .schemas import (
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
     UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
     SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest, ClassAssignment,
+    InviteRequest,
     OperatorResetRequest, PasswordResetLink, MemberResponse,
 )
 
@@ -470,6 +472,10 @@ def signup(request: Request, signup_request: SignupRequest):
         if not redeem_invite(invite_code, user["id"]):
             raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
         role = ROLE_TEACHER
+        # Put the teacher straight into the classes the admin chose for the invite.
+        invite_classes = json.loads(invite.get("class_ids") or "[]")
+        if invite_classes:
+            store.set_teacher_classes(user["id"], school["school_id"], invite_classes)
     else:
         user = create_user(signup_request.email, signup_request.password)
         # Without an invite, signup always creates the caller's OWN school.
@@ -593,8 +599,15 @@ def _admin_school(user: dict) -> str:
 
 
 @app.post("/invites", response_model=InviteResponse)
-def create_school_invite(user: dict = Depends(require_admin)):
-    return create_invite(_admin_school(user), user["id"])
+def create_school_invite(request: Optional[InviteRequest] = None, user: dict = Depends(require_admin)):
+    """An invite link; the admin can choose the classes the teacher will teach."""
+    school_id = _admin_school(user)
+    wanted = (request.class_ids if request else []) or []
+    valid = {c["class_id"] for c in store.list_classes(school_id)}
+    unknown = [cid for cid in wanted if cid not in valid]
+    if unknown:
+        raise HTTPException(status_code=400, detail="Some of those classes are not in your school")
+    return create_invite(school_id, user["id"], class_ids=list(dict.fromkeys(wanted)))
 
 
 @app.get("/invites", response_model=List[InviteResponse])

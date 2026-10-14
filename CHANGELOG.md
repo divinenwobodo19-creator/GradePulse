@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Admins and teachers
 
+- **Invites can carry classes.** When creating an invite the admin ticks the classes the teacher will teach (`POST /invites` with `class_ids`); the teacher joins straight into them, with no empty first login. Pending invites show their classes.
+- **No "primary subject" on students.** The Add/Edit Student form and the student tables no longer ask for or show a single subject: secondary students take every subject, and scores are entered per subject. The Students and dashboard tables show the class instead, and a student's Progress page shows how many tests are recorded. (`current_topic` stays in the API for the recommendation engine.)
 - **Teachers see only the classes they teach.** The school admin ticks each teacher's classes in Settings → People (`PUT /members/{user_id}/classes`; `GET /members` lists them). A teacher's students, scores, triage, dashboard counts, progress and reports cover those classes only; a teacher with no classes sees no students. Admins still see the whole school.
 - **Admin-only:** deleting students, importing a class list, and creating or renaming classes (deleting classes already was). Teachers add students into one of their classes and cannot move a student out of them.
 - The sidebar shows whether the signed-in account is an admin or a teacher, and the dashboard tells a teacher which classes it covers.

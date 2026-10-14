@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { overallPercentLabel } from "@/lib/scores";
 import { useAuth } from "@/lib/auth";
 import type { BrainSummary, SchoolClass, TriageResult, Student } from "@/lib/types";
-import { TIER_LABELS } from "@/lib/types";
+import { TIER_LABELS, getStudentClassId } from "@/lib/types";
 import { activeSubject, useSubjects } from "@/lib/subjects";
 
 function MetricCard({ accent, label, value, sub, icon }: {
@@ -295,7 +295,7 @@ export default function DashboardPage() {
                 <th>Student</th>
                 <th>ID</th>
                 <th className="text-right">Score</th>
-                <th>Subject</th>
+                <th>Class</th>
               </tr>
             </thead>
             <tbody>
@@ -315,7 +315,9 @@ export default function DashboardPage() {
                       {overallPercentLabel(s)}
                     </span>
                   </td>
-                  <td className="text-text-secondary">{s.current_topic}</td>
+                  <td className="text-text-secondary">
+                    {classes.find((c) => c.class_id === getStudentClassId(s))?.label ?? "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
