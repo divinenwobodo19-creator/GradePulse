@@ -17,6 +17,7 @@ The repository also contains a contextual-bandit recommendation engine (LinUCB).
 | **Dashboard and triage** | Per subject and class: students assessed, needing help, on track and ahead. |
 | **Progress** | Each student's test history by subject, with a chart, average, grade and trend. |
 | **Reports** | A one-page class summary, and one progress sheet per student for parents. Both print cleanly. |
+| **Billing** | The school admin pays per student, per term, through Paystack. Limits are soft: nothing is blocked for non-payment, the admin just sees a reminder. |
 | **Passwords** | Change password in Settings. There is no email service: a forgotten password is reset with a single-use link from the school admin, or from the operator for a locked-out admin. |
 
 ## Running it locally
@@ -67,6 +68,8 @@ API (environment variables; `.env.example` has them all with comments):
 | `FRONTEND_URL` | `http://localhost:3000` | Allowed browser origin (CORS). |
 | `OPERATOR_KEY` | empty | Unlocks `/backup`, `/backups`, `/backup/restore` and `/auth/operator-reset`. Empty disables them. |
 | `BACKUP_ENABLED`, `BACKUP_DIR`, `BACKUP_INTERVAL`, `BACKUP_MAX_COUNT` | on, `backups/`, 6 h, 24 | Scheduled backups of the data files. |
+| `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA`, `TERM_DAYS` | empty, empty, 120 | Online payment through Paystack, per student per term. Off until the key and price are set; see `DEPLOYMENT.md`. |
+| `TRUST_FORWARDED_FOR` | `false` | Use `X-Forwarded-For` for sign-in rate limits behind nginx; see `DEPLOYMENT.md`. |
 | `RECOMMENDATIONS_ENABLED` | `false` | Turns content suggestions on. |
 | `SEED_DEMO_DATA` | `false` | Seeds sample students and content into a brand-new engine state. Demos only. |
 | `LOG_LEVEL` | `info` | Application and uvicorn log level. |

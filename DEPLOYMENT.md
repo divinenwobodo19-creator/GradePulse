@@ -189,6 +189,18 @@ curl -X POST http://localhost:8000/backup -H "X-Operator-Key: $OPERATOR_KEY"    
 curl http://localhost:8000/backups -H "X-Operator-Key: $OPERATOR_KEY"           # list
 ```
 
+### Taking payments (Paystack)
+
+Schools pay per student, per term, from the Billing page (admins only). To switch it on:
+
+1. In the Paystack dashboard, copy your **secret key** (Settings → API Keys & Webhooks). Start with the `sk_test_...` key.
+2. In `.env`, set `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA` (whole naira) and, if a term is not 120 days, `TERM_DAYS`. Make sure `FRONTEND_URL` is the public web address; Paystack sends the admin back to `FRONTEND_URL/billing` after paying.
+3. In the same Paystack page, set the **webhook URL** to `https://api.yourdomain.com/billing/webhook`. Paystack signs each call with the secret key, and GradePulse rejects unsigned or forged ones. The webhook records a payment even if the admin closes the tab before returning.
+4. `docker compose up -d` to apply. Pay a test term with one of Paystack's test cards, then check the Billing page shows it.
+5. When ready, swap in the `sk_live_...` key.
+
+Limits are soft: a school that has not paid, whose term has ended, or that has more students than it paid for keeps full use; its admin sees a reminder bar.
+
 ### A locked-out school admin
 
 Teachers get reset links from their school admin in Settings. If the admin themselves is locked out, issue a code with the operator key and send them the link:

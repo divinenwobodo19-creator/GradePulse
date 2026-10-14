@@ -2,6 +2,8 @@ import type { ScoreRow } from "./reports";
 import type { StudentScore } from "@/components/ScoreHistory";
 import type {
   AuthResponse,
+  BillingPrice,
+  BillingStatus,
   BrainSummary,
   IngestResult,
   Invite,
@@ -187,6 +189,31 @@ class ApiClient {
   // A single-use reset code for one teacher. It is only returned here, once.
   async createMemberPasswordReset(userId: string) {
     return this.request<PasswordResetLink>("POST", `/members/${encodeURIComponent(userId)}/password-reset`);
+  }
+
+  // ─── Billing (Paystack) ───
+  async getBillingPrice(signal?: AbortSignal) {
+    return this.request<BillingPrice>("GET", "/billing/price", undefined, signal);
+  }
+
+  async getBilling(signal?: AbortSignal) {
+    return this.request<BillingStatus>("GET", "/billing", undefined, signal);
+  }
+
+  async getBillingReminder(signal?: AbortSignal) {
+    return this.request<{ show: boolean; state?: string }>("GET", "/billing/reminder", undefined, signal);
+  }
+
+  // Returns Paystack's payment page to send the admin to.
+  async startCheckout(students: number, email?: string) {
+    return this.request<{ authorization_url: string; reference: string }>("POST", "/billing/checkout", {
+      students,
+      ...(email ? { email } : {}),
+    });
+  }
+
+  async verifyPayment(reference: string) {
+    return this.request<BillingStatus & { payment_status: string }>("POST", "/billing/verify", { reference });
   }
 
   // ─── Invites (school admin only) ───

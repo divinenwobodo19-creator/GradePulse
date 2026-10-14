@@ -21,6 +21,27 @@ export interface PasswordResetLink {
   expires_at: string;
 }
 
+export type BillingState = "not_configured" | "unpaid" | "active" | "over_limit" | "expired";
+
+export interface BillingStatus {
+  state: BillingState;
+  configured: boolean;
+  price_per_student: number | null; // naira, per student, per term
+  currency: string;
+  term_days: number;
+  students: number;
+  paid_students: number;
+  paid_until: string | null;
+  payments: { reference: string; students: number; amount_naira: number; paid_at: string; period_end: string }[];
+}
+
+export interface BillingPrice {
+  configured: boolean;
+  price_per_student: number | null;
+  currency: string;
+  term_days: number;
+}
+
 export interface Invite {
   code: string;
   created_at: string;

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Billing
+
+- **Paystack payments, per student, per term.** Admins see a Billing page: the school's standing, a "Pay with Paystack" checkout for N students (card, bank transfer, USSD), and past payments. Payments are confirmed when the admin returns from Paystack and by Paystack's signed webhook. Off until `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA` are set. `DEPLOYMENT.md` has the setup.
+- **Soft limits.** An unpaid, expired or over-the-limit school keeps full use; its admin sees a reminder bar linking to Billing. Teachers never see it.
+- **Pricing page** shows the per-student, per-term price from the server.
+
+
 ### Admins and teachers
 
 - **Teachers see only the classes they teach.** The school admin ticks each teacher's classes in Settings → People (`PUT /members/{user_id}/classes`; `GET /members` lists them). A teacher's students, scores, triage, dashboard counts, progress and reports cover those classes only; a teacher with no classes sees no students. Admins still see the whole school.

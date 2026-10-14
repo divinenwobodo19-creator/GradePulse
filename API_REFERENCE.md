@@ -542,6 +542,44 @@ For an admin who is locked out. Requires the `X-Operator-Key` header. Body `{ "e
 
 ---
 
+## Billing (Paystack)
+
+Schools pay per student, per term. Billing is off until the server has `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA`. Limits are soft: nothing is ever blocked for non-payment.
+
+### GET /billing/price
+
+Public. `{ "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120 }`
+
+### GET /billing
+
+Admin only. The school's standing:
+
+```json
+{ "state": "active", "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120,
+  "students": 41, "paid_students": 41, "paid_until": "2027-02-10T09:00:00+00:00",
+  "payments": [{ "reference": "gp_...", "students": 41, "amount_naira": 20500, "paid_at": "...", "period_end": "..." }] }
+```
+
+`state` is `not_configured`, `unpaid`, `active`, `over_limit` (paid, but more students now than paid for) or `expired`.
+
+### GET /billing/reminder
+
+Any signed-in user. `{ "show": true, "state": "unpaid" }` for an admin whose school is `unpaid`, `expired` or `over_limit`; `{ "show": false }` otherwise and always for teachers.
+
+### POST /billing/checkout
+
+Admin only. Body `{ "students": 41 }`. Records a pending payment of students × price and returns Paystack's payment page: `{ "authorization_url": "https://checkout.paystack.com/...", "reference": "gp_..." }`. 503 if billing is not configured.
+
+### POST /billing/verify
+
+Admin only, for the caller's school. Body `{ "reference": "gp_..." }`. Asks Paystack about a pending payment and records it if the charge succeeded for the expected amount. Returns the `GET /billing` body plus `payment_status` (`success`, `pending`, `failed`, `abandoned`, `amount_mismatch`, ...). A paid term runs `TERM_DAYS` from the payment.
+
+### POST /billing/webhook
+
+Called by Paystack. Requires a valid `x-paystack-signature` (HMAC-SHA512 of the body with the secret key); otherwise 401. Records `charge.success` events the same way as `/billing/verify`; repeats are ignored.
+
+---
+
 ## Invites
 
 Admin only. A school's admin is whoever created it at signup; teachers join with an invite and get the `teacher` role. `role` is returned by `/auth/signup`, `/auth/login` and `/auth/me`.
