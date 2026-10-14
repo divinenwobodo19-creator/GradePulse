@@ -298,3 +298,32 @@ def test_legacy_registry_file_is_adopted_once(tmp_path, monkeypatch):
     ]}
     assert store.adopt_legacy_registry({"schools": [{"school_id": "new00001", "name": "Late", "classes": []}]}) == 0
     assert store.get_school("new00001") is None
+
+
+def test_school_scores_feed_reports_and_stay_inside_the_school(client, school):
+    class_id = client.post(f"/classes/{school['id']}", headers=school["h"], json={"label": "JSS1R"}).json()["class_id"]
+    _add(client, school, "IN", class_id=class_id)
+    _add(client, school, "OUT")
+    _add(client, school, "GONE")
+    _enter(client, school, 0.9, "IN", assessed_on="2026-09-14", label="Week 2")
+    _enter(client, school, 0.3, "IN", assessed_on="2026-09-07", label="Week 1")
+    _enter(client, school, 0.5, "OUT", subject="ENGLISH", assessed_on="2026-09-07")
+    _enter(client, school, 0.1, "GONE", assessed_on="2026-09-07")
+    client.delete("/students/GONE", headers=school["h"])
+
+    rows = client.get("/scores", headers=school["h"]).json()
+    assert [(r["student_id"], r["subject"], r["score"], r["assessed_on"], r["label"]) for r in rows] == [
+        ("IN", "MATH", 0.3, "2026-09-07", "Week 1"),
+        ("OUT", "ENGLISH", 0.5, "2026-09-07", ""),
+        ("IN", "MATH", 0.9, "2026-09-14", "Week 2"),
+    ]
+    one_class = client.get("/scores", headers=school["h"], params={"class_id": class_id}).json()
+    assert {r["student_id"] for r in one_class} == {"IN"}
+
+    other = client.post("/auth/signup", json={
+        "email": f"rep_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!",
+    }).json()
+    other_h = {"Authorization": f"Bearer {other['token']}"}
+    assert client.get("/scores", headers=other_h).json() == []
+    assert client.get("/scores", headers=other_h, params={"class_id": class_id}).json() == []
+    assert client.get("/scores").status_code == 401

@@ -384,6 +384,16 @@ Request body:
 
 Each entry is saved as a dated score record. Sending the same student, subject, `assessed_on` and `label` again **corrects** the earlier score. A `student_id` that is not in the caller's school returns 404.
 
+### GET /scores
+
+Every recorded score in the caller's school, oldest first. Optional `class_id` query parameter limits it to one class. Archived students are left out. Used by the Reports page.
+
+```json
+[
+  { "student_id": "S001", "subject": "MATH", "score": 0.7, "assessed_on": "2026-09-07", "label": "Week 1 test" }
+]
+```
+
 ### GET /students/{student_id}/scores
 
 Every recorded score for one student, oldest first.

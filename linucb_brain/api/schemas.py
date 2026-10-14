@@ -136,6 +136,13 @@ class ScoreRecord(BaseModel):
     label: str = ""
     source: str = "teacher"
 
+class SchoolScoreRecord(BaseModel):
+    student_id: str
+    subject: str
+    score: float
+    assessed_on: str
+    label: str = ""
+
 class SubjectsPayload(BaseModel):
     subjects: List[str] = Field(..., max_length=40)
 

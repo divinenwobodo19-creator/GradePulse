@@ -384,6 +384,25 @@ def list_scores(student_pk: int) -> List[dict]:
     return [dict(r) for r in rows]
 
 
+def list_school_scores(school_id: str, class_id: str = "") -> List[dict]:
+    """Every recorded score in a school (or one class), oldest first, for reports."""
+    if not school_id:
+        return []
+    query = (
+        "SELECT st.student_id, sc.subject, sc.score, sc.assessed_on, sc.label "
+        "FROM scores sc JOIN students st ON st.id = sc.student_pk "
+        "WHERE st.school_id = ? AND st.archived_at IS NULL"
+    )
+    params = [school_id]
+    if class_id:
+        query += " AND st.class_id = ?"
+        params.append(class_id)
+    conn = _get_db()
+    rows = conn.execute(query + " ORDER BY sc.assessed_on, sc.id", params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 # ── Writing ────────────────────────────────────────────────────────────────
 
 def add_student(

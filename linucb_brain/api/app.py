@@ -35,7 +35,7 @@ from .schemas import (
     ClassResponse, SignupRequest, LoginRequest, UserResponse,
     BulkUpdateRequest, TriageRequest, CreateSchoolRequest, CreateClassRequest,
     UpdateStudentRequest, IngestResponse, InviteResponse, ScoreRecord,
-    SubjectsPayload,
+    SubjectsPayload, SchoolScoreRecord,
 )
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
@@ -643,6 +643,13 @@ def delete_student(student_id: str, user: dict = Depends(get_current_user)):
     store.archive_student(rec.pk)
     brain_instance.students.pop(rec.engine_key, None)
     return {"status": "deleted"}
+
+
+@app.get("/scores", response_model=List[SchoolScoreRecord])
+def list_school_scores(class_id: Optional[str] = Query(None), user: dict = Depends(get_current_user)):
+    """Every recorded score in the caller's school, or one class of it — the
+    data behind class and parent reports."""
+    return store.list_school_scores(user.get("school_id", ""), class_id or "")
 
 
 @app.get("/students/{student_id}/scores", response_model=List[ScoreRecord])

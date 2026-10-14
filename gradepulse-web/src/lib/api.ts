@@ -1,3 +1,4 @@
+import type { ScoreRow } from "./reports";
 import type {
   AuthResponse,
   BrainSummary,
@@ -269,6 +270,12 @@ class ApiClient {
     form.append("type", "students");
     form.append("dry_run", dryRun ? "true" : "false");
     return this.request<IngestResult>("POST", "/ingest", form);
+  }
+
+  // Every recorded score in the school (or one class), oldest first.
+  async getSchoolScores(classId?: string, signal?: AbortSignal) {
+    const qs = classId ? `?class_id=${encodeURIComponent(classId)}` : "";
+    return this.request<ScoreRow[]>("GET", `/scores${qs}`, undefined, signal);
   }
 
   // ─── Content ───
