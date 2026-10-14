@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional
 import hmac
+import logging
 import os
 import glob
 import sqlite3
@@ -14,6 +15,7 @@ import uuid
 import tempfile
 import numpy as np
 
+from .. import __version__
 from ..brain import Brain
 from ..core.triage import build_triage_report
 from ..models.student import Student
@@ -40,6 +42,13 @@ from .schemas import (
     SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest,
     OperatorResetRequest, PasswordResetLink, MemberResponse,
 )
+
+# Application log lines go to stderr next to uvicorn's own, at LOG_LEVEL.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "info").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("gradepulse")
 
 BRAIN_STATE_PATH = os.getenv("BRAIN_STATE_PATH", "brain_state.json")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "class_config.json")
@@ -89,13 +98,13 @@ def _load_brain() -> Brain:
     # Try loading from main state file
     if os.path.exists(BRAIN_STATE_PATH):
         try:
-            print(f"Worker {os.getpid()}: Loading Brain from {BRAIN_STATE_PATH}")
+            logger.info("Worker %s: loading brain state from %s", os.getpid(), BRAIN_STATE_PATH)
             brain = synchronizer.load_brain(Brain.load)
             if brain is not None:
-                print(f"Worker {os.getpid()}: Brain loaded successfully")
+                logger.info("Worker %s: brain state loaded", os.getpid())
                 return brain
         except Exception as e:
-            print(f"  Warning: Could not load {BRAIN_STATE_PATH}: {e}")
+            logger.warning("Could not load %s: %s", BRAIN_STATE_PATH, e)
     
     # Try loading from checkpoints
     checkpoints = sorted(
@@ -104,19 +113,19 @@ def _load_brain() -> Brain:
     )
     for cp in checkpoints:
         try:
-            print(f"Worker {os.getpid()}: Loading Brain from checkpoint: {cp}")
+            logger.info("Worker %s: loading brain state from checkpoint %s", os.getpid(), cp)
             brain = synchronizer.load_brain(lambda path: Brain.load(cp))
             if brain is not None:
-                print(f"Worker {os.getpid()}: Brain loaded from checkpoint")
+                logger.info("Worker %s: brain state loaded from checkpoint", os.getpid())
                 return brain
         except Exception as e:
-            print(f"  Warning: Could not load {cp}: {e}")
+            logger.warning("Could not load %s: %s", cp, e)
     
     # Start empty. Sample students/content are only seeded when asked for
     # (SEED_DEMO_DATA=true), never on a real deployment.
     brain = Brain(model_type="hybrid")
     if SEED_DEMO_DATA:
-        print(f"Worker {os.getpid()}: Seeding demo students and content (SEED_DEMO_DATA)")
+        logger.info("Worker %s: seeding demo students and content (SEED_DEMO_DATA)", os.getpid())
         _seed_demo_data(brain)
     synchronizer.set_brain(brain)
     # Save initial state so other workers can load it
@@ -342,16 +351,16 @@ async def lifespan(app: FastAPI):
         # One-off upgrade from class_config.json; a no-op once schools exist.
         moved = store.adopt_legacy_registry(load_registry(CONFIG_PATH))
         if moved:
-            print(f"Worker {os.getpid()}: moved {moved} schools from {CONFIG_PATH} into the store")
+            logger.info("Worker %s: moved %s schools from %s into the store", os.getpid(), moved, CONFIG_PATH)
     adopted = _adopt_legacy_students(brain_instance)
     if adopted:
-        print(f"Worker {os.getpid()}: moved {adopted} students from the brain state into the store")
+        logger.info("Worker %s: moved %s students from the brain state into the store", os.getpid(), adopted)
     
     # Set brain in synchronizer and start auto-save
     if synchronizer is not None:
         synchronizer.set_brain(brain_instance)
         synchronizer.start_auto_save(lambda path: brain_instance.save(path))
-        print(f"Worker {os.getpid()}: Auto-save started (every {AUTO_SAVE_INTERVAL}s)")
+        logger.info("Worker %s: auto-save every %ss", os.getpid(), AUTO_SAVE_INTERVAL)
     
     # Initialize backup manager
     if BACKUP_ENABLED:
@@ -374,7 +383,7 @@ async def lifespan(app: FastAPI):
         backup_manager.create_backup("startup")
         # Start periodic backups
         backup_manager.start()
-        print(f"Worker {os.getpid()}: Backups enabled (every {BACKUP_INTERVAL}s, max {BACKUP_MAX_COUNT})")
+        logger.info("Worker %s: backups every %ss, keeping %s", os.getpid(), BACKUP_INTERVAL, BACKUP_MAX_COUNT)
     
     yield
     
@@ -382,15 +391,15 @@ async def lifespan(app: FastAPI):
     if backup_manager is not None:
         backup_manager.stop()
         backup_manager.create_backup("shutdown")
-        print(f"Worker {os.getpid()}: Final backup created on shutdown")
+        logger.info("Worker %s: final backup created on shutdown", os.getpid())
     
     if synchronizer is not None:
         synchronizer.stop_auto_save()
         synchronizer.save_brain(brain_instance.save)
-        print(f"Worker {os.getpid()}: Brain saved on shutdown")
+        logger.info("Worker %s: brain state saved on shutdown", os.getpid())
 
 
-app = FastAPI(title="GradePulse API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="GradePulse API", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -403,7 +412,10 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    # The client gets a short reference; the log line under it has the trace.
+    error_id = uuid.uuid4().hex[:12]
+    logger.exception("Unhandled error %s on %s %s", error_id, request.method, request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error", "error_id": error_id})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1005,6 +1017,7 @@ async def ingest_data(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Ingestion of %s (%s) failed", filename, type)
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
     finally:
         # Clean up temp file
@@ -1028,7 +1041,7 @@ def health_check():
     return {
         "status": "alive",
         "engine": "GradePulse",
-        "version": "1.0.0",
+        "version": __version__,
         "worker_pid": os.getpid(),
         "expected_workers": worker_count,
         "backup_status": backup_status,

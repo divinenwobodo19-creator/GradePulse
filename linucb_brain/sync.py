@@ -4,6 +4,7 @@ File-based synchronization for multi-worker brain state access.
 This module provides file locking and periodic sync to allow multiple
 uvicorn workers to safely share the same brain state without silent divergence.
 """
+import logging
 import os
 import time
 import threading
@@ -12,6 +13,9 @@ import json
 from typing import Optional, Callable
 from datetime import datetime
 
+
+
+logger = logging.getLogger("gradepulse.sync")
 
 class FileLock:
     """
@@ -169,7 +173,7 @@ class BrainSynchronizer:
                 self._brain = brain
                 return brain
             except Exception as e:
-                print(f"Warning: Could not load brain state: {e}")
+                logger.warning(f"Could not load brain state: {e}")
                 return None
     
     def save_brain(self, save_fn: Callable) -> bool:
@@ -190,7 +194,7 @@ class BrainSynchronizer:
                 save_fn(self.brain_state_path)
                 return True
             except Exception as e:
-                print(f"Warning: Could not save brain state: {e}")
+                logger.warning(f"Could not save brain state: {e}")
                 return False
     
     def start_auto_save(self, save_fn: Callable):

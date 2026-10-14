@@ -1,178 +1,94 @@
 # GradePulse — Project Index
 
-Codebase navigation map. Each section maps to an owner role.
+File-by-file map of the repository. Product decisions belong to Divine; open engineering work is tracked in GitHub issue #9.
 
-> **Ownership note (2026-09-27):** All original role-agents (Sam, Mia, Ali, Bob, David, Alice) were AI models and have been **scrapped by Divine**. The **Backend Engineer (opencode session)** is now the sole engineering agent and owns everything backend-related: engine, API, auth, storage/sync/backup, ingestion, infra config, QA/testing, and tech docs. Frontend (`gradepulse-web/`) has no agent; it ships as-is and its API contract is maintained backend-side. Owners below are updated to match (Unassigned = no agent).
-
----
-
-## Root-Level Files
-
-| File | Purpose | Owner |
-|---|---|---|
-| `README.md` | Quick start, project structure, API examples | Backend Engineer |
-| `PROJECT_INDEX.md` | This file — codebase navigation | Backend Engineer |
-| `CHANGELOG.md` | Release notes | Backend Engineer |
-| `RELEASE_CHECKLIST.md` | Pre-release verification steps | Backend Engineer |
-| `API_REFERENCE.md` | All documented endpoints with request/response examples | Backend Engineer |
-| `DEPLOYMENT.md` | Production deployment runbook | Backend Engineer |
-| `requirements.txt` | Python dependencies | Backend Engineer |
-| `pyproject.toml` | Project metadata | Backend Engineer |
-| `teacher_portal.py` | Streamlit teacher dashboard | Unassigned (legacy) |
-| `generate_offline.py` | Offline HTML tool generator | Unassigned (legacy) |
-| `offline_teacher.html` | Generated standalone tool | Unassigned (legacy) |
-| `brain_state.json` | Model persistence (LinUCB state) | Backend Engineer |
-| `class_config.json` | School/class registry | Backend Engineer |
-| `gradepulse_users.db` | SQLite user accounts (JWT auth) | Backend Engineer |
-| `ingest.py` | Data ingestion CLI (CSV/Excel → 17-dim vector) | Backend Engineer |
-| `generate_pilot_data.py` | Generate pilot-grade validation datasets | Backend Engineer |
-| `sample_data/` | Sample pilot-school data | Backend Engineer |
-| `sample_data/large/` | Large sample dataset | Backend Engineer |
-| `sample_data/pilot_grade/` | Pilot-grade validation data (edge cases) | Backend Engineer |
-| `.env.example` | Production configuration variables | Backend Engineer |
-| `Consolidated QA Audit Report.md` | Consolidated QA findings across all modules | Backend Engineer |
-| `QA AUDIT REPORT.md` | QA audit report | Backend Engineer |
-| `INVESTOR_CHECKLIST.md` | Investor due diligence checklist | Divine |
-| `Model Specifications.md` | Model technical specifications | Backend Engineer |
-| `backups/` | Automated brain state backups (rotated, timestamped) | Backend Engineer |
-| `Dockerfile` | Multi-stage Docker build (backend + frontend targets) | Backend Engineer |
-| `docker-compose.yml` | Docker Compose orchestration (API + web services, volumes) | Backend Engineer |
-| `.dockerignore` | Excludes dev/test files from Docker build context | Backend Engineer |
-| `DEPLOYMENT.md` | Production deployment runbook (VPS, HTTPS, backup/restore) | Backend Engineer |
-
----
-
-## `.github/workflows/` — CI/CD
-
-| File | Purpose | Owner |
-|---|---|---|
-| `ci.yml` | Test on push/PR to main (Python 3.12, pip cache, pytest) | Backend Engineer |
-| `docker.yml` | Build + push Docker images to GHCR on version tags | Backend Engineer |
-
----
-
-## `linucb_brain/` — Core Engine (Backend Engineer)
-
-### `linucb_brain/core/` — Algorithms
+## Root
 
 | File | Purpose |
 |---|---|
-| `linucb.py` | LinUCB Disjoint — per-arm matrices, Sherman-Morrison O(d²) updates |
-| `linucb_hybrid.py` | LinUCB Hybrid — shared + arm-specific + cluster parameters |
-| `clustering.py` | MiniBatchKMeans online clustering, SHA-256 cold-start |
-| `context.py` | 17-dim context vector builder (8 student + 9 content features) |
-| `reward.py` | Standalone reward calculator with anti-gaming scaling |
+| `README.md` | What GradePulse does, how to run it, configuration |
+| `API_REFERENCE.md` | Every endpoint with request and response examples |
+| `DEPLOYMENT.md` | Production runbook: server setup, HTTPS, backups, restores, upgrades |
+| `FRONTEND_BACKEND_HANDOFF.md` | API contract notes; every contract change is announced here |
+| `CHANGELOG.md` | Release notes |
+| `RELEASE_CHECKLIST.md` | Steps before tagging a release |
+| `INVESTOR_CHECKLIST.md` | Running a school or investor demo |
+| `AGENTS.md` | Coordination rules for the engineering agents |
+| `requirements.txt`, `pyproject.toml` | Python dependencies and package metadata (version comes from `linucb_brain/__init__.py`) |
+| `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` | Container build and configuration |
+| `ingest.py` | Class list and content import from CSV/Excel; used by `POST /ingest` and runnable as a CLI |
+| `generate_pilot_data.py` | Generates the pilot-grade sample datasets in `sample_data/` |
+| `teacher_portal.py`, `generate_offline.py`, `offline_teacher.html` | Legacy Streamlit portal and offline HTML tool; not maintained |
+| `Model Specifications.md`, `MODEL_SPEC.md` | Recommendation engine specification (historical) |
+| `QA AUDIT REPORT.md`, `QA_REPORT.md`, `Consolidated QA Audit Report.md` | Past QA audits (historical) |
 
-### `linucb_brain/models/` — Data Models
+Runtime files, never committed: `gradepulse_users.db` (accounts, schools, classes, subjects, students, scores), `brain_state.json` (engine state), `backups/`. `class_config.json` is the old school registry; if present it is copied into the database on first start and not written again.
 
-| File | Purpose |
-|---|---|
-| `student.py` | Student data model |
-| `content.py` | Content item data model |
-| `session.py` | Session/interaction data model |
-| `school.py` | School/class hierarchy model |
-
-### `linucb_brain/diagnostics/` — Health Checks
-
-| File | Purpose |
-|---|---|
-| `neural_score.py` | 7-dimension self-diagnostic engine |
-| `report.py` | Report renderer |
-
-### `linucb_brain/api/` — REST API
+## `linucb_brain/` — backend
 
 | File | Purpose |
 |---|---|
-| `app.py` | FastAPI application (8 endpoints — auth, schools, classes, students, backup routes missing, see Decision Log) |
-| `schemas.py` | Pydantic request/response models |
-| `auth.py` | JWT authentication |
+| `__init__.py` | Package exports and `__version__` |
+| `api/app.py` | FastAPI application: all HTTP endpoints, startup and shutdown |
+| `api/store.py` | SQLite store for schools, classes, subjects, students and dated scores |
+| `api/auth.py` | Accounts, roles, invites, password changes and resets, JWT |
+| `api/schemas.py` | Request and response models |
+| `api/ratelimit.py` | Sliding-window rate limiter for sign-in and sign-up |
+| `brain.py` | Recommendation engine entry point |
+| `core/linucb.py`, `core/linucb_hybrid.py` | LinUCB disjoint and hybrid models |
+| `core/context.py`, `core/clustering.py`, `core/reward.py` | Context features, student clustering, reward shaping |
+| `core/triage.py` | WAEC-band tiering shared by the API and the engine |
+| `diagnostics/` | Neural Score self-diagnostics (not exposed in the product) |
+| `models/` | Student, content, session and school data classes |
+| `registry.py` | Old JSON school registry; used by the `ingest.py` CLI and the one-off upgrade |
+| `storage.py`, `sync.py` | Engine-state file save/load and file locking |
+| `backup.py` | Scheduled and manual backups |
 
-### Other
+## `gradepulse-web/` — web app (Next.js)
+
+| Path | Purpose |
+|---|---|
+| `src/app/(auth)/login`, `signup`, `reset-password` | Sign-in, sign-up (with invite codes), password reset |
+| `src/app/pricing` | Pricing page |
+| `src/app/(dashboard)/layout.tsx` | Sidebar and signed-in shell |
+| `src/app/(dashboard)/dashboard` | Tiers and counts per subject and class |
+| `src/app/(dashboard)/students` | Roster, add/edit/move students, class list import |
+| `src/app/(dashboard)/classes` | Create, rename and delete classes |
+| `src/app/(dashboard)/scores` | Score sheet for a test |
+| `src/app/(dashboard)/triage` | Tiers for one subject |
+| `src/app/(dashboard)/progress` | One student's test history |
+| `src/app/(dashboard)/reports` | Printable class summary and student progress sheets |
+| `src/app/(dashboard)/settings` | Account, password, subjects, invites, people, sign out |
+| `src/components/` | Shared components (class list import dialog, test history) |
+| `src/lib/api.ts`, `types.ts`, `auth.tsx` | API client, shared types, signed-in user |
+| `src/lib/scores.ts`, `reports.ts`, `subjects.ts` | Score formatting, report calculations, per-school subjects |
+| `src/**/__tests__/` | Vitest unit and render tests |
+
+## `deploy/`
 
 | File | Purpose |
 |---|---|
-| `brain.py` | Main Brain class — single public interface |
-| `storage.py` | JSON save/load |
-| `sync.py` | Multi-worker brain state synchronization (file-based locking, auto-save) |
-| `backup.py` | Automated backup system (rotation, atomic writes, metadata tracking) |
-| `registry.py` | School/class registry |
-| `utils.py` | Utilities |
+| `pilot_schools.json`, `pilot_seed.py` | Two pilot schools with rosters; the script creates them through the API |
+| `demo/` | Offline one-laptop demo bundle (`run-demo.sh`, compose file, quick card) |
 
----
+## `tests/`
 
-## `tests/` — Test Suite (Backend Engineer)
+Pytest suite. `conftest.py` turns content suggestions on for the engine tests. `test_load.py`, `test_backup_api.py` and `test_ingest_api.py` need a live server (`TEST_API_URL`); the rest run offline. Main files by area:
 
-> Per-file counters below are informational and drift as tests evolve; the canonical number is what CI/`pytest` reports. **Latest verified (2026-09-27, after Phase 2): 352 total — 315 offline-file tests + 37 live tests** (backup-api, ingest-api, load) against a real `:8000` server.
-
-| File | Tests | Coverage |
-|---|---|---|
-| `test_adaptive_gamma.py` | 6 | Gamma adaptation, variance detection, floor, restore, sync |
-| `test_anti_gaming.py` | 7 | Anti-gaming scaling, gaming scenario, churn |
-| `test_api.py` | 25 | All API endpoints, auth, CRUD |
-| `test_brain.py` | 4 | Student/content add, recommend, update, save/load |
-| `test_hybrid.py` | 7 | Hybrid model init, recommend, save/load, cluster state |
-| `test_integration.py` | 1 | Full pipeline end-to-end |
-| `test_linucb.py` | 3 | Arm selection, matrix updates, alpha=0 |
-| `test_multi_school.py` | 9 | Triage, multi-tenant, legacy migration |
-| `test_neural_score.py` | 3 | Score ranges, weighted calculation, report |
-| `test_sync.py` | 20 | BrainSynchronizer, file locking, auto-save, edge cases, concurrent |
-| `test_backup.py` | 10 | BackupManager, rotation, restore, metadata |
-| `test_load.py` | 7 | Concurrent API load tests (require running server) |
-| `test_ingest.py` | 60 | CSV readers, validators, grade parsing, student/content ingestion |
-| `test_backup_api.py` | 17 | Backup API endpoints: create, list, restore, auth, integration |
-| `test_security.py` | 11 | Phase 2: school-isolation 403s, JWT claims, rate limiting, fail-fast secret |
-| **Total (latest verified)** | **352** | **315 offline + 37 live on :8000** |
-
----
-
-## `gradepulse-web/` — Next.js Frontend (Unassigned — ships as-is)
-
-### All Pages Complete (15/15)
-
-| File | Purpose |
+| Area | Files |
 |---|---|
-| `src/app/layout.tsx` | Root layout with AuthProvider |
-| `src/app/page.tsx` | Root redirect (authenticated → dashboard) |
-| `src/app/globals.css` | Design system tokens, component classes |
-| `src/app/(auth)/login/page.tsx` | Branded split-panel login |
-| `src/app/(auth)/signup/page.tsx` | Branded split-panel signup |
-| `src/app/(dashboard)/layout.tsx` | Sidebar navigation, user profile |
-| `src/app/(dashboard)/dashboard/page.tsx` | Main dashboard (metrics + triage breakdown + student table) |
-| `src/app/(dashboard)/students/page.tsx` | Student management (CRUD + filters) |
-| `src/app/(dashboard)/scores/page.tsx` | Score entry (bulk + prefill) |
-| `src/app/(dashboard)/triage/page.tsx` | Student triage (run + tier cards) |
-| `src/app/(dashboard)/progress/page.tsx` | Progress tracking (detail + recommendations) |
-| `src/app/(dashboard)/settings/page.tsx` | Settings (account + system + sign-out) |
-| `src/lib/types.ts` | Full TypeScript type definitions |
-| `src/lib/api.ts` | Typed API client with JWT management |
-| `src/lib/auth.tsx` | React context auth provider |
+| School isolation, auth, roles | `test_security.py`, `test_roles_invites.py`, `test_passwords.py` |
+| Store, scores, reports, subjects | `test_score_store.py` |
+| API end to end | `test_api.py`, `test_full_qa.py` |
+| Import | `test_ingest.py`, `test_ingest_api.py`, `test_pilot_grade.py` |
+| Engine | `test_brain.py`, `test_linucb.py`, `test_hybrid.py`, `test_adaptive_gamma.py`, `test_anti_gaming.py`, `test_neural_score.py`, `test_integration.py`, `test_multi_school.py` |
+| Persistence and ops | `test_sync.py`, `test_backup.py`, `test_backup_api.py`, `test_load.py` |
 
----
+## Other folders
 
-## `assets/` — Branding
-
-| File | Purpose |
+| Folder | Purpose |
 |---|---|
-| `logo.png` | GradePulse logo |
-
----
-
-## `Team Handbooks/` — Agent Coordination
-
-> All former role-agents were scrapped 2026-09-27; files below are **archived reference** (authored by removed agents) or maintained by Divine/Backend Engineer.
-
-| File | Purpose | Maintainer |
-|---|---|---|
-| `TEAM_HANDBOOK.md` | Master source of truth — roles, rules, Decision Log | Divine |
-| `SAM_TECHNICAL_HANDOFF.md` | Full technical architecture | Reference (archived) |
-| `SAM_UNDERSTANDING.md` | Sam's role declaration | Reference (archived) |
-| `MIA_ENGINEERING_PROFILE.md` | Mia's engineering profile | Reference (archived) |
-| `MIA_UNDERSTANDING_AND_ROLE.md` | Mia's role declaration | Reference (archived) |
-| `docs-writer.md` | Former Documentation role scope | Reference (archived) |
-| `data-engineer.md` | Former Data Engineer role scope | Reference (archived) |
-| `infra-engineer.md` | Former Infra/DevOps role scope | Reference (archived) |
-| `qa-tester.md` | Former QA/Testing role scope | Reference (archived) |
-
----
-
-*Last updated: 2026-09-27 by Backend Engineer (opencode) — sole-agent restructuring; Owner column updated; verified test count 352*
+| `sample_data/` | Sample rosters and content catalogues used by tests and demos |
+| `investor-deck/` | Investor deck (HTML) and screenshots |
+| `Team Handbooks/` | Archived role handbooks from the earlier AI role-agents |
+| `.obsidian-vault/` | Planning notes |
