@@ -1,5 +1,7 @@
 # GradePulse — Deployment Runbook
 
+> **Free option:** `deploy/server/README.md` sets up a single free Oracle Cloud server with automatic HTTPS (Caddy) and a free DuckDNS address, deployed with one command. The rest of this guide covers a general VPS with nginx.
+
 Audience: Anyone deploying or operating GradePulse in production.
 Last updated: 2026-09-27 (Phase 3 — production deploy)
 
