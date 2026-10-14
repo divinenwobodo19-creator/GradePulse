@@ -102,7 +102,9 @@ def _apply_charge(data: dict) -> None:
         logger.warning("Paystack reported unknown reference %s", reference)
         return
     if data.get("status") != "success":
-        if data.get("status") in ("failed", "abandoned", "reversed"):
+        # "abandoned" only means the payer has not finished yet, so the
+        # payment stays pending and can still succeed later.
+        if data.get("status") in ("failed", "reversed"):
             store.fail_payment(reference, str(data["status"]))
         return
     if int(data.get("amount", -1)) != payment["amount_kobo"] or data.get("currency", CURRENCY) != payment["currency"]:

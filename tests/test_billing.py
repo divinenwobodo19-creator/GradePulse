@@ -218,3 +218,22 @@ def test_paystack_refusal_reason_reaches_the_admin(client, school, monkeypatch):
     monkeypatch.setattr(billing.httpx, "request", lambda *a, **k: BadKey())
     r = client.post("/billing/checkout", headers=school["h"], json={"students": 2})
     assert "Invalid key" not in r.json()["detail"]  # key problems are for the operator's log, not the school
+
+
+def test_checking_before_paying_does_not_cancel_the_payment(client, school, fake):
+    reference = client.post("/billing/checkout", headers=school["h"], json={"students": 3}).json()["reference"]
+    fake.charges[reference] = {"reference": reference, "status": "abandoned", "amount": 150000, "currency": "NGN"}
+    body = client.post("/billing/verify", headers=school["h"], json={"reference": reference}).json()
+    assert (body["payment_status"], body["state"]) == ("pending", "unpaid")
+
+    # The admin finishes paying afterwards; Paystack's webhook still counts.
+    raw, headers = _signed({"event": "charge.success",
+                            "data": {"reference": reference, "status": "success", "amount": 150000, "currency": "NGN"}})
+    client.post("/billing/webhook", content=raw, headers=headers)
+    assert client.get("/billing", headers=school["h"]).json()["state"] == "active"
+
+
+def test_failed_charge_is_final(client, school, fake):
+    reference = client.post("/billing/checkout", headers=school["h"], json={"students": 3}).json()["reference"]
+    fake.charges[reference] = {"reference": reference, "status": "failed", "amount": 150000, "currency": "NGN"}
+    assert client.post("/billing/verify", headers=school["h"], json={"reference": reference}).json()["payment_status"] == "failed"
