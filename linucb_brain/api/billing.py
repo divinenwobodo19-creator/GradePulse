@@ -7,13 +7,22 @@ bank transfer, USSD) and comes back to /billing, where the web app asks us to
 verify the reference. Paystack also calls POST /billing/webhook, signed with
 the secret key, so a payment is recorded even if the admin closes the tab.
 
-Limits are soft: an unpaid, expired or over-the-limit school keeps full use
-of GradePulse; the admin just sees a reminder.
+Plans: a school that has not paid is on the free plan, which covers up to
+FREE_STUDENTS students and everything except the printable reports. A paid
+term covers the students paid for (never fewer than the free plan), reports
+included. Paying for more students during a term is a top-up: it adds to the
+term and ends with it. When a term ends the school keeps its paid plan for
+GRACE_DAYS more, then falls back to the free plan. A school's data always
+stays visible: the free plan only holds back adding students past the limit,
+entering scores while over it, and the reports. With billing not configured
+(no Paystack key or price) nothing is limited.
 
 Settings (environment):
   PAYSTACK_SECRET_KEY       sk_test_... or sk_live_...; billing is off without it
   PRICE_PER_STUDENT_NAIRA   price per student per term, whole naira
   TERM_DAYS                 how long one payment covers (default 120)
+  FREE_STUDENTS             students the free plan covers (default 40)
+  GRACE_DAYS                days a paid plan lasts after its term ends (default 14)
 """
 import hashlib
 import hmac
@@ -23,7 +32,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -56,11 +65,23 @@ def _price_naira() -> Optional[int]:
     return price if price > 0 else None
 
 
-def _term_days() -> int:
+def _int_setting(name: str, default: int, minimum: int) -> int:
     try:
-        return max(1, int(os.getenv("TERM_DAYS", "120")))
+        return max(minimum, int(os.getenv(name, str(default))))
     except ValueError:
-        return 120
+        return default
+
+
+def _term_days() -> int:
+    return _int_setting("TERM_DAYS", 120, 1)
+
+
+def _free_students() -> int:
+    return _int_setting("FREE_STUDENTS", 40, 0)
+
+
+def _grace_days() -> int:
+    return _int_setting("GRACE_DAYS", 14, 0)
 
 
 def _configured() -> bool:
@@ -113,9 +134,103 @@ def _apply_charge(data: dict) -> None:
         store.fail_payment(reference, "amount_mismatch")
         return
     now = _now()
-    if store.complete_payment(reference, now.isoformat(), now.isoformat(),
-                              (now + timedelta(days=_term_days())).isoformat()):
+    # A payment made during a paid term is a top-up and ends with that term.
+    _, term_end = _current_term(store.list_paid_payments(payment["school_id"]), now)
+    period_end = term_end or now + timedelta(days=_term_days())
+    if store.complete_payment(reference, now.isoformat(), now.isoformat(), period_end.isoformat()):
         logger.info("Payment %s recorded for school %s (%s students)", reference, payment["school_id"], payment["students"])
+
+
+# ── Plans ────────────────────────────────────────────────────────────────────
+
+def _end(payment: dict) -> Optional[datetime]:
+    return datetime.fromisoformat(payment["period_end"]) if payment.get("period_end") else None
+
+
+def _current_term(payments: List[dict], now: datetime) -> Tuple[int, Optional[datetime]]:
+    """Students paid for in the term running now (top-ups included) and when it ends."""
+    running = [p for p in payments if _end(p) and _end(p) > now]
+    if not running:
+        return 0, None
+    return sum(p["students"] for p in running), max(_end(p) for p in running)
+
+
+def _last_term(payments: List[dict]) -> Tuple[int, Optional[datetime]]:
+    """The most recent term that has ended: its students and end."""
+    ends = [_end(p) for p in payments if _end(p)]
+    if not ends:
+        return 0, None
+    last = max(ends)
+    return sum(p["students"] for p in payments if _end(p) == last), last
+
+
+def school_plan(school_id: str) -> dict:
+    """What a school may do now. state is one of:
+      not_configured  billing is off on this server: nothing is limited
+      unpaid          never paid: free plan
+      active          in a paid term
+      over_limit      in a paid term, with more students than paid for
+      grace           the paid term ended less than GRACE_DAYS ago
+      expired         the grace period is over too: free plan
+    """
+    students = store.count_students(school_id)
+    free = _free_students()
+    plan = {"students": students, "free_students": free, "paid_students": 0,
+            "paid_until": None, "grace_until": None}
+    if not _configured():
+        return {**plan, "state": "not_configured", "student_limit": None, "reports": True}
+    payments = store.list_paid_payments(school_id)
+    now = _now()
+    paid, term_end = _current_term(payments, now)
+    if term_end is not None:
+        state = "over_limit" if students > paid else "active"
+        return {**plan, "state": state, "paid_students": paid, "paid_until": term_end.isoformat(),
+                "student_limit": max(paid, free), "reports": True}
+    paid, last_end = _last_term(payments)
+    if last_end is not None and now < last_end + timedelta(days=_grace_days()):
+        return {**plan, "state": "grace", "paid_students": paid, "paid_until": last_end.isoformat(),
+                "grace_until": (last_end + timedelta(days=_grace_days())).isoformat(),
+                "student_limit": max(paid, free), "reports": True}
+    return {**plan, "state": "expired" if payments else "unpaid", "student_limit": free, "reports": False}
+
+
+def _payment_required(user: dict, reason: str, admin_action: str = "Pay for the term on the Billing page.") -> HTTPException:
+    """402 with what to do next, worded for whoever is asking."""
+    action = admin_action if user.get("role") == "admin" else "Ask your school admin to pay for the term."
+    return HTTPException(status_code=402, detail=f"{reason} {action}")
+
+
+def check_can_add_students(user: dict, new_students: int) -> None:
+    """Refuse adding students past what the school's plan covers."""
+    if new_students <= 0:
+        return
+    plan = school_plan(user.get("school_id", ""))
+    limit = plan["student_limit"]
+    total = plan["students"] + new_students
+    if limit is None or total <= limit:
+        return
+    if plan["state"] in ("active", "over_limit"):
+        raise _payment_required(user, f"This term is paid for {limit} students, and this would make {total}.",
+                                "Pay for the extra students on the Billing page.")
+    if plan["state"] == "grace":
+        raise _payment_required(user, f"The last term was paid for {limit} students, and this would make {total}.",
+                                "Pay for the new term on the Billing page.")
+    raise _payment_required(user, f"The free plan covers up to {limit} students, and this would make {total}.")
+
+
+def check_can_enter_scores(user: dict) -> None:
+    """On the free plan, scores can be entered while the school is within it."""
+    plan = school_plan(user.get("school_id", ""))
+    if plan["state"] in ("unpaid", "expired") and plan["students"] > plan["student_limit"]:
+        raise _payment_required(
+            user, f"Your school has {plan['students']} students and the free plan covers {plan['student_limit']}, "
+                  "so new scores need a paid term. Everything already entered stays visible.")
+
+
+def check_reports(user: dict) -> None:
+    """Printable class reports and parent progress sheets come with a paid term."""
+    if not school_plan(user.get("school_id", ""))["reports"]:
+        raise _payment_required(user, "Printable class reports and parent progress sheets come with a paid term.")
 
 
 # ── Status ───────────────────────────────────────────────────────────────────
@@ -131,29 +246,17 @@ class VerifyRequest(BaseModel):
 
 
 def billing_status(school_id: str) -> dict:
-    """Where a school stands. state is one of: not_configured, unpaid, active,
-    over_limit (paid, but now has more students than it paid for), expired."""
-    students = store.count_students(school_id)
-    payments = store.list_paid_payments(school_id)
-    now = _now()
-    current = next((p for p in payments if p["period_end"] and datetime.fromisoformat(p["period_end"]) > now), None)
-    if not _configured():
-        state = "not_configured"
-    elif current is None:
-        state = "expired" if payments else "unpaid"
-    elif students > current["students"]:
-        state = "over_limit"
-    else:
-        state = "active"
+    """The school's plan plus what the Billing page needs to take a payment."""
+    plan = school_plan(school_id)
+    payments = store.list_paid_payments(school_id) if _configured() else []
     return {
-        "state": state,
+        **plan,
         "configured": _configured(),
         "price_per_student": _price_naira(),
         "currency": CURRENCY,
         "term_days": _term_days(),
-        "students": students,
-        "paid_students": current["students"] if current else 0,
-        "paid_until": current["period_end"] if current else None,
+        # A payment now adds students to the running term instead of starting one.
+        "top_up": plan["state"] in ("active", "over_limit"),
         "payments": [
             {"reference": p["reference"], "students": p["students"], "amount_naira": p["amount_kobo"] // 100,
              "paid_at": p["paid_at"], "period_end": p["period_end"]}
@@ -175,7 +278,7 @@ def _admin_school_id(user: dict) -> str:
 def price():
     """Public: what GradePulse costs, for the pricing page."""
     return {"configured": _configured(), "price_per_student": _price_naira(),
-            "currency": CURRENCY, "term_days": _term_days()}
+            "currency": CURRENCY, "term_days": _term_days(), "free_students": _free_students()}
 
 
 @router.get("")
@@ -185,12 +288,16 @@ def status(user: dict = Depends(require_admin)):
 
 @router.get("/reminder")
 def reminder(user: dict = Depends(get_current_user)):
-    """The small notice the web app shows an admin when payment is due.
-    Teachers never see one."""
+    """The small notice the web app shows an admin when payment is due: a
+    term that has ended or is about to fall back, more students than paid
+    for, or a free school at its limit. Teachers never see one."""
     if user.get("role") != "admin" or not user.get("school_id"):
         return {"show": False}
-    state = billing_status(user["school_id"])["state"]
-    return {"show": state in ("unpaid", "expired", "over_limit"), "state": state}
+    plan = school_plan(user["school_id"])
+    state = plan["state"]
+    at_free_limit = state == "unpaid" and plan["students"] >= plan["student_limit"]
+    return {"show": state in ("grace", "expired", "over_limit") or at_free_limit, "state": state,
+            "grace_until": plan["grace_until"]}
 
 
 @router.post("/checkout")
@@ -201,6 +308,11 @@ def checkout(request: CheckoutRequest, user: dict = Depends(require_admin)):
     email = (request.email or user["email"]).strip()
     if not _EMAIL_RE.match(email):
         raise HTTPException(status_code=422, detail="Enter a valid email address for the receipt")
+    plan = school_plan(school_id)
+    if plan["state"] not in ("active", "over_limit") and request.students < plan["students"]:
+        # A new term covers the whole school; top-ups during a term can be any size.
+        raise HTTPException(status_code=422, detail=f"Pay for at least {plan['students']} students: "
+                                                    f"that is how many the school has.")
     amount_kobo = request.students * _price_naira() * 100
     reference = f"gp_{uuid.uuid4().hex[:20]}"
     store.create_payment(reference, school_id, request.students, amount_kobo, user["id"])

@@ -194,12 +194,12 @@ curl http://localhost:8000/backups -H "X-Operator-Key: $OPERATOR_KEY"           
 Schools pay per student, per term, from the Billing page (admins only). To switch it on:
 
 1. In the Paystack dashboard, copy your **secret key** (Settings → API Keys & Webhooks). Start with the `sk_test_...` key.
-2. In `.env`, set `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA` (whole naira) and, if a term is not 120 days, `TERM_DAYS`. Make sure `FRONTEND_URL` is the public web address; Paystack sends the admin back to `FRONTEND_URL/billing` after paying.
+2. In `.env`, set `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA` (whole naira) and, if a term is not 120 days, `TERM_DAYS`. `FREE_STUDENTS` (default 40) and `GRACE_DAYS` (default 14) set the free plan and the renewal grace period. Make sure `FRONTEND_URL` is the public web address; Paystack sends the admin back to `FRONTEND_URL/billing` after paying.
 3. In the same Paystack page, set the **webhook URL** to `https://api.yourdomain.com/billing/webhook`. Paystack signs each call with the secret key, and GradePulse rejects unsigned or forged ones. The webhook records a payment even if the admin closes the tab before returning.
 4. `docker compose up -d` to apply. Pay a test term with one of Paystack's test cards, then check the Billing page shows it.
 5. When ready, swap in the `sk_live_...` key.
 
-Limits are soft: a school that has not paid, whose term has ended, or that has more students than it paid for keeps full use; its admin sees a reminder bar.
+Plans: a school that has not paid is on the **free plan**, up to `FREE_STUDENTS` (default 40) students with everything except printable reports. A paid term covers the students paid for (never fewer than the free plan), reports and parent progress sheets included; paying for extra students during a term tops it up until the term ends. When a term ends the school keeps its paid plan for `GRACE_DAYS` (default 14), then falls back to the free plan. Nothing is deleted and the data always stays visible; the free plan only holds back adding students past the limit, entering scores while over it, and the reports. The admin sees a reminder bar when a term has ended, when the school has more students than it paid for, or when a free school reaches its limit. Without the Paystack settings nothing is limited.
 
 ### A locked-out school admin
 

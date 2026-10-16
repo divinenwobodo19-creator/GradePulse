@@ -112,30 +112,43 @@ const NAV_ITEMS = [
   },
 ];
 
-const REMINDER_TEXT: Record<string, string> = {
-  unpaid: "This school has not paid for this term yet.",
-  expired: "This school's paid term has ended.",
-  over_limit: "This school has more students than it has paid for this term.",
-};
+function reminderText(state: string, graceUntil?: string | null): string | null {
+  switch (state) {
+    case "unpaid":
+      return "This school has reached the free plan's student limit. Pay for the term to add more students and print reports.";
+    case "grace": {
+      const until = graceUntil
+        ? new Date(graceUntil).toLocaleDateString(undefined, { day: "numeric", month: "long" })
+        : "soon";
+      return `This school's paid term has ended. Everything keeps working until ${until}; renew before then to keep reports.`;
+    }
+    case "expired":
+      return "This school's paid term has ended, so it is on the free plan: reports are paused until the next payment.";
+    case "over_limit":
+      return "This school has more students than it has paid for this term. Pay for the extra students to add more.";
+    default:
+      return null;
+  }
+}
 
-// A gentle notice for admins only. It never blocks anything.
+// A notice for admins only, when payment is due.
 function BillingReminder({ isAdmin, onBillingPage }: { isAdmin: boolean; onBillingPage: boolean }) {
-  const [state, setState] = useState<string | null>(null);
+  const [text, setText] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
     const controller = new AbortController();
     api
       .getBillingReminder(controller.signal)
-      .then((r) => setState(r.show && r.state ? r.state : null))
+      .then((r) => setText(r.show && r.state ? reminderText(r.state, r.grace_until) : null))
       .catch(() => undefined);
     return () => controller.abort();
   }, [isAdmin, onBillingPage]);
 
-  if (!isAdmin || !state || onBillingPage || !REMINDER_TEXT[state]) return null;
+  if (!isAdmin || !text || onBillingPage) return null;
   return (
     <div role="status" className="no-print bg-gold/10 border-b border-gold/30 px-6 py-2.5 text-sm text-navy flex flex-wrap items-center gap-2">
-      <span>{REMINDER_TEXT[state]}</span>
+      <span>{text}</span>
       <Link href="/billing" className="font-semibold text-gold-dark hover:underline">
         Go to Billing
       </Link>

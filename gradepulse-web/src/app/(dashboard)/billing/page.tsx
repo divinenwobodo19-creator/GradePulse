@@ -15,10 +15,29 @@ function formatDate(iso: string | null) {
 const STATE_TEXT: Record<string, { title: string; tone: string }> = {
   active: { title: "Paid for this term", tone: "badge-success" },
   over_limit: { title: "More students than paid for", tone: "badge-warning" },
-  expired: { title: "Paid term has ended", tone: "badge-warning" },
-  unpaid: { title: "Not paid yet", tone: "badge-neutral" },
+  grace: { title: "Term ended: renew soon", tone: "badge-warning" },
+  expired: { title: "Free plan", tone: "badge-neutral" },
+  unpaid: { title: "Free plan", tone: "badge-neutral" },
   not_configured: { title: "Online payment not set up", tone: "badge-neutral" },
 };
+
+function planText(status: BillingStatus): string {
+  const free = status.free_students;
+  switch (status.state) {
+    case "active":
+      return `Paid for ${status.paid_students} students until ${formatDate(status.paid_until)}. Printable reports and parent progress sheets are included.`;
+    case "over_limit":
+      return `Paid for ${status.paid_students} students until ${formatDate(status.paid_until)}, but the school now has ${status.students}. Pay for the extra students before adding more.`;
+    case "grace":
+      return `The paid term ended on ${formatDate(status.paid_until)}. Everything keeps working until ${formatDate(status.grace_until)}; pay for the new term before then to keep reports and parent progress sheets.`;
+    case "expired":
+      return `The paid term has ended, so the school is on the free plan: up to ${free} students, without printable reports. Every score is still here. Pay for the new term to switch everything back on.`;
+    case "unpaid":
+      return `Your school is on the free plan: up to ${free} students, with score sheets, triage and progress. Pay for the term to cover the whole school and print class reports and parent progress sheets.`;
+    default:
+      return "Online payment has not been set up on this server. Contact GradePulse to pay.";
+  }
+}
 
 // useSearchParams needs a Suspense boundary to prerender.
 export default function BillingPage() {
@@ -85,7 +104,11 @@ function Billing() {
     );
   }
 
-  const count = Math.max(1, Math.floor(Number(students || status?.students || 1)));
+  // A new term covers the whole school; a top-up during a term can be any size.
+  const minStudents = status && !status.top_up ? Math.max(1, status.students) : 1;
+  const suggested = status?.top_up ? Math.max(1, status.students - status.paid_students) : minStudents;
+  const count = Math.max(1, Math.floor(Number(students || suggested)));
+  const tooFew = count < minStudents;
   const price = status?.price_per_student ?? 0;
   const state = status ? STATE_TEXT[status.state] : null;
 
@@ -135,16 +158,7 @@ function Billing() {
                 <h2 className="heading-2 text-navy">This term</h2>
                 {state && <span className={`badge ${state.tone}`}>{state.title}</span>}
               </div>
-              <p className="body text-text-secondary">
-                {status.state === "active" &&
-                  `Paid for ${status.paid_students} students until ${formatDate(status.paid_until)}.`}
-                {status.state === "over_limit" &&
-                  `Paid for ${status.paid_students} students until ${formatDate(status.paid_until)}, but the school now has ${status.students}. Everything keeps working; please pay for the extra students.`}
-                {status.state === "expired" && "The last paid term has ended. Everything keeps working; please pay for the new term."}
-                {status.state === "unpaid" && "Everything works while you decide. Pay for the term when you are ready."}
-                {status.state === "not_configured" &&
-                  "Online payment has not been set up on this server. Contact GradePulse to pay."}
-              </p>
+              <p className="body text-text-secondary">{planText(status)}</p>
               <p className="caption text-text-muted">The school has {status.students} students now.</p>
             </div>
           </div>
@@ -152,9 +166,11 @@ function Billing() {
           {status.configured && (
             <div className="card">
               <div className="card-body">
-                <h2 className="heading-2 text-navy mb-1">Pay for a term</h2>
+                <h2 className="heading-2 text-navy mb-1">{status.top_up ? "Add students to this term" : "Pay for a term"}</h2>
                 <p className="caption text-text-muted mb-4">
-                  {naira(price)} per student. One payment covers {status.term_days} days.
+                  {status.top_up
+                    ? `${naira(price)} per extra student. They are covered until ${formatDate(status.paid_until)}, when this term ends.`
+                    : `${naira(price)} per student, for every student in the school. One payment covers ${status.term_days} days.`}
                 </p>
                 <form onSubmit={handlePay} className="flex flex-wrap items-end gap-4">
                   <div className="input-group">
@@ -162,10 +178,10 @@ function Billing() {
                     <input
                       id="bill-students"
                       type="number"
-                      min={1}
+                      min={minStudents}
                       step={1}
                       inputMode="numeric"
-                      value={students === "" ? String(status.students || 1) : students}
+                      value={students === "" ? String(suggested) : students}
                       onChange={(e) => setStudents(e.target.value)}
                       className="input w-40"
                     />
@@ -186,10 +202,15 @@ function Billing() {
                     <div className="caption text-text-muted">Total</div>
                     <div className="heading-2 text-navy">{naira(count * price)}</div>
                   </div>
-                  <button type="submit" disabled={paying} aria-busy={paying} className="btn btn-primary ml-auto">
+                  <button type="submit" disabled={paying || tooFew} aria-busy={paying} className="btn btn-primary ml-auto">
                     {paying ? "Opening Paystack..." : "Pay with Paystack"}
                   </button>
                 </form>
+                {tooFew && (
+                  <p role="alert" className="caption text-danger mt-3">
+                    A term covers every student in the school: pay for at least {minStudents}.
+                  </p>
+                )}
               </div>
             </div>
           )}
