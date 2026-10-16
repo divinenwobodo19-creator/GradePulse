@@ -40,6 +40,8 @@ services:
       - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
       - PRICE_PER_STUDENT_NAIRA=${PRICE_PER_STUDENT_NAIRA:-}
       - TERM_DAYS=${TERM_DAYS:-120}
+      - FREE_STUDENTS=${FREE_STUDENTS:-40}
+      - GRACE_DAYS=${GRACE_DAYS:-14}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - gradepulse-data:/data

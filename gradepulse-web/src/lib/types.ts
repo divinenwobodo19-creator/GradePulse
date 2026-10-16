@@ -21,7 +21,7 @@ export interface PasswordResetLink {
   expires_at: string;
 }
 
-export type BillingState = "not_configured" | "unpaid" | "active" | "over_limit" | "expired";
+export type BillingState = "not_configured" | "unpaid" | "active" | "over_limit" | "grace" | "expired";
 
 export interface BillingStatus {
   state: BillingState;
@@ -30,8 +30,13 @@ export interface BillingStatus {
   currency: string;
   term_days: number;
   students: number;
+  free_students: number;
+  student_limit: number | null; // null: not limited (billing off)
+  reports: boolean; // printable reports and parent sheets are included
   paid_students: number;
   paid_until: string | null;
+  grace_until: string | null;
+  top_up: boolean; // a payment now adds students to the running term
   payments: { reference: string; students: number; amount_naira: number; paid_at: string; period_end: string }[];
 }
 
@@ -40,6 +45,7 @@ export interface BillingPrice {
   price_per_student: number | null;
   currency: string;
   term_days: number;
+  free_students: number;
 }
 
 export interface Invite {

@@ -9,8 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Billing
 
 - **Paystack payments, per student, per term.** Admins see a Billing page: the school's standing, a "Pay with Paystack" checkout for N students (card, bank transfer, USSD), and past payments. Payments are confirmed when the admin returns from Paystack and by Paystack's signed webhook. Off until `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA` are set. `DEPLOYMENT.md` has the setup.
-- **Soft limits.** An unpaid, expired or over-the-limit school keeps full use; its admin sees a reminder bar linking to Billing. Teachers never see it.
-- **Pricing page** shows the per-student, per-term price from the server.
+- **Free plan and paid plan.** A school that has not paid can have up to 40 students (`FREE_STUDENTS`) and use everything except printable reports; paying covers the whole school plus class reports and parent progress sheets. Adding or importing students past the limit, entering scores while over it, and loading reports answer 402 with what to do next, and the web app shows that message (Reports shows a "Reports come with a paid term" panel). A school's data always stays visible.
+- **Top-ups and renewals.** Paying for extra students during a term adds them to it until the term ends. A new term must cover every student. When a term ends the school keeps its paid plan for 14 days (`GRACE_DAYS`) before falling back to the free plan.
+- **Reminder bar** for admins when a term has ended or is in its grace period, when the school has more students than it paid for, or when a free school reaches its limit. Teachers never see it.
+- **Pricing page** shows the free plan next to the per-student, per-term price from the server, and explains what happens when a term is not renewed.
 
 
 ### Admins and teachers
