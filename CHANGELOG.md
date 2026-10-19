@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Website and search
+
+- **Public homepage** at `/` instead of a spinner that sent everyone to the login page: what GradePulse does, how it works with real screens (sample data), what it is built for, the two plans, questions school owners ask, and a WhatsApp demo link. Signed-in users still go straight to their dashboard. Rendered on the server so search engines read it.
+- **Free WAEC grade calculator** at `/waec-grade-calculator`: CA and exam to total, grade (A1–F9) and remark per subject, with an average, plus the grading table and an example.
+- **Guide** at `/guides/spot-struggling-students`: using weekly tests to find struggling students before exams.
+- **Search and sharing:** a site address for every page, per-page titles and descriptions, link previews with an image for WhatsApp, Facebook and LinkedIn, `robots.txt` that keeps the signed-in app out of search engines, `sitemap.xml`, and structured data (software, FAQ, article).
+- **Printed reports carry the site address**, so every parent sheet that goes home points back to gradepulse.com.ng.
+
 ### Billing
 
 - **Paystack payments, per student, per term.** Admins see a Billing page: the school's standing, a "Pay with Paystack" checkout for N students (card, bank transfer, USSD), and past payments. Payments are confirmed when the admin returns from Paystack and by Paystack's signed webhook. Off until `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA` are set. `DEPLOYMENT.md` has the setup.

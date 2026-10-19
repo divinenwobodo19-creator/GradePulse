@@ -41,7 +41,7 @@ function ReportHeader({ school, title, detail }: { school: string; title: string
       </div>
       <div className="caption text-text-muted text-right shrink-0">
         {formatToday()}
-        <div>GradePulse</div>
+        <div>GradePulse · gradepulse.com.ng</div>
       </div>
     </div>
   );
