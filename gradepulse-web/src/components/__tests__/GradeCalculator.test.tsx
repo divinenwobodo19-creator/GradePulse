@@ -28,3 +28,14 @@ describe("GradeCalculator", () => {
     expect(html).toContain("Exam (out of 70)");
   });
 });
+
+describe("GradeCalculator layouts", () => {
+  it("renders a card per subject for phones and the table for larger screens", () => {
+    const html = renderToStaticMarkup(<GradeCalculator />);
+    expect(html).toContain('class="md:hidden space-y-3"');
+    expect(html).toContain("hidden md:block");
+    expect(html).toContain("Enter both scores to see the grade");
+    // Three starting subjects, each in both layouts.
+    expect(html.match(/aria-label="Subject"/g)).toHaveLength(6);
+  });
+});

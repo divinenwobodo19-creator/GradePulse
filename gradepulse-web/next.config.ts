@@ -5,10 +5,19 @@ const apiProxyTarget = (process.env.API_URL || "http://localhost:8000").replace(
   ""
 );
 const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-const connectSources = ["'self'", ...(configuredApiUrl ? [configuredApiUrl] : [])];
+// Cloudflare Web Analytics: Cloudflare adds its beacon script to every page it
+// serves and the beacon reports page views back. Only these two hosts are allowed.
+const CLOUDFLARE_ANALYTICS_SCRIPT = "https://static.cloudflareinsights.com";
+const CLOUDFLARE_ANALYTICS_REPORT = "https://cloudflareinsights.com";
+const connectSources = [
+  "'self'",
+  CLOUDFLARE_ANALYTICS_REPORT,
+  ...(configuredApiUrl ? [configuredApiUrl] : []),
+];
 const scriptSources = [
   "'self'",
   "'unsafe-inline'",
+  CLOUDFLARE_ANALYTICS_SCRIPT,
   ...(process.env.NODE_ENV === "development" ? ["'unsafe-eval'"] : []),
 ];
 const contentSecurityPolicy = [
