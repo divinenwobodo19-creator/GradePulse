@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError, UNAUTHORIZED_EVENT } from "../api";
+import { api, ApiError, UNAUTHORIZED_EVENT, errorDetail } from "../api";
 
 const originalFetch = globalThis.fetch;
 
@@ -258,5 +258,25 @@ describe("api client", () => {
     expect(form.get("type")).toBe("students");
     expect(form.get("dry_run")).toBe("true");
     expect((form.get("file") as File).name).toBe("roster.csv");
+  });
+});
+
+describe("errorDetail", () => {
+  it("passes a plain message through", () => {
+    expect(errorDetail("Invalid email or password")).toBe("Invalid email or password");
+  });
+
+  it("uses the first field message of a rejected form, without the validator's prefix", () => {
+    const detail = [
+      { type: "value_error", loc: ["body", "password"], msg: "Value error, That password is too easy to guess." },
+      { type: "value_error", loc: ["body", "email"], msg: "Value error, Enter a valid email address" },
+    ];
+    expect(errorDetail(detail)).toBe("That password is too easy to guess.");
+  });
+
+  it("returns nothing it cannot read, and never the framework's own messages", () => {
+    expect(errorDetail(undefined)).toBe("");
+    expect(errorDetail([{}])).toBe("");
+    expect(errorDetail([{ type: "missing", loc: ["body", "email"], msg: "Field required" }])).toBe("");
   });
 });

@@ -38,7 +38,7 @@ def _hdr(token: str):
 
 def _signup(client, prefix: str, **extra):
     r = client.post("/auth/signup", json={
-        "email": f"{prefix}_{uuid.uuid4().hex[:6]}@roles.local", "password": "Passw0rd!", **extra,
+        "email": f"{prefix}_{uuid.uuid4().hex[:6]}@roles.local", "password": "Kettle-Mango-42", **extra,
     })
     return r
 
@@ -79,7 +79,7 @@ def test_invite_lets_a_teacher_join_the_school(client):
     client.put(f"/members/{teacher['id']}/classes", headers=_hdr(admin["token"]), json={"class_ids": [class_id]})
     assert [s["student_id"] for s in client.get("/students", headers=_hdr(teacher["token"])).json()] == [sid]
 
-    login = client.post("/auth/login", json={"email": teacher["email"], "password": "Passw0rd!"}).json()
+    login = client.post("/auth/login", json={"email": teacher["email"], "password": "Kettle-Mango-42"}).json()
     assert login["role"] == "teacher"
 
 
@@ -93,9 +93,9 @@ def test_invite_is_single_use(client):
 
 def test_bad_or_expired_invite_is_rejected_without_creating_an_account(client):
     email = f"noaccount_{uuid.uuid4().hex[:6]}@roles.local"
-    r = client.post("/auth/signup", json={"email": email, "password": "Passw0rd!", "invite_code": "nope"})
+    r = client.post("/auth/signup", json={"email": email, "password": "Kettle-Mango-42", "invite_code": "nope"})
     assert r.status_code == 400
-    assert client.post("/auth/login", json={"email": email, "password": "Passw0rd!"}).status_code == 401
+    assert client.post("/auth/login", json={"email": email, "password": "Kettle-Mango-42"}).status_code == 401
 
     admin = _admin(client, "xi")
     code = _invite(client, admin)

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 
 // Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
-const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MIN_LENGTH = 10;
 
 // useSearchParams needs a Suspense boundary to prerender.
 export default function SignupPage() {

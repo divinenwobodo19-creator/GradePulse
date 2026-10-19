@@ -18,7 +18,7 @@ The repository also contains a contextual-bandit recommendation engine (LinUCB).
 | **Progress** | Each student's test history by subject, with a chart, average, grade and trend. |
 | **Reports** | A one-page class summary, and one progress sheet per student for parents. Both print cleanly. |
 | **Billing** | Free for up to 40 students. For the whole school, plus printable reports and parent progress sheets, the admin pays per student, per term, through Paystack. A school's data is never locked away; a lapsed term gets 14 days' grace before falling back to the free plan. |
-| **Passwords** | Change password in Settings. There is no email service: a forgotten password is reset with a single-use link from the school admin, or from the operator for a locked-out admin. |
+| **Passwords** | At least 10 characters, and common passwords are refused. Repeated wrong passwords slow down and then pause sign-in for that account for 15 minutes. Change password in Settings. There is no email service: a forgotten password is reset with a single-use link from the school admin, or from the operator for a locked-out admin. |
 
 ## Running it locally
 

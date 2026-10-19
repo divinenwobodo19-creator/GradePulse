@@ -28,7 +28,7 @@ def _fresh_signup_budget():
 @pytest.fixture
 def school(client):
     r = client.post("/auth/signup", json={
-        "email": f"store_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!",
+        "email": f"store_{uuid.uuid4().hex[:6]}@store.local", "password": "Kettle-Mango-42",
         "school_name": "Store School",
     })
     assert r.status_code == 200, r.text
@@ -245,14 +245,14 @@ def test_subjects_are_per_school_and_only_admins_change_them(client, school):
 
     code = client.post("/invites", headers=school["h"]).json()["code"]
     teacher = client.post("/auth/signup", json={
-        "email": f"subj_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!", "invite_code": code,
+        "email": f"subj_{uuid.uuid4().hex[:6]}@store.local", "password": "Kettle-Mango-42", "invite_code": code,
     }).json()
     t = {"Authorization": f"Bearer {teacher['token']}"}
     assert client.get("/subjects", headers=t).json() == {"subjects": ["IGBO"]}
     assert client.put("/subjects", headers=t, json={"subjects": ["FRENCH"]}).status_code == 403
 
     other = client.post("/auth/signup", json={
-        "email": f"other_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!",
+        "email": f"other_{uuid.uuid4().hex[:6]}@store.local", "password": "Kettle-Mango-42",
     }).json()
     assert "IGBO" not in client.get("/subjects", headers={"Authorization": f"Bearer {other['token']}"}).json()["subjects"]
 
@@ -322,7 +322,7 @@ def test_school_scores_feed_reports_and_stay_inside_the_school(client, school):
     assert {r["student_id"] for r in one_class} == {"IN"}
 
     other = client.post("/auth/signup", json={
-        "email": f"rep_{uuid.uuid4().hex[:6]}@store.local", "password": "Passw0rd!",
+        "email": f"rep_{uuid.uuid4().hex[:6]}@store.local", "password": "Kettle-Mango-42",
     }).json()
     other_h = {"Authorization": f"Bearer {other['token']}"}
     assert client.get("/scores", headers=other_h).json() == []

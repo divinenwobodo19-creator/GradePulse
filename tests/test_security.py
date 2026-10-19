@@ -38,7 +38,7 @@ def _fresh_rate_limits():
 def _signup(client, prefix: str):
     email = f"{prefix}_{uuid.uuid4().hex[:6]}@sec.local"
     r = client.post("/auth/signup", json={
-        "email": email, "password": "Passw0rd!",
+        "email": email, "password": "Kettle-Mango-42",
         "school_name": f"{prefix.upper()} School",
     })
     assert r.status_code == 200, r.text
@@ -260,7 +260,7 @@ def test_dev_placeholder_secret_warns_but_boots():
 def test_signup_with_existing_school_name_creates_a_separate_school(client):
     name = f"Shared Name {uuid.uuid4().hex[:6]}"
     owner = client.post("/auth/signup", json={
-        "email": f"owner_{uuid.uuid4().hex[:6]}@sec.local", "password": "Passw0rd!", "school_name": name,
+        "email": f"owner_{uuid.uuid4().hex[:6]}@sec.local", "password": "Kettle-Mango-42", "school_name": name,
     }).json()
     sid = f"own_{uuid.uuid4().hex[:6]}"
     assert client.post("/students", headers=_hdr(owner["token"]), json={
@@ -268,7 +268,7 @@ def test_signup_with_existing_school_name_creates_a_separate_school(client):
     }).status_code == 200
 
     stranger = client.post("/auth/signup", json={
-        "email": f"stranger_{uuid.uuid4().hex[:6]}@sec.local", "password": "Passw0rd!",
+        "email": f"stranger_{uuid.uuid4().hex[:6]}@sec.local", "password": "Kettle-Mango-42",
         "school_name": name.lower(),
     }).json()
     assert stranger["school_id"] != owner["school_id"]
@@ -278,7 +278,7 @@ def test_signup_with_existing_school_name_creates_a_separate_school(client):
 def test_default_school_is_not_shared_between_signups(client):
     ids = {
         client.post("/auth/signup", json={
-            "email": f"nodefault_{uuid.uuid4().hex[:6]}@sec.local", "password": "Passw0rd!",
+            "email": f"nodefault_{uuid.uuid4().hex[:6]}@sec.local", "password": "Kettle-Mango-42",
         }).json()["school_id"]
         for _ in range(2)
     }
@@ -287,7 +287,7 @@ def test_default_school_is_not_shared_between_signups(client):
 
 @pytest.mark.parametrize("payload", [
     {"email": "short@sec.local", "password": "1234567"},
-    {"email": "not-an-email", "password": "Passw0rd!"},
+    {"email": "not-an-email", "password": "Kettle-Mango-42"},
 ])
 def test_signup_rejects_weak_password_and_bad_email(client, payload):
     assert client.post("/auth/signup", json=payload).status_code == 422
@@ -296,9 +296,9 @@ def test_signup_rejects_weak_password_and_bad_email(client, payload):
 def test_signup_email_is_case_insensitive(client):
     local = f"case_{uuid.uuid4().hex[:6]}"
     assert client.post("/auth/signup", json={
-        "email": f"{local}@sec.local", "password": "Passw0rd!",
+        "email": f"{local}@sec.local", "password": "Kettle-Mango-42",
     }).status_code == 200
-    r = client.post("/auth/signup", json={"email": f"{local.upper()}@SEC.local", "password": "Passw0rd!"})
+    r = client.post("/auth/signup", json={"email": f"{local.upper()}@SEC.local", "password": "Kettle-Mango-42"})
     assert r.status_code == 400
 
 

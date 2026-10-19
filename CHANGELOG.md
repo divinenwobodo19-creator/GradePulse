@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Sign-in protection
+
+- **Wrong passwords are counted per account**, from any address: from the 5th within 15 minutes each try waits longer (15 s, doubling), and the 10th pauses sign-in for that account for 15 minutes. The account is checked before the password, emails with no account behave the same, and a correct sign-in or a reset clears it. The record is kept in the database, so a restart does not reset it.
+- **Stronger new passwords:** at least 10 characters (was 8), common passwords and common words padded with digits refused, and the email's name not allowed in the password. Existing passwords keep working.
+- The web app now shows the server's own validation messages (such as "That password is too easy to guess") instead of "Unprocessable Entity".
+
 ### Website and search
 
 - **Public homepage** at `/` instead of a spinner that sent everyone to the login page: what GradePulse does, how it works with real screens (sample data), what it is built for, the two plans, questions school owners ask, and a WhatsApp demo link. Signed-in users still go straight to their dashboard. Rendered on the server so search engines read it.

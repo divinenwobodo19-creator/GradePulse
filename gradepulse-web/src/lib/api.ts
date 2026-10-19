@@ -28,6 +28,19 @@ const RATE_LIMIT_MESSAGE =
 const FORBIDDEN_MESSAGE =
   "You don't have access to that. If this keeps happening, your account may not be linked to the right school.";
 
+/** The server's explanation: a string, or for a rejected form (422) the first
+ * message our own validators wrote (type "value_error"), without the prefix the
+ * framework adds. Built-in messages such as "Field required" are technical and
+ * are not shown. */
+export function errorDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const ours = detail.find((d) => d?.type === "value_error" && typeof d?.msg === "string");
+    if (ours) return ours.msg.replace(/^Value error, /, "");
+  }
+  return "";
+}
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -117,9 +130,7 @@ class ApiClient {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        const detail =
-          typeof body?.detail === "string" ? body.detail : res.statusText;
-        throw new ApiError(res.status, detail);
+        throw new ApiError(res.status, errorDetail(body?.detail) || res.statusText);
       }
 
       return res.json();

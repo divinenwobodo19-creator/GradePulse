@@ -766,9 +766,22 @@ Common HTTP status codes:
 
 ---
 
-## Rate Limiting
+## Rate Limiting and sign-in protection
 
-No rate limiting in v0.1.0. Planned for v0.2.
+Every limit answers **429** with a `detail` to show the user; the per-account pause also sends `Retry-After` (seconds).
+
+| What | Limit |
+|---|---|
+| Sign-in attempts per address | 120 a minute (`RATE_LIMIT_LOGIN_HOST`) |
+| Sign-in attempts per address and email | 30 a minute (`RATE_LIMIT_LOGIN_EMAIL`) |
+| Sign-ups per address | 30 a minute (`RATE_LIMIT_SIGNUP_HOST`) |
+| Wrong passwords per email, from any address | From the 5th within 15 minutes, the next try waits 15 s, then 30 s, 60 s, 120 s, 240 s; the 10th pauses the account for 15 minutes. Checked before the password, so a paused account cannot be probed. A correct sign-in or a password reset clears it. Emails with no account are treated the same. Wrong current passwords on `POST /auth/change-password` count too. |
+
+The per-email record is stored in the database, so it survives a restart; the per-address limits are in memory.
+
+### New passwords
+
+Sign-up, password change and reset require at least 10 characters, refuse common passwords and common words padded with digits or symbols (`Password2026!`), and refuse passwords containing the email's name part. Refusals are 422 with a readable message. Existing passwords keep working.
 
 ---
 

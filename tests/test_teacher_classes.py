@@ -32,12 +32,12 @@ def school(client):
     """An admin, a teacher, two classes (A taught by the teacher, B not) and
     one scored student in each class plus one with no class."""
     admin = client.post("/auth/signup", json={
-        "email": f"adm_{uuid.uuid4().hex[:6]}@tc.local", "password": "Passw0rd!", "school_name": "Scope School",
+        "email": f"adm_{uuid.uuid4().hex[:6]}@tc.local", "password": "Kettle-Mango-42", "school_name": "Scope School",
     }).json()
     a = _hdr(admin["token"])
     code = client.post("/invites", headers=a).json()["code"]
     teacher = client.post("/auth/signup", json={
-        "email": f"tch_{uuid.uuid4().hex[:6]}@tc.local", "password": "Passw0rd!", "invite_code": code,
+        "email": f"tch_{uuid.uuid4().hex[:6]}@tc.local", "password": "Kettle-Mango-42", "invite_code": code,
     }).json()
     sid = admin["school_id"]
     class_a = client.post(f"/classes/{sid}", headers=a, json={"label": "JSS1A"}).json()["class_id"]
@@ -139,7 +139,7 @@ def test_invite_can_put_the_teacher_straight_into_classes(client, school):
     assert client.get("/invites", headers=a).json()[0]["class_ids"] == [school["b"]]
 
     teacher = client.post("/auth/signup", json={
-        "email": f"inv_{uuid.uuid4().hex[:6]}@tc.local", "password": "Passw0rd!", "invite_code": r.json()["code"],
+        "email": f"inv_{uuid.uuid4().hex[:6]}@tc.local", "password": "Kettle-Mango-42", "invite_code": r.json()["code"],
     }).json()
     assert _ids(client.get("/students", headers=_hdr(teacher["token"])).json()) == ["IN_B"]
 

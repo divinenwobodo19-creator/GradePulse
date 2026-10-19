@@ -106,6 +106,16 @@ def init_db():
             used_at TEXT
         )
     """)
+    # Failed sign-ins per email, across every address they come from (see
+    # login_wait_seconds). Kept in the database so a restart does not reset it.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS login_failures (
+            email TEXT PRIMARY KEY,
+            failures INTEGER NOT NULL,
+            first_failed_at TEXT NOT NULL,
+            blocked_until TEXT NOT NULL
+        )
+    """)
     # Classes the invited teacher is put into on joining (JSON list).
     if "class_ids" not in {row["name"] for row in conn.execute("PRAGMA table_info(invites)")}:
         conn.execute("ALTER TABLE invites ADD COLUMN class_ids TEXT NOT NULL DEFAULT '[]'")
@@ -182,6 +192,65 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
     if not verify_password(password, user["password_hash"]):
         return None
     return dict(user)
+
+
+# ── Sign-in throttling per account ─────────────────────────────────────────
+# Counted per email whatever address the attempts come from, so guessing one
+# account's password from many machines is slowed down too. The same rules
+# apply to emails with no account, so a refusal says nothing about whether
+# an account exists.
+LOGIN_SLOW_AFTER = 5            # from the 5th failure, wait before the next try
+LOGIN_FIRST_WAIT_SECONDS = 15   # ...15 s, then 30 s, 60 s, 120 s, 240 s
+LOGIN_LOCK_AFTER = 10           # 10 failures inside the window pause the account
+LOGIN_LOCK_MINUTES = 15
+LOGIN_WINDOW_MINUTES = 15       # failures older than this are forgotten
+
+
+def _login_key(email: str) -> str:
+    return email.strip().lower()
+
+
+def login_wait_seconds(email: str) -> int:
+    """Seconds this account must wait before it may try to sign in again (0 = now)."""
+    conn = _get_db()
+    row = conn.execute("SELECT blocked_until FROM login_failures WHERE email = ?", (_login_key(email),)).fetchone()
+    conn.close()
+    if row is None:
+        return 0
+    remaining = (datetime.fromisoformat(row["blocked_until"]) - datetime.now(timezone.utc)).total_seconds()
+    return max(0, int(remaining + 0.999))
+
+
+def record_login_failure(email: str) -> None:
+    now = datetime.now(timezone.utc)
+    key = _login_key(email)
+    conn = _get_db()
+    row = conn.execute("SELECT failures, first_failed_at FROM login_failures WHERE email = ?", (key,)).fetchone()
+    if row is None or now - datetime.fromisoformat(row["first_failed_at"]) > timedelta(minutes=LOGIN_WINDOW_MINUTES):
+        failures, first = 1, now
+    else:
+        failures, first = row["failures"] + 1, datetime.fromisoformat(row["first_failed_at"])
+    if failures >= LOGIN_LOCK_AFTER:
+        wait = timedelta(minutes=LOGIN_LOCK_MINUTES)
+    elif failures >= LOGIN_SLOW_AFTER:
+        wait = timedelta(seconds=LOGIN_FIRST_WAIT_SECONDS * 2 ** (failures - LOGIN_SLOW_AFTER))
+    else:
+        wait = timedelta(0)
+    conn.execute(
+        "INSERT INTO login_failures (email, failures, first_failed_at, blocked_until) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(email) DO UPDATE SET failures = excluded.failures, "
+        "first_failed_at = excluded.first_failed_at, blocked_until = excluded.blocked_until",
+        (key, failures, first.isoformat(), (now + wait).isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_login_failures(email: str) -> None:
+    conn = _get_db()
+    conn.execute("DELETE FROM login_failures WHERE email = ?", (_login_key(email),))
+    conn.commit()
+    conn.close()
 
 
 def get_user_by_id(user_id: str) -> Optional[dict]:
@@ -266,6 +335,10 @@ def redeem_password_reset(code: str, new_password: str) -> bool:
     if cur.rowcount == 0 or row is None:
         return False
     set_password(row["user_id"], new_password)
+    # A fresh password from a trusted reset code ends any sign-in pause.
+    user = get_user_by_id(row["user_id"])
+    if user:
+        clear_login_failures(user["email"])
     return True
 
 
