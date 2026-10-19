@@ -7,7 +7,7 @@ import type { BrainSummary, Invite, Member, SchoolClass } from "@/lib/types";
 import { rememberSubjects, useSubjects } from "@/lib/subjects";
 
 // Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
-const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MIN_LENGTH = 10;
 
 export default function SettingsPage() {
   const { user, loading: authLoading, logout } = useAuth();

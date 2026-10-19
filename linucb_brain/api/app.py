@@ -31,12 +31,14 @@ from .auth import (
     get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
     verify_password, set_password, get_user_by_email, list_school_members,
     create_password_reset, redeem_password_reset,
+    login_wait_seconds, record_login_failure, clear_login_failures,
     ENV as AUTH_ENV,
 )
 from .ratelimit import SlidingWindowLimiter
 from . import store
 from .billing import router as billing_router
 from . import billing
+from .schemas import password_mentions_email
 from .schemas import (
     StudentSchema, ContentSchema, RecommendationRequest, UpdateRequest,
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
@@ -503,15 +505,30 @@ def signup(request: Request, signup_request: SignupRequest):
             "school_name": school["name"], "role": role, "token": token}
 
 
+def _wait_words(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds} seconds"
+    minutes = -(-seconds // 60)
+    return "1 minute" if minutes == 1 else f"{minutes} minutes"
+
+
 @app.post("/auth/login", response_model=UserResponse)
 def login(request: Request, login_request: LoginRequest):
     if not LOGIN_HOST_LIMITER.allow(_client_host(request)):
         raise HTTPException(status_code=429, detail="Too many login attempts — try again later")
     if not LOGIN_LIMITER.allow(f"{_client_host(request)}|{login_request.email.lower()}"):
         raise HTTPException(status_code=429, detail="Too many login attempts for this account — try again later")
+    # Checked before the password, so a paused account cannot be probed.
+    wait = login_wait_seconds(login_request.email)
+    if wait:
+        raise HTTPException(status_code=429, headers={"Retry-After": str(wait)}, detail=(
+            f"Too many wrong passwords for this account. Try again in {_wait_words(wait)}, "
+            "or ask your school admin for a password reset link."))
     user = authenticate_user(login_request.email, login_request.password)
     if not user:
+        record_login_failure(login_request.email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    clear_login_failures(login_request.email)
     school = None
     if user.get("school_id"):
         school = store.get_school(user["school_id"])
@@ -541,9 +558,17 @@ def me(user: dict = Depends(get_current_user)):
 
 @app.post("/auth/change-password", response_model=UserResponse)
 def change_password(request: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    wait = login_wait_seconds(user["email"])
+    if wait:
+        raise HTTPException(status_code=429, headers={"Retry-After": str(wait)},
+                            detail=f"Too many wrong passwords. Try again in {_wait_words(wait)}.")
     if not verify_password(request.current_password, user["password_hash"]):
+        record_login_failure(user["email"])
         raise HTTPException(status_code=400, detail="Your current password is not correct")
+    if password_mentions_email(request.new_password, user["email"]):
+        raise HTTPException(status_code=422, detail="Your password must not contain your email address")
     set_password(user["id"], request.new_password)
+    clear_login_failures(user["email"])
     school = store.get_school(user.get("school_id", ""))
     # Every earlier session is now signed out; this one continues on a new token.
     return {"id": user["id"], "email": user["email"], "school_id": user.get("school_id", ""),

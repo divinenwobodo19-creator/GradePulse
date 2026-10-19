@@ -73,7 +73,7 @@ def _add(client, h, student_id):
 @pytest.fixture
 def school(client):
     admin = client.post("/auth/signup", json={
-        "email": f"bill_{uuid.uuid4().hex[:6]}@bill.local", "password": "Passw0rd!", "school_name": "Billing School",
+        "email": f"bill_{uuid.uuid4().hex[:6]}@bill.local", "password": "Kettle-Mango-42", "school_name": "Billing School",
     }).json()
     h = _hdr(admin["token"])
     for i in range(3):
@@ -89,7 +89,7 @@ def teacher(client, school):
     client.put("/students/B0", headers=school["h"], json={"class_id": class_id})
     code = client.post("/invites", headers=school["h"], json={"class_ids": [class_id]}).json()["code"]
     t = client.post("/auth/signup", json={
-        "email": f"tbill_{uuid.uuid4().hex[:6]}@bill.local", "password": "Passw0rd!", "invite_code": code,
+        "email": f"tbill_{uuid.uuid4().hex[:6]}@bill.local", "password": "Kettle-Mango-42", "invite_code": code,
     }).json()
     return {"h": _hdr(t["token"]), "class_id": class_id}
 
@@ -327,7 +327,7 @@ def test_billing_is_admin_only_and_scoped_to_the_school(client, school, teacher,
 
     reference = client.post("/billing/checkout", headers=school["h"], json={"students": 3}).json()["reference"]
     other = client.post("/auth/signup", json={
-        "email": f"obill_{uuid.uuid4().hex[:6]}@bill.local", "password": "Passw0rd!",
+        "email": f"obill_{uuid.uuid4().hex[:6]}@bill.local", "password": "Kettle-Mango-42",
     }).json()
     assert client.post("/billing/verify", headers=_hdr(other["token"]), json={"reference": reference}).status_code == 404
 

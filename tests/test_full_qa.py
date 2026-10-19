@@ -78,14 +78,14 @@ class TestAuthSignup:
     def test_signup_returns_200(self, client):
         email = f"signup_{uuid.uuid4().hex[:6]}@test.com"
         r = client.post("/auth/signup", json={
-            "email": email, "password": "pass12345", "school_name": "School"
+            "email": email, "password": "Mango-Kettle-77", "school_name": "School"
         })
         assert r.status_code == 200
 
     def test_signup_returns_token(self, client):
         email = f"signup_{uuid.uuid4().hex[:6]}@test.com"
         r = client.post("/auth/signup", json={
-            "email": email, "password": "pass12345"
+            "email": email, "password": "Mango-Kettle-77"
         })
         assert "token" in r.json()
         assert len(r.json()["token"]) > 0
@@ -93,7 +93,7 @@ class TestAuthSignup:
     def test_signup_returns_user_fields(self, client):
         email = f"signup_{uuid.uuid4().hex[:6]}@test.com"
         r = client.post("/auth/signup", json={
-            "email": email, "password": "pass12345", "school_name": "My School"
+            "email": email, "password": "Mango-Kettle-77", "school_name": "My School"
         })
         data = r.json()
         assert "id" in data
@@ -103,12 +103,12 @@ class TestAuthSignup:
 
     def test_signup_duplicate_email_returns_400(self, client):
         email = f"dup_{uuid.uuid4().hex[:6]}@test.com"
-        client.post("/auth/signup", json={"email": email, "password": "pass12345"})
-        r = client.post("/auth/signup", json={"email": email, "password": "pass12345"})
+        client.post("/auth/signup", json={"email": email, "password": "Mango-Kettle-77"})
+        r = client.post("/auth/signup", json={"email": email, "password": "Mango-Kettle-77"})
         assert r.status_code == 400
 
     def test_signup_missing_email_returns_422(self, client):
-        r = client.post("/auth/signup", json={"password": "pass12345"})
+        r = client.post("/auth/signup", json={"password": "Mango-Kettle-77"})
         assert r.status_code == 422
 
     def test_signup_missing_password_returns_422(self, client):
@@ -119,19 +119,19 @@ class TestAuthSignup:
 class TestAuthLogin:
     def test_login_returns_200(self, client):
         email = f"login_{uuid.uuid4().hex[:6]}@test.com"
-        client.post("/auth/signup", json={"email": email, "password": "pass12345"})
-        r = client.post("/auth/login", json={"email": email, "password": "pass12345"})
+        client.post("/auth/signup", json={"email": email, "password": "Mango-Kettle-77"})
+        r = client.post("/auth/login", json={"email": email, "password": "Mango-Kettle-77"})
         assert r.status_code == 200
 
     def test_login_returns_token(self, client):
         email = f"login_{uuid.uuid4().hex[:6]}@test.com"
-        client.post("/auth/signup", json={"email": email, "password": "pass12345"})
-        r = client.post("/auth/login", json={"email": email, "password": "pass12345"})
+        client.post("/auth/signup", json={"email": email, "password": "Mango-Kettle-77"})
+        r = client.post("/auth/login", json={"email": email, "password": "Mango-Kettle-77"})
         assert "token" in r.json()
 
     def test_login_wrong_password_returns_401(self, client):
         email = f"login_{uuid.uuid4().hex[:6]}@test.com"
-        client.post("/auth/signup", json={"email": email, "password": "pass12345"})
+        client.post("/auth/signup", json={"email": email, "password": "Mango-Kettle-77"})
         r = client.post("/auth/login", json={"email": email, "password": "wrong"})
         assert r.status_code == 401
 
@@ -201,7 +201,7 @@ class TestSchoolsAPI:
     def _own_school_token(self, client):
         email = f"own_{uuid.uuid4().hex[:6]}@test.com"
         r = client.post("/auth/signup", json={
-            "email": email, "password": "pass12345",
+            "email": email, "password": "Mango-Kettle-77",
             "school_name": f"Own {uuid.uuid4().hex[:4]}",
         })
         return r.json()["token"], r.json()["school_id"]

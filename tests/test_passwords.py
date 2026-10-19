@@ -16,8 +16,8 @@ from linucb_brain.api import app as app_module
 from linucb_brain.api import auth
 from linucb_brain.api.app import app
 
-PASSWORD = "Passw0rd!"
-NEW_PASSWORD = "N3wPassw0rd!"
+PASSWORD = "Kettle-Mango-42"
+NEW_PASSWORD = "N3wKettle-Mango-42"
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +99,7 @@ def test_admin_resets_a_teachers_password_with_a_single_use_code(client):
 
     assert client.post("/auth/reset-password", json={"code": code, "new_password": "short"}).status_code == 422
     assert client.post("/auth/reset-password", json={"code": code, "new_password": NEW_PASSWORD}).status_code == 200
-    assert client.post("/auth/reset-password", json={"code": code, "new_password": "Another1!"}).status_code == 400
+    assert client.post("/auth/reset-password", json={"code": code, "new_password": "Another-Kettle-9"}).status_code == 400
 
     assert _login(client, teacher["email"], PASSWORD).status_code == 401
     assert _login(client, teacher["email"], NEW_PASSWORD).status_code == 200

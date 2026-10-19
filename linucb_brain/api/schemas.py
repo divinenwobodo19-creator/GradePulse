@@ -1,5 +1,5 @@
 import re
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, List, Optional, Any
 from datetime import date, datetime
 
@@ -58,13 +58,37 @@ class BrainSummary(BaseModel):
     cumulative_regret: float
     last_neural_score: Optional[float]
 
-PASSWORD_MIN_LENGTH = 8
+PASSWORD_MIN_LENGTH = 10
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# Passwords that are guessed first. A new password is refused when it is one of
+# these, or one of these words padded with digits and symbols ("Password2026!").
+_COMMON_PASSWORDS = frozenset("""
+1234567890 12345678910 0123456789 0987654321 1111111111 0000000000 1122334455 1q2w3e4r5t
+qwertyuiop asdfghjkl zxcvbnm1234 1qaz2wsx3edc abcdefghij abc1234567 abcd123456
+password1234 iloveyou123 letmein123 welcome123 trustno1234
+""".split())
+_COMMON_WORDS = frozenset("""
+password passw0rd pass qwerty asdf admin administrator welcome letmein iloveyou login abc
+gradepulse nlibrary school schools teacher teachers student students principal proprietor
+nigeria naija enugu lagos abuja jesus god godisgood blessed blessing football chelsea arsenal
+""".split())
+
 
 def _valid_new_password(value: str) -> str:
     if len(value) < PASSWORD_MIN_LENGTH:
         raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
+    lowered = value.lower()
+    letters = re.sub(r"[^a-z]", "", lowered)
+    if lowered in _COMMON_PASSWORDS or letters in _COMMON_WORDS or len(set(lowered)) < 4:
+        raise ValueError("That password is too easy to guess. Use a few unrelated words or a longer mix of characters.")
     return value
+
+
+def password_mentions_email(password: str, email: str) -> bool:
+    """True when the password contains the email's name part (4+ characters)."""
+    name = email.split("@", 1)[0].lower()
+    return len(name) >= 4 and name in password.lower()
 
 
 class SignupRequest(BaseModel):
@@ -85,6 +109,12 @@ class SignupRequest(BaseModel):
     @classmethod
     def _check_password(cls, value: str) -> str:
         return _valid_new_password(value)
+
+    @model_validator(mode="after")
+    def _password_not_email(self):
+        if password_mentions_email(self.password, self.email):
+            raise ValueError("Your password must not contain your email address")
+        return self
 
 class LoginRequest(BaseModel):
     email: str
