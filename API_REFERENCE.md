@@ -544,11 +544,21 @@ For an admin who is locked out. Requires the `X-Operator-Key` header. Body `{ "e
 
 ## Billing (Paystack)
 
-Schools pay per student, per term. Billing is off until the server has `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA`. Limits are soft: nothing is ever blocked for non-payment.
+Schools pay per student, per term. Billing is off until the server has `PAYSTACK_SECRET_KEY` and `PRICE_PER_STUDENT_NAIRA`, and nothing is limited while it is off.
+
+Plans: a school that has not paid is on the **free plan**, up to `FREE_STUDENTS` (default 40) students with everything except printable reports. A paid term covers the students paid for (never fewer than the free plan), reports and parent progress sheets included; paying for extra students during a term tops it up until the term ends. When a term ends the school keeps its paid plan for `GRACE_DAYS` (default 14), then falls back to the free plan. Nothing is deleted and the data always stays visible; the free plan only holds back adding students past the limit, entering scores while over it, and the reports.
+
+What the plan refuses is answered with **402 Payment Required** and a `detail` that says what to do, worded for an admin ("Pay for the term on the Billing page.") or a teacher ("Ask your school admin to pay for the term."):
+
+- `POST /students` with a new ID, and `POST /ingest` (`type=students`, preview included), when the school would go past its student limit
+- `POST /bulk-update` on the free plan while the school has more students than it covers
+- `GET /scores` (the data behind class reports and parent sheets) on the free plan
+
+Students, triage, progress (`GET /students/{id}/scores`) and the dashboard always work.
 
 ### GET /billing/price
 
-Public. `{ "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120 }`
+Public. `{ "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120, "free_students": 40 }`
 
 ### GET /billing
 
@@ -556,23 +566,24 @@ Admin only. The school's standing:
 
 ```json
 { "state": "active", "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120,
-  "students": 41, "paid_students": 41, "paid_until": "2027-02-10T09:00:00+00:00",
+  "students": 41, "free_students": 40, "student_limit": 41, "reports": true, "top_up": true,
+  "paid_students": 41, "paid_until": "2027-02-10T09:00:00+00:00", "grace_until": null,
   "payments": [{ "reference": "gp_...", "students": 41, "amount_naira": 20500, "paid_at": "...", "period_end": "..." }] }
 ```
 
-`state` is `not_configured`, `unpaid`, `active`, `over_limit` (paid, but more students now than paid for) or `expired`.
+`state` is `not_configured`, `unpaid` (free plan), `active`, `over_limit` (paid, but more students now than paid for), `grace` (the term ended less than `GRACE_DAYS` ago; `grace_until` says when it falls back) or `expired` (free plan again). `student_limit` is `null` when nothing is limited. `reports` says whether printable reports are included. `top_up` is true during a paid term: a payment then adds students to it instead of starting a new one.
 
 ### GET /billing/reminder
 
-Any signed-in user. `{ "show": true, "state": "unpaid" }` for an admin whose school is `unpaid`, `expired` or `over_limit`; `{ "show": false }` otherwise and always for teachers.
+Any signed-in user. `{ "show": true, "state": "grace", "grace_until": "..." }` for an admin whose school is in `grace`, `expired` or `over_limit`, or `unpaid` and at its student limit; `{ "show": false }` otherwise and always for teachers.
 
 ### POST /billing/checkout
 
-Admin only. Body `{ "students": 41 }`. Records a pending payment of students × price and returns Paystack's payment page: `{ "authorization_url": "https://checkout.paystack.com/...", "reference": "gp_..." }`. 503 if billing is not configured.
+Admin only. Body `{ "students": 41 }`. Outside a paid term the payment starts a new term and must cover every student in the school (422 otherwise); during a term it is a top-up of any size that ends with the term. Records a pending payment of students × price and returns Paystack's payment page: `{ "authorization_url": "https://checkout.paystack.com/...", "reference": "gp_..." }`. 503 if billing is not configured.
 
 ### POST /billing/verify
 
-Admin only, for the caller's school. Body `{ "reference": "gp_..." }`. Asks Paystack about a pending payment and records it if the charge succeeded for the expected amount. Returns the `GET /billing` body plus `payment_status` (`success`, `pending`, `failed`, `abandoned`, `amount_mismatch`, ...). A paid term runs `TERM_DAYS` from the payment.
+Admin only, for the caller's school. Body `{ "reference": "gp_..." }`. Asks Paystack about a pending payment and records it if the charge succeeded for the expected amount. Returns the `GET /billing` body plus `payment_status` (`success`, `pending`, `failed`, `abandoned`, `amount_mismatch`, ...). A new term runs `TERM_DAYS` from the payment; a top-up ends with the term it adds to.
 
 ### POST /billing/webhook
 

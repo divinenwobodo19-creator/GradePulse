@@ -201,7 +201,9 @@ class ApiClient {
   }
 
   async getBillingReminder(signal?: AbortSignal) {
-    return this.request<{ show: boolean; state?: string }>("GET", "/billing/reminder", undefined, signal);
+    return this.request<{ show: boolean; state?: string; grace_until?: string | null }>(
+      "GET", "/billing/reminder", undefined, signal
+    );
   }
 
   // Returns Paystack's payment page to send the admin to.

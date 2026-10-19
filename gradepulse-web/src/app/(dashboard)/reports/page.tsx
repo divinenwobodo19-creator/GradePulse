@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSubjects } from "@/lib/subjects";
 import {
@@ -188,6 +189,8 @@ export default function ReportsPage() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Set when the school's plan does not include reports (HTTP 402).
+  const [locked, setLocked] = useState("");
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -207,7 +210,9 @@ export default function ReportsPage() {
           setScores(nextScores);
         }
       } catch (err) {
-        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+        if (!cancelled && err instanceof ApiError && err.status === 402) {
+          setLocked(err.message);
+        } else if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
           setError(err instanceof Error ? err.message : "Failed to load reports");
         }
       } finally {
@@ -267,15 +272,35 @@ export default function ReportsPage() {
             A class summary for the teacher, or one progress sheet per student to send home
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          disabled={reports.length === 0}
-          className="btn btn-primary"
-        >
-          Print
-        </button>
+        {!locked && (
+          <button
+            type="button"
+            onClick={() => window.print()}
+            disabled={reports.length === 0}
+            className="btn btn-primary"
+          >
+            Print
+          </button>
+        )}
       </div>
+
+      {locked && (
+        <div className="card">
+          <div className="empty-state">
+            <h3 className="heading-3 text-navy mb-1">Reports come with a paid term</h3>
+            <p className="body-sm text-text-muted max-w-md mx-auto">
+              {user?.role === "admin"
+                ? "Printable class reports and a progress sheet for every parent are part of the whole-school plan. Your scores, triage and progress are all still here."
+                : locked}
+            </p>
+            {user?.role === "admin" && (
+              <Link href="/billing" className="btn btn-primary mt-4">
+                Go to Billing
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div role="alert" aria-live="assertive" className="no-print bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
@@ -283,55 +308,59 @@ export default function ReportsPage() {
         </div>
       )}
 
-      <div className="card no-print">
-        <div className="card-body flex flex-wrap items-end gap-4">
-          <div className="input-group">
-            <label className="input-label" htmlFor="report-class">Class</label>
-            <select
-              id="report-class"
-              value={classId}
-              onChange={(e) => setClassId(e.target.value)}
-              className="input select w-auto min-w-[160px]"
-            >
-              <option value="">All classes</option>
-              {classes.map((c) => (
-                <option key={c.class_id} value={c.class_id}>{c.label}</option>
-              ))}
-            </select>
+      {!locked && (
+        <>
+          <div className="card no-print">
+            <div className="card-body flex flex-wrap items-end gap-4">
+              <div className="input-group">
+                <label className="input-label" htmlFor="report-class">Class</label>
+                <select
+                  id="report-class"
+                  value={classId}
+                  onChange={(e) => setClassId(e.target.value)}
+                  className="input select w-auto min-w-[160px]"
+                >
+                  <option value="">All classes</option>
+                  {classes.map((c) => (
+                    <option key={c.class_id} value={c.class_id}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="input-group">
+                <label className="input-label" htmlFor="report-view">Report</label>
+                <select
+                  id="report-view"
+                  value={view}
+                  onChange={(e) => setView(e.target.value as View)}
+                  className="input select w-auto min-w-[220px]"
+                >
+                  <option value="class">Class summary (one page)</option>
+                  <option value="students">Student progress sheets (one each)</option>
+                </select>
+              </div>
+              <p className="caption text-text-muted ml-auto">
+                {reports.length} student{reports.length !== 1 ? "s" : ""} · printing leaves out the menu and these controls
+              </p>
+            </div>
           </div>
-          <div className="input-group">
-            <label className="input-label" htmlFor="report-view">Report</label>
-            <select
-              id="report-view"
-              value={view}
-              onChange={(e) => setView(e.target.value as View)}
-              className="input select w-auto min-w-[220px]"
-            >
-              <option value="class">Class summary (one page)</option>
-              <option value="students">Student progress sheets (one each)</option>
-            </select>
-          </div>
-          <p className="caption text-text-muted ml-auto">
-            {reports.length} student{reports.length !== 1 ? "s" : ""} · printing leaves out the menu and these controls
-          </p>
-        </div>
-      </div>
 
-      {reports.length === 0 ? (
-        <div className="card">
-          <div className="empty-state">
-            <h3 className="heading-3 text-navy mb-1">No students to report on</h3>
-            <p className="body-sm text-text-muted">
-              {classId ? "This class has no students yet." : "Add students and enter scores first."}
-            </p>
-          </div>
-        </div>
-      ) : view === "class" ? (
-        <ClassSummary school={school} classLabel={classLabel} reports={reports} columns={columns} />
-      ) : (
-        reports.map((report) => (
-          <StudentSheet key={report.student.student_id} school={school} report={report} />
-        ))
+          {reports.length === 0 ? (
+            <div className="card">
+              <div className="empty-state">
+                <h3 className="heading-3 text-navy mb-1">No students to report on</h3>
+                <p className="body-sm text-text-muted">
+                  {classId ? "This class has no students yet." : "Add students and enter scores first."}
+                </p>
+              </div>
+            </div>
+          ) : view === "class" ? (
+            <ClassSummary school={school} classLabel={classLabel} reports={reports} columns={columns} />
+          ) : (
+            reports.map((report) => (
+              <StudentSheet key={report.student.student_id} school={school} report={report} />
+            ))
+          )}
+        </>
       )}
     </div>
   );

@@ -35,6 +35,7 @@ from .auth import (
 from .ratelimit import SlidingWindowLimiter
 from . import store
 from .billing import router as billing_router
+from . import billing
 from .schemas import (
     StudentSchema, ContentSchema, RecommendationRequest, UpdateRequest,
     RewardRequest, NeuralScoreResponse, BrainSummary, SchoolResponse,
@@ -233,7 +234,7 @@ def _clamp_scores(history: Dict[str, List[float]]) -> Dict[str, List[float]]:
     return {subject: [min(1.0, max(0.0, float(v))) for v in values] for subject, values in history.items()}
 
 
-def _ingest_roster(filepath: str, school: dict, dry_run: bool):
+def _ingest_roster(filepath: str, school: dict, dry_run: bool, user: Optional[dict] = None):
     """Run a roster file through ingest.py against this school's classes and
     students, then save what it added or changed to the store."""
     from ingest import ingest_students
@@ -260,7 +261,12 @@ def _ingest_roster(filepath: str, school: dict, dry_run: bool):
         return (s.class_id, s.current_topic, s.performance_score, _student_features(s))
 
     before = {sid: snapshot(s) for sid, s in roster.items()}
-    report = ingest_students(filepath, registry, roster, school_id=school_id, school_name=None, dry_run=dry_run)
+    # ingest.py only changes the in-memory registry and roster handed to it,
+    # so it always runs for real here; a dry run just stops before the store.
+    report = ingest_students(filepath, registry, roster, school_id=school_id, school_name=None, dry_run=False)
+    # Checked on the preview too, so the admin learns before importing.
+    if user is not None:
+        billing.check_can_add_students(user, len(set(roster) - set(existing)))
     if dry_run:
         return report
 
@@ -750,6 +756,8 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Choose one of your classes for the student")
     if class_id:
         _require_class_in_scope(user, class_id)
+    if store.get_student(school_id, student.student_id) is None:
+        billing.check_can_add_students(user, 1)
     # An ID that already exists in this school returns that student unchanged.
     rec, _created = store.add_student(
         school_id, student.student_id, student.name,
@@ -794,7 +802,8 @@ def delete_student(student_id: str, user: dict = Depends(require_admin)):
 @app.get("/scores", response_model=List[SchoolScoreRecord])
 def list_school_scores(class_id: Optional[str] = Query(None), user: dict = Depends(get_current_user)):
     """Every recorded score in the caller's school, or one class of it — the
-    data behind class and parent reports."""
+    data behind class and parent reports, which come with a paid term."""
+    billing.check_reports(user)
     if class_id:
         _require_class_in_scope(user, class_id)
     return store.list_school_scores(user.get("school_id", ""), class_id or "", class_ids=_class_scope(user))
@@ -865,6 +874,7 @@ def update(request: UpdateRequest, user: dict = Depends(get_current_user)):
 
 @app.post("/bulk-update")
 def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_user)):
+    billing.check_can_enter_scores(user)
     records = {}
     for entry in request.entries:
         if entry.student_id not in records:
@@ -1084,7 +1094,7 @@ async def ingest_data(
                 if school and own_school["name"] != school.strip().upper():
                     raise HTTPException(status_code=403, detail="Cannot ingest students into another school")
                 # Force-school to the caller's own school regardless of form.
-                report = _ingest_roster(tmp_path, own_school, dry_run)
+                report = _ingest_roster(tmp_path, own_school, dry_run, user)
             else:
                 # No school yet (or a dangling one): the roster goes into a
                 # NEW school owned by the caller. A form school/school_id is
@@ -1095,7 +1105,8 @@ async def ingest_data(
                 else:
                     new_school = store.create_school(school or "MY SCHOOL")
                     update_user_school(user["id"], new_school["school_id"], role=ROLE_ADMIN)
-                report = _ingest_roster(tmp_path, new_school, dry_run)
+                report = _ingest_roster(tmp_path, new_school, dry_run,
+                                        {**user, "school_id": new_school["school_id"], "role": ROLE_ADMIN})
         else:
             report = ingest_content(
                 tmp_path, brain_instance.contents,
