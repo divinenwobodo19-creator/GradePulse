@@ -162,3 +162,11 @@ def test_accounts_made_under_the_old_rules_still_sign_in(client):
     email = f"old_{uuid.uuid4().hex[:8]}@lock.local"
     auth.create_user(email, "Passw0rd")
     assert _login(client, email, "Passw0rd").status_code == 200
+
+
+def test_a_rejected_password_is_never_echoed_back(client):
+    r = client.post("/auth/signup", json={"email": f"echo_{uuid.uuid4().hex[:8]}@lock.local",
+                                          "password": "Password2026!", "school_name": "Echo School"})
+    assert r.status_code == 422
+    assert "Password2026!" not in r.text
+    assert r.json()["detail"][0]["msg"].endswith("too easy to guess. Use a few unrelated words or a longer mix of characters.")
