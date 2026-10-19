@@ -233,6 +233,13 @@ function SignupForm() {
               Pricing
             </Link>
           </p>
+          <p className="mt-3 text-center text-xs text-text-muted">
+            By creating an account you agree to how we handle your school&apos;s data in our{" "}
+            <Link href="/privacy" className="underline hover:text-navy">
+              privacy policy
+            </Link>
+            .
+          </p>
         </div>
       </div>
     </div>

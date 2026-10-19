@@ -21,6 +21,8 @@ DEV_SECRET = "gradepulse-dev-secret-change-in-production"
 PLACEHOLDER_SECRETS = {
     DEV_SECRET,
     "change-this-to-a-strong-random-secret-in-production",
+    # The offline demo's secret is published in deploy/demo, so anyone can sign tokens with it.
+    "gradepulse-demo-secret-8f2e9a4c1b7d3e5f6a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f",
 }
 logger = logging.getLogger("gradepulse.auth")
 

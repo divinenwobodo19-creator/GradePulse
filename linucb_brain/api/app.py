@@ -31,6 +31,7 @@ from .auth import (
     get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
     verify_password, set_password, get_user_by_email, list_school_members,
     create_password_reset, redeem_password_reset,
+    ENV as AUTH_ENV,
 )
 from .ratelimit import SlidingWindowLimiter
 from . import store
@@ -432,7 +433,14 @@ async def lifespan(app: FastAPI):
         logger.info("Worker %s: brain state saved on shutdown", os.getpid())
 
 
-app = FastAPI(title="GradePulse API", version=__version__, lifespan=lifespan)
+# The interactive API docs help in development; a production server does not
+# advertise its endpoints.
+_DOCS = AUTH_ENV not in ("production", "prod")
+app = FastAPI(
+    title="GradePulse API", version=__version__, lifespan=lifespan,
+    docs_url="/docs" if _DOCS else None, redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 
 app.include_router(billing_router)
 
