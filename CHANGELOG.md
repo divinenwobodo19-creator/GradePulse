@@ -26,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Operations
 
+- **API docs are hidden in production.** `/docs`, `/redoc` and `/openapi.json` answer 404 when `GRADEPULSE_ENV=production`; development keeps them.
+- **Production refuses the offline demo's JWT secret**, which is published in `deploy/demo`, like the other placeholder secrets.
+- **The offline demo listens on this computer only** (`127.0.0.1:3000` and `:8000`): with a public secret it must never be reachable from the network.
+- **Privacy policy** at `/privacy`, written for the Nigeria Data Protection Act 2023, linked from sign-up and pricing.
 - **Content and engine-state changes are operator-only.** `POST /content`, content imports (`POST /ingest` with `type=content`) and `POST /save` need `X-Operator-Key`; any school login could change the shared content catalogue before. `deploy/pilot_seed.py` takes `--operator-key` (or `$OPERATOR_KEY`) to load the catalogue and skips it otherwise.
 - **`/summary` `total_sessions`** counts the caller's school's recorded scores (it was the engine's platform-wide counter). `content_count` remains the size of the shared catalogue.
 - **`TRUST_FORWARDED_FOR`** (default `false`) lets the sign-in rate limits use `X-Forwarded-For` behind a front proxy that overwrites it. Without it, every visitor behind the web app's proxy shares one allowance. `DEPLOYMENT.md` explains when it is safe to turn on.

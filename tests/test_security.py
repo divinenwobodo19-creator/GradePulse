@@ -195,7 +195,13 @@ def test_token_with_future_iat_rejected():
     assert auth.decode_token(token) is None
 
 
-@pytest.mark.parametrize("bad_secret", [None, "gradepulse-dev-secret-change-in-production", "change-this-to-a-strong-random-secret-in-production"])
+@pytest.mark.parametrize("bad_secret", [
+    None,
+    "gradepulse-dev-secret-change-in-production",
+    "change-this-to-a-strong-random-secret-in-production",
+    # Published with the offline demo, so not a secret.
+    "gradepulse-demo-secret-8f2e9a4c1b7d3e5f6a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f",
+])
 def test_jwt_secret_failfast_in_production(bad_secret):
     env = {k: v for k, v in os.environ.items() if k not in ("GRADEPULSE_ENV", "GRADEPULPE_ENV")}
     env["GRADEPULSE_ENV"] = "production"
@@ -209,6 +215,23 @@ def test_jwt_secret_failfast_in_production(bad_secret):
     )
     assert r.returncode != 0
     assert "JWT_SECRET" in r.stderr
+
+
+@pytest.mark.parametrize("env_name, docs_shown", [("production", False), ("development", True)])
+def test_api_docs_are_hidden_in_production(env_name, docs_shown):
+    env = {k: v for k, v in os.environ.items() if k not in ("GRADEPULSE_ENV", "GRADEPULPE_ENV")}
+    env["GRADEPULSE_ENV"] = env_name
+    env["JWT_SECRET"] = "a-strong-test-secret-" + "x" * 40
+    code = (
+        "from fastapi.testclient import TestClient\n"
+        "from linucb_brain.api.app import app\n"
+        "c = TestClient(app)\n"
+        "print([c.get(p).status_code for p in ('/docs', '/redoc', '/openapi.json')])\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=PROJECT_ROOT)
+    assert r.returncode == 0, r.stderr
+    expected = [200, 200, 200] if docs_shown else [404, 404, 404]
+    assert r.stdout.strip().splitlines()[-1] == str(expected)
 
 
 def test_login_rate_limited_after_burst(client):

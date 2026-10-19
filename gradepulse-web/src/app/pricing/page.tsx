@@ -144,7 +144,12 @@ export default function PricingPage() {
 
       {/* Footer */}
       <footer className="border-t border-border py-8 px-6 text-center">
-        <p className="body-sm text-text-muted">&copy; 2026 GradePulse. All rights reserved.</p>
+        <p className="body-sm text-text-muted">
+          &copy; 2026 GradePulse, a product of N-Library ·{" "}
+          <Link href="/privacy" className="underline hover:text-navy">
+            Privacy policy
+          </Link>
+        </p>
       </footer>
     </div>
   );
