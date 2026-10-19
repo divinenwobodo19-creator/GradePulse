@@ -59,7 +59,64 @@ export default function GradeCalculator() {
           ))}
         </fieldset>
 
-        <div className="overflow-x-auto">
+        {/* Phones: one card per subject, so every box and the result fit the screen. */}
+        <ul className="md:hidden space-y-3" aria-label="Subjects">
+          {results.map(({ row, invalid, total, grade }) => (
+            <li key={row.id} className="rounded-xl border border-border p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  aria-label="Subject"
+                  value={row.subject}
+                  placeholder="Subject"
+                  onChange={(e) => update(row.id, "subject", e.target.value)}
+                  className="input flex-1 min-w-0"
+                />
+                <button
+                  type="button"
+                  onClick={() => setRows((rs) => rs.filter((r) => r.id !== row.id))}
+                  className="w-10 h-10 shrink-0 body text-text-muted hover:text-danger"
+                  aria-label={`Remove ${row.subject}`}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="input-group">
+                  <span className="input-label">CA (out of {caMax})</span>
+                  <input
+                    inputMode="decimal"
+                    value={row.ca}
+                    onChange={(e) => update(row.id, "ca", e.target.value)}
+                    className="input text-right"
+                  />
+                </label>
+                <label className="input-group">
+                  <span className="input-label">Exam (out of {examMax})</span>
+                  <input
+                    inputMode="decimal"
+                    value={row.exam}
+                    onChange={(e) => update(row.id, "exam", e.target.value)}
+                    className="input text-right"
+                  />
+                </label>
+              </div>
+              <p className="body text-navy min-h-[1.5rem]" aria-live="polite">
+                {invalid ? (
+                  <span className="text-danger body-sm">Check the scores</span>
+                ) : total !== null && grade ? (
+                  <>
+                    Total <strong>{total.toFixed(0)}%</strong> · <strong>{grade}</strong> · {REMARKS[grade]}
+                  </>
+                ) : (
+                  <span className="body-sm text-text-muted">Enter both scores to see the grade</span>
+                )}
+              </p>
+            </li>
+          ))}
+        </ul>
+
+        {/* Larger screens: the table. */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="report-table w-full">
             <thead>
               <tr>

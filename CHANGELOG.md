@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Website and search
 
+- **The WAEC grade calculator works on phones:** each subject is a card with its CA and exam boxes side by side and the total, grade and remark under them; larger screens keep the table.
+- **Cloudflare Web Analytics is allowed** by the content security policy (`static.cloudflareinsights.com` for the script, `cloudflareinsights.com` for its reports), so visitor counts appear in the Cloudflare dashboard. The policy was blocking Cloudflare's beacon.
 - **Public homepage** at `/` instead of a spinner that sent everyone to the login page: what GradePulse does, how it works with real screens (sample data), what it is built for, the two plans, questions school owners ask, and a WhatsApp demo link. Signed-in users still go straight to their dashboard. Rendered on the server so search engines read it.
 - **Free WAEC grade calculator** at `/waec-grade-calculator`: CA and exam to total, grade (A1–F9) and remark per subject, with an average, plus the grading table and an example.
 - **Guide** at `/guides/spot-struggling-students`: using weekly tests to find struggling students before exams.
