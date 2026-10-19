@@ -13,9 +13,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_DESCRIPTION =
+  "See every week which students are falling behind, on WAEC grade bands. Built for Nigerian secondary schools.";
+
 export const metadata: Metadata = {
-  title: "GradePulse",
-  description: "See every week which students are falling behind. Built for Nigerian schools.",
+  metadataBase: new URL("https://gradepulse.com.ng"),
+  title: { default: "GradePulse", template: "%s · GradePulse" },
+  description: SITE_DESCRIPTION,
+  applicationName: "GradePulse",
+  openGraph: {
+    type: "website",
+    siteName: "GradePulse",
+    locale: "en_NG",
+    title: "GradePulse: see every week which students are falling behind",
+    description: SITE_DESCRIPTION,
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({
