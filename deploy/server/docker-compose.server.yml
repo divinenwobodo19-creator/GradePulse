@@ -1,0 +1,79 @@
+# GradePulse on a single server, behind Caddy (automatic HTTPS).
+#
+# Only Caddy is reachable from outside (ports 80 and 443). The web app and the
+# API talk to each other on the private Docker network, and the browser reaches
+# the API through the web app's /api proxy, so one domain serves everything,
+# including the Paystack webhook at https://DOMAIN/api/billing/webhook.
+#
+# Run from the repository root on the server (deploy.sh does this):
+#   docker compose -f deploy/server/docker-compose.server.yml --env-file .env up -d --build
+
+name: gradepulse
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: backend
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      - GRADEPULSE_ENV=production
+      - BRAIN_STATE_PATH=/data/brain_state.json
+      - CONFIG_PATH=/data/class_config.json
+      - USER_DB_PATH=/data/gradepulse_users.db
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENABLED=true
+      - FRONTEND_URL=https://${DOMAIN}
+      # Caddy replaces any X-Forwarded-For a visitor sends with their real
+      # address, and the app ports are not published, so it is safe to trust.
+      - TRUST_FORWARDED_FOR=true
+    volumes:
+      - gradepulse-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks: [gradepulse]
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: frontend
+      args:
+        API_URL: http://api:8000
+    restart: unless-stopped
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [gradepulse]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [web]
+    networks: [gradepulse]
+
+volumes:
+  gradepulse-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  gradepulse:
