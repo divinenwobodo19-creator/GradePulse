@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security update (23 October 2026)
+
+- **Next.js 16.3.3 → 16.4.3**, for the 14 October advisories: remote code execution in the Image Optimization API with SVG files (CVE-2026-96889), remote code execution in `use cache` functions (GHSA-673q-mjm6-r5xr) and a Server Actions denial of service (CVE-2026-94482). GradePulse uses neither `use cache` nor Server Actions, but its image optimizer was enabled. `npm audit` for production packages now reports no vulnerabilities (it reported 1 critical and 2 high).
+- Removed the unused default SVG files from `public/`.
+
 ### Sign-in protection
 
 - **Wrong passwords are counted per account**, from any address: from the 5th within 15 minutes each try waits longer (15 s, doubling), and the 10th pauses sign-in for that account for 15 minutes. The account is checked before the password, emails with no account behave the same, and a correct sign-in or a reset clears it. The record is kept in the database, so a restart does not reset it.
