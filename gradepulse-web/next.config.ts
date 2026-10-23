@@ -62,6 +62,12 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,  async headers() {
     return [
+      // Photos, screenshots and the demo video change only with a new file name,
+      // so Cloudflare can keep them for a day and browsers for an hour.
+      {
+        source: "/:dir(media|screens)/:file*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=3600, s-maxage=86400" }],
+      },
       {
         source: "/(.*)",
         headers: [

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Public site redesign
+
+- **New look for the public pages** (homepage, pricing, calculator, guide, privacy): warm paper background, deep green ink and the brand gold, Source Serif 4 headings over Public Sans text, flat colours, no hover motion, no icons, emoji or dashes in the copy, and no rows of three cards.
+- **Fonts across the app:** Geist replaced by Public Sans (text) and IBM Plex Mono (codes); Source Serif 4 for public headings.
+- **Homepage:**
+  - a real classroom photograph from Lagos (Doug Linstedt, Unsplash licence, credited);
+  - the 40 second demo video with captions, loaded only when played;
+  - how it works as alternating rows with real screens, including the score sheet;
+  - benefits as a two column list;
+  - one primary action ("Book a free demo on WhatsApp") at the top and bottom.
+- Pricing and privacy use the shared header and footer. The calculator's "✕" buttons now say "Remove".
+- Photos, screenshots and the video are cacheable by Cloudflare for a day.
+
 ### Security update (23 October 2026)
 
 - **Next.js 16.3.3 → 16.4.3**, for the 14 October advisories: remote code execution in the Image Optimization API with SVG files (CVE-2026-96889), remote code execution in `use cache` functions (GHSA-673q-mjm6-r5xr) and a Server Actions denial of service (CVE-2026-94482). GradePulse uses neither `use cache` nor Server Actions, but its image optimizer was enabled. `npm audit` for production packages now reports no vulnerabilities (it reported 1 critical and 2 high).

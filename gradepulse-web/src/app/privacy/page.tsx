@@ -1,5 +1,4 @@
-import Image from "next/image";
-import Link from "next/link";
+import { PublicFooter, PublicNav } from "@/components/PublicSite";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -134,27 +133,17 @@ const SECTIONS: { heading: string; body: React.ReactNode }[] = [
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-white">
-      <nav className="border-b border-border px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5">
-            <Image src="/logo.png" alt="GradePulse" width={32} height={32} className="w-8 h-8 rounded-lg" />
-            <span className="text-lg font-bold text-navy">GradePulse</span>
-          </Link>
-          <Link href="/pricing" className="body-sm text-text-secondary hover:text-navy transition-colors">
-            Pricing
-          </Link>
-        </div>
-      </nav>
+    <div className="site min-h-screen">
+      <PublicNav />
 
       <main className="max-w-3xl mx-auto px-6 py-16">
-        <h1 className="heading-display text-navy mb-2">Privacy policy</h1>
-        <p className="body-sm text-text-muted mb-10">Last updated {UPDATED}</p>
+        <h1 className="text-ink mb-2">Privacy policy</h1>
+        <p className="text-sm text-ink-muted mb-10">Last updated {UPDATED}</p>
         <div className="space-y-8">
           {SECTIONS.map((section) => (
             <section key={section.heading}>
-              <h2 className="heading-2 text-navy mb-3">{section.heading}</h2>
-              <div className="body text-text-secondary space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2">
+              <h2 className="text-ink mb-3">{section.heading}</h2>
+              <div className="body text-ink-soft space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2">
                 {section.body}
               </div>
             </section>
@@ -162,9 +151,7 @@ export default function PrivacyPage() {
         </div>
       </main>
 
-      <footer className="border-t border-border py-8 px-6 text-center">
-        <p className="body-sm text-text-muted">&copy; 2026 GradePulse, a product of N-Library.</p>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

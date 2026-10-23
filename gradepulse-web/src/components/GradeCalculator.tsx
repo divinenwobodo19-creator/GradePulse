@@ -47,12 +47,12 @@ export default function GradeCalculator() {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
 
   return (
-    <div className="card">
-      <div className="card-body space-y-5">
+    <div className="border border-rule rounded-xl bg-white">
+      <div className="p-6 space-y-5">
         <fieldset className="flex flex-wrap items-center gap-4">
           <legend className="input-label mb-2">How your school splits the marks</legend>
           {SPLITS.map((s, i) => (
-            <label key={s.label} className="flex items-center gap-2 body-sm text-text-primary cursor-pointer">
+            <label key={s.label} className="flex items-center gap-2 text-sm text-ink cursor-pointer">
               <input type="radio" name="split" checked={split === i} onChange={() => setSplit(i)} />
               {s.label}
             </label>
@@ -62,7 +62,7 @@ export default function GradeCalculator() {
         {/* Phones: one card per subject, so every box and the result fit the screen. */}
         <ul className="md:hidden space-y-3" aria-label="Subjects">
           {results.map(({ row, invalid, total, grade }) => (
-            <li key={row.id} className="rounded-xl border border-border p-4 space-y-3">
+            <li key={row.id} className="rounded-xl border border-rule p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <input
                   aria-label="Subject"
@@ -74,10 +74,10 @@ export default function GradeCalculator() {
                 <button
                   type="button"
                   onClick={() => setRows((rs) => rs.filter((r) => r.id !== row.id))}
-                  className="w-10 h-10 shrink-0 body text-text-muted hover:text-danger"
-                  aria-label={`Remove ${row.subject}`}
+                  className="shrink-0 text-sm text-ink-muted underline underline-offset-2 hover:text-help px-2 py-2"
+                  aria-label={`Remove ${row.subject || "this subject"}`}
                 >
-                  ✕
+                  Remove
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -100,15 +100,15 @@ export default function GradeCalculator() {
                   />
                 </label>
               </div>
-              <p className="body text-navy min-h-[1.5rem]" aria-live="polite">
+              <p className="body text-ink min-h-[1.5rem]" aria-live="polite">
                 {invalid ? (
-                  <span className="text-danger body-sm">Check the scores</span>
+                  <span className="text-danger text-sm">Check the scores</span>
                 ) : total !== null && grade ? (
                   <>
                     Total <strong>{total.toFixed(0)}%</strong> · <strong>{grade}</strong> · {REMARKS[grade]}
                   </>
                 ) : (
-                  <span className="body-sm text-text-muted">Enter both scores to see the grade</span>
+                  <span className="text-sm text-ink-muted">Enter both scores to see the grade</span>
                 )}
               </p>
             </li>
@@ -158,11 +158,11 @@ export default function GradeCalculator() {
                       className="input w-24 text-right"
                     />
                   </td>
-                  <td className="num font-semibold">{invalid ? "—" : total !== null ? total.toFixed(0) : ""}</td>
+                  <td className="num font-semibold">{invalid || total === null ? "" : total.toFixed(0)}</td>
                   <td className="font-semibold">{invalid ? "" : grade}</td>
                   <td>
                     {invalid ? (
-                      <span className="text-danger body-sm">Check the scores</span>
+                      <span className="text-danger text-sm">Check the scores</span>
                     ) : grade ? (
                       REMARKS[grade]
                     ) : (
@@ -173,10 +173,10 @@ export default function GradeCalculator() {
                     <button
                       type="button"
                       onClick={() => setRows((rs) => rs.filter((r) => r.id !== row.id))}
-                      className="body-sm text-text-muted hover:text-danger"
-                      aria-label={`Remove ${row.subject}`}
+                      className="text-sm text-ink-muted underline underline-offset-2 hover:text-help"
+                      aria-label={`Remove ${row.subject || "this subject"}`}
                     >
-                      ✕
+                      Remove
                     </button>
                   </td>
                 </tr>
@@ -188,7 +188,7 @@ export default function GradeCalculator() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
+            className="btn-site btn-plain text-sm py-2 px-4"
             onClick={() =>
               setRows((rs) => [...rs, { id: Math.max(0, ...rs.map((r) => r.id)) + 1, subject: "", ca: "", exam: "" }])
             }
@@ -196,7 +196,7 @@ export default function GradeCalculator() {
             Add a subject
           </button>
           {average !== null && (
-            <p className="body text-navy" aria-live="polite">
+            <p className="body text-ink" aria-live="polite">
               Average over {totals.length} subject{totals.length !== 1 ? "s" : ""}:{" "}
               <strong>{average.toFixed(1)}%</strong> ({scoreToGrade(average)}, {REMARKS[scoreToGrade(average)]})
             </p>
