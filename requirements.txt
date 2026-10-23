@@ -12,7 +12,7 @@ uvicorn==0.43.0
 pydantic==2.12.5
 streamlit==1.55.0
 plotly==6.6.0
-python-multipart==0.0.26
+python-multipart==0.0.31
 requests==2.33.0
 python-dotenv==1.2.2
 bcrypt==5.0.0
