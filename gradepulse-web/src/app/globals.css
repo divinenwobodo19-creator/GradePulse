@@ -23,8 +23,20 @@
   --color-danger-light: #fee2e2;
   --color-info: #3b82f6;
   --color-info-light: #dbeafe;
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-public-sans);
+  --font-serif: var(--font-source-serif);
+  --font-mono: var(--font-plex-mono);
+  /* Public pages: warm paper, deep green ink, the brand gold. */
+  --color-paper: #faf7f0;
+  --color-paper-deep: #f1ebdd;
+  --color-ink: #1f3329;
+  --color-ink-soft: #46574e;
+  --color-ink-muted: #6b7a71;
+  --color-rule: #e2d9c6;
+  --color-forest: #1f4d3a;
+  --color-forest-deep: #183d2e;
+  --color-help: #a8432f;
+  --color-ahead: #2f7a4f;
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
@@ -718,3 +730,51 @@ body {
 .input.w-40 { width: 10rem; }
 .input.pl-10 { padding-left: 2.5rem; }
 .data-table th.text-right { text-align: right; }
+
+
+/* ─── Public site (homepage, pricing, calculator, guide, privacy) ───
+   Flat colours, no gradients, no motion: hover changes colour instantly. */
+.site {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.site *, .site *::before, .site *::after {
+  transition: none !important;
+  animation: none !important;
+}
+.site h1, .site h2, .site h3 {
+  font-family: var(--font-serif), Georgia, serif;
+  color: var(--color-ink);
+  font-weight: 600;
+  text-wrap: balance;
+}
+.site h1 { font-size: 3rem; line-height: 1.1; letter-spacing: -0.02em; }
+.site h2 { font-size: 2.25rem; line-height: 1.15; letter-spacing: -0.015em; }
+.site h3 { font-size: 1.25rem; line-height: 1.3; }
+@media (max-width: 640px) {
+  .site h1 { font-size: 2.25rem; }
+  .site h2 { font-size: 1.875rem; }
+}
+.site p { text-wrap: pretty; }
+.site .lead { font-size: 1.125rem; line-height: 1.6; color: var(--color-ink-soft); max-width: 36rem; }
+.site .measure { max-width: 40rem; }
+.site .eyebrow { font-size: 0.875rem; font-weight: 600; color: var(--color-forest); letter-spacing: 0.02em; }
+.site .rule { border-top: 1px solid var(--color-rule); }
+.site a.link { color: var(--color-forest); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.site a.link:hover { color: var(--color-ink); }
+.site .btn-site {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 1rem; line-height: 1.5;
+  padding: 12px 24px; border-radius: 8px; white-space: nowrap;
+}
+.site .btn-site:focus-visible { outline: 3px solid var(--color-gold); outline-offset: 2px; }
+.site .btn-gold { background: var(--color-gold); color: var(--color-ink); }
+.site .btn-gold:hover { background: #b8931f; }
+.site .btn-plain { background: transparent; color: var(--color-ink); border: 1px solid var(--color-ink); }
+.site .btn-plain:hover { background: var(--color-paper-deep); }
+.site .btn-on-dark { background: transparent; color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.6); }
+.site .btn-on-dark:hover { background: rgba(255, 255, 255, 0.08); }
+.site .frame { border: 1px solid var(--color-rule); border-radius: 12px; overflow: hidden; background: #ffffff; }
+.site .num { font-variant-numeric: tabular-nums; }

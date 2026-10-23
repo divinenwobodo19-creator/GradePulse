@@ -2,7 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 
 // Shared pieces of the public (signed-out) pages: header, footer and the
-// WhatsApp contact that every page points to.
+// WhatsApp contact that every page points to. Styling comes from the .site
+// rules in globals.css: flat colours, a serif for headings, no motion.
 
 export const WHATSAPP_NUMBER = "0803 698 9732";
 export const WHATSAPP_URL =
@@ -11,73 +12,65 @@ export const SITE_URL = "https://gradepulse.com.ng";
 
 export function PublicNav() {
   return (
-    <nav className="border-b border-border px-6 py-4 bg-white">
-      <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <Image src="/logo.png" alt="GradePulse" width={32} height={32} className="w-8 h-8 rounded-lg" />
-          <span className="text-lg font-bold text-navy">GradePulse</span>
+    <header className="border-b border-rule bg-paper">
+      <nav className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-6" aria-label="Main">
+        <Link href="/" className="flex items-center gap-3">
+          <Image src="/logo.png" alt="" width={32} height={32} className="w-8 h-8 rounded-md" />
+          <span className="text-lg font-semibold text-ink">GradePulse</span>
         </Link>
-        <div className="flex items-center gap-5">
-          <Link href="/pricing" className="hidden sm:inline body-sm text-text-secondary hover:text-navy transition-colors">
+        <div className="flex items-center gap-4 sm:gap-6 text-sm whitespace-nowrap">
+          <Link href="/pricing" className="hidden sm:inline text-ink-soft hover:text-ink">
             Pricing
           </Link>
-          <Link
-            href="/waec-grade-calculator"
-            className="hidden md:inline body-sm text-text-secondary hover:text-navy transition-colors"
-          >
+          <Link href="/waec-grade-calculator" className="hidden md:inline text-ink-soft hover:text-ink">
             WAEC grade calculator
           </Link>
-          <Link href="/login" className="body-sm text-text-secondary hover:text-navy transition-colors">
+          <Link href="/login" className="text-ink-soft hover:text-ink">
             Sign in
           </Link>
-          <Link href="/signup" className="btn btn-primary btn-sm">
-            Start free
-          </Link>
+          <a href={WHATSAPP_URL} className="btn-site btn-gold text-sm py-2 px-4">
+            Book a demo
+          </a>
         </div>
-      </div>
-    </nav>
+      </nav>
+    </header>
   );
 }
 
 export function PublicFooter() {
   return (
-    <footer className="border-t border-border py-10 px-6 bg-white">
-      <div className="max-w-6xl mx-auto flex flex-col sm:flex-row gap-6 justify-between">
-        <div>
-          <div className="font-bold text-navy">GradePulse</div>
-          <p className="body-sm text-text-muted mt-1">
-            A product of N-Library, Enugu, Nigeria.
-            <br />
-            WhatsApp:{" "}
-            <a href={WHATSAPP_URL} className="underline hover:text-navy">
+    <footer className="border-t border-rule bg-paper">
+      <div className="max-w-6xl mx-auto px-6 py-12 grid gap-8 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="text-sm text-ink-soft space-y-1">
+          <p className="font-semibold text-ink">GradePulse</p>
+          <p>A product of N-Library, Enugu, Nigeria.</p>
+          <p>
+            WhatsApp{" "}
+            <a href={WHATSAPP_URL} className="link">
               {WHATSAPP_NUMBER}
             </a>
           </p>
         </div>
-        <ul className="body-sm text-text-secondary space-y-1.5">
-          <li><Link href="/pricing" className="hover:text-navy">Pricing</Link></li>
-          <li><Link href="/waec-grade-calculator" className="hover:text-navy">WAEC grade calculator</Link></li>
-          <li><Link href="/guides/spot-struggling-students" className="hover:text-navy">Spotting struggling students early</Link></li>
-          <li><Link href="/privacy" className="hover:text-navy">Privacy policy</Link></li>
+        <ul className="text-sm space-y-2">
+          <li><Link href="/pricing" className="text-ink-soft hover:text-ink">Pricing</Link></li>
+          <li><Link href="/waec-grade-calculator" className="text-ink-soft hover:text-ink">WAEC grade calculator</Link></li>
+          <li><Link href="/guides/spot-struggling-students" className="text-ink-soft hover:text-ink">Spotting struggling students early</Link></li>
+          <li><Link href="/privacy" className="text-ink-soft hover:text-ink">Privacy policy</Link></li>
         </ul>
       </div>
-      <p className="max-w-6xl mx-auto body-sm text-text-muted mt-8">&copy; 2026 GradePulse, a product of N-Library.</p>
+      <div className="max-w-6xl mx-auto px-6 pb-10 text-xs text-ink-muted">
+        © 2026 GradePulse, a product of N-Library. Classroom photograph by Doug Linstedt on Unsplash.
+      </div>
     </footer>
   );
 }
 
-/** A screenshot shown inside a simple browser window, so it reads as software on a computer. */
-export function BrowserFrame({ src, alt, width, height, priority = false }: {
+/** A screenshot of GradePulse in a plain frame. */
+export function Screenshot({ src, alt, width, height, priority = false }: {
   src: string; alt: string; width: number; height: number; priority?: boolean;
 }) {
   return (
-    <div className="rounded-xl overflow-hidden border border-border shadow-elevated bg-white">
-      <div className="flex items-center gap-1.5 px-3 py-2 bg-surface-elevated border-b border-border" aria-hidden="true">
-        <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-        <span className="ml-3 text-[11px] text-text-muted">gradepulse.com.ng</span>
-      </div>
+    <div className="frame">
       <Image src={src} alt={alt} width={width} height={height} priority={priority} className="w-full h-auto" />
     </div>
   );
