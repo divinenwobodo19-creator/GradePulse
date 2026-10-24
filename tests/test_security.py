@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 
 from linucb_brain.api import app as app_module
 from linucb_brain.api.app import app

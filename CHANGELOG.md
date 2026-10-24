@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security update (24 October 2026)
+
+- **python-jose replaced by PyJWT 2.15.1** for login tokens. python-jose 3.5.0 has a critical, unpatched advisory (algorithm-confusion guard bypassed by DER-encoded public keys). GradePulse only uses HS256 with a shared secret, but the library has no fix. Existing tokens keep working; forged and unsigned tokens are refused.
+- Server packages from Dependabot: starlette 1.0.0 → 1.3.1 and python-multipart 0.0.26 → 0.0.31 (form-parsing denial of service and request-path issues).
+- Test-only packages: happy-dom → 21.0.4 and vitest → 5.0.3. `npm audit` reports 0 vulnerabilities.
+- GitHub Dependabot alerts and automatic security pull requests are now on for the repository.
+
 ### Public site redesign
 
 - **New look for the public pages** (homepage, pricing, calculator, guide, privacy): warm paper background, deep green ink and the brand gold, Source Serif 4 headings over Public Sans text, flat colours, no hover motion, no icons, emoji or dashes in the copy, and no rows of three cards.

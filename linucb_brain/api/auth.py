@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt  # PyJWT; python-jose was dropped (unpatched algorithm-confusion advisory)
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -149,9 +149,9 @@ def decode_token(token: str) -> Optional[dict]:
         payload = jwt.decode(
             token, SECRET_KEY, algorithms=[ALGORITHM],
             audience=ISSUER, issuer=ISSUER,
-            options={"require_sub": True, "verify_iat": True},
+            options={"require": ["sub", "exp", "iat"]},
         )
-    except JWTError:
+    except jwt.PyJWTError:
         return None
     # Reject tokens with a future iat (clock-skew slack of 30s).
     iat = payload.get("iat")
