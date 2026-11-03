@@ -1,160 +1,149 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { TriageResult } from "@/lib/types";
+import type { SchoolClass, TriageResult } from "@/lib/types";
 import { TIER_LABELS } from "@/lib/types";
 import { activeSubject, useSubjects } from "@/lib/subjects";
+import { currentScore, movementLabel, shortDate } from "@/lib/triage";
 
-const TIER_ICONS: Record<string, React.ReactNode> = {
-  ahead: (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-    </svg>
-  ),
-  on_track: (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-    </svg>
-  ),
-  remediation: (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-    </svg>
-  ),
-};
+// Needs help first: it is the list a teacher acts on.
+const TIER_ORDER = ["remediation", "on_track", "ahead"];
 
 export default function TriagePage() {
   const { user, loading: authLoading } = useAuth();
   const subjects = useSubjects();
   const [pickedSubject, setSubject] = useState("");
   const subject = activeSubject(pickedSubject, subjects);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [classId, setClassId] = useState("");
   const [result, setResult] = useState<TriageResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [history, setHistory] = useState<TriageResult[]>([]);
+  // Which subject and class the shown list (or error) is for: loading until it matches.
+  const wanted = `${subject}|${classId}`;
+  const [loadedFor, setLoadedFor] = useState("");
+  const loading = loadedFor !== wanted;
 
-  const runTriage = async () => {
+  useEffect(() => {
+    if (authLoading || !user?.school_id) return;
+    const controller = new AbortController();
+    api.getClasses(user.school_id, controller.signal).then(setClasses).catch(() => undefined);
+    return () => controller.abort();
+  }, [authLoading, user]);
+
+  useEffect(() => {
     if (authLoading || !user) return;
-    setLoading(true);
-    setError("");
-    try {
-      const data = await api.triage(subject);
-      setResult(data);
-      setHistory((prev) => [data, ...prev.slice(0, 4)]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Triage failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+    let cancelled = false;
+    const controller = new AbortController();
+    api
+      .triage(subject, controller.signal, classId || undefined)
+      .then((data) => {
+        if (!cancelled) {
+          setResult(data);
+          setError("");
+          setLoadedFor(`${subject}|${classId}`);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled && !(err instanceof Error && err.name === "AbortError")) {
+          setError(err instanceof Error ? err.message : "Could not load the list");
+          setLoadedFor(`${subject}|${classId}`);
+        }
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [authLoading, user, subject, classId]);
 
-  const totalStudents = result?.total_students ?? 0;
+  const total = result?.total_students ?? 0;
+  const tiers = result ? TIER_ORDER.filter((k) => result.tiers[k]).map((k) => [k, result.tiers[k]] as const) : [];
 
   return (
     <div className="page-shell">
-      {/* Header */}
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="heading-display text-navy">Student Triage</h1>
           <p className="body text-text-secondary">
-            Group students by their average score in a subject, on WAEC grade bands
+            Every assessed student, grouped on WAEC bands by their last few tests, with the change since last week
           </p>
         </div>
-      </div>
-
-      {/* Controls */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="input-group">
-              <label className="input-label" htmlFor="triage-subject">Subject</label>
-              <select
-                id="triage-subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="input select w-auto min-w-[160px]"
-              >
-                {subjects.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              type="button"
-              onClick={runTriage}
-              disabled={loading}
-              aria-busy={loading}
-              className="btn btn-primary"
-            >
-              {loading ? (
-                <>
-                  <div className="spinner spinner-sm" style={{ borderTopColor: 'var(--color-navy)' }} />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Run Triage
-                </>
-              )}
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <select
+            aria-label="Subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            className="input select w-auto min-w-[140px]"
+          >
+            {subjects.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Class"
+            value={classId}
+            onChange={(e) => setClassId(e.target.value)}
+            className="input select w-auto min-w-[140px]"
+          >
+            <option value="">All classes</option>
+            {classes.map((c) => (
+              <option key={c.class_id} value={c.class_id}>{c.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Loading */}
       {loading && (
-        <div className="space-y-4">
+        <div role="status" aria-live="polite" className="space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-32 skeleton" />
           ))}
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
+      {!loading && error && (
+        <div role="alert" aria-live="assertive" className="bg-danger-light border border-danger/20 text-danger px-4 py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
 
-      {/* Results */}
-      {result?.tiers && Object.keys(result.tiers).length > 0 && (
+      {!loading && !error && result && total === 0 && (
+        <div className="empty-state">
+          <h3 className="heading-3 text-navy mb-1">No {subject} scores yet</h3>
+          <p className="body-sm text-text-muted">
+            Enter this week&apos;s {subject} test on the Scores page{classId ? " for this class" : ""}, and the list will appear here.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && result && total > 0 && (
         <div className="space-y-6">
-          {/* Summary Bar */}
           <div className="card">
             <div className="card-body">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="heading-2 text-navy">Classification Results</h2>
-                <div className="flex items-center gap-3">
-                  <span className="badge badge-neutral">{result.subject}</span>
-                  <span className="badge badge-success">{totalStudents} classified</span>
-                  <span className="badge badge-neutral">{result.scope}</span>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="heading-2 text-navy">
+                    {result.subject}
+                    {result.as_of ? `, week ending ${shortDate(result.as_of)}` : ""}
+                  </h2>
+                  <p className="caption text-text-muted mt-0.5">
+                    {total} students assessed
+                    {result.tested_this_week !== undefined ? `, ${result.tested_this_week} tested this week` : ""}
+                    {` · based on each student's last ${result.recent_tests ?? 3} tests`}
+                  </p>
                 </div>
               </div>
 
-              {/* Visual Distribution Bar */}
               <div className="relative h-8 bg-surface-elevated rounded-lg overflow-hidden flex">
-                {Object.entries(result.tiers).map(([key, tier]) => {
+                {tiers.map(([key, tier]) => {
                   const meta = TIER_LABELS[key];
-                  const pct = totalStudents > 0 ? (tier.count / totalStudents) * 100 : 0;
+                  const pct = (tier.count / total) * 100;
                   return pct > 0 ? (
                     <div
                       key={key}
-                      className="h-full flex items-center justify-center text-xs font-bold text-white transition-all duration-500"
-                      style={{
-                        width: `${pct}%`,
-                        background: meta?.color || "#94a3b8",
-                      }}
+                      className="h-full flex items-center justify-center text-xs font-bold text-white"
+                      style={{ width: `${pct}%`, background: meta?.color || "#94a3b8" }}
                       title={`${meta?.label || key}: ${tier.count} students (${Math.round(pct)}%)`}
                     >
                       {pct > 15 && `${Math.round(pct)}%`}
@@ -162,20 +151,14 @@ export default function TriagePage() {
                   ) : null;
                 })}
               </div>
-
-              {/* Legend */}
               <div className="flex flex-wrap gap-4 mt-3">
-                {Object.entries(result.tiers).map(([key, tier]) => {
+                {tiers.map(([key, tier]) => {
                   const meta = TIER_LABELS[key];
-                  const pct = totalStudents > 0 ? Math.round((tier.count / totalStudents) * 100) : 0;
                   return (
                     <div key={key} className="flex items-center gap-2">
-                      <div
-                        className="w-3 h-3 rounded-sm"
-                        style={{ background: meta?.color || "#94a3b8" }}
-                      />
+                      <div className="w-3 h-3 rounded-sm" style={{ background: meta?.color || "#94a3b8" }} />
                       <span className="caption text-text-secondary">
-                        {meta?.label || key}: {tier.count} ({pct}%)
+                        {meta?.label || key}: {tier.count} ({Math.round((tier.count / total) * 100)}%)
                       </span>
                     </div>
                   );
@@ -184,152 +167,54 @@ export default function TriagePage() {
             </div>
           </div>
 
-          {/* Tier Cards */}
-          <div className="space-y-4">
-            {Object.entries(result.tiers).map(([key, tier]) => {
-              const meta = TIER_LABELS[key] || { label: key, color: "#94a3b8", badgeClass: "badge-neutral", description: "" };
-              const pct = totalStudents > 0 ? Math.round((tier.count / totalStudents) * 100) : 0;
-
-              return (
-                <div key={key} className={`card tier-card tier-${key}`}>
-                  <div className="card-body">
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center"
-                          style={{ background: `${meta.color}15`, color: meta.color }}
-                        >
-                          {TIER_ICONS[key]}
-                        </div>
-                        <div>
-                          <h3 className="heading-2 text-navy">{meta.label}</h3>
-                          <p className="caption text-text-muted">{meta.description}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="heading-1" style={{ color: meta.color }}>{tier.count}</span>
-                        <span className="caption text-text-muted block">students ({pct}%)</span>
-                      </div>
+          {tiers.map(([key, tier]) => {
+            const meta = TIER_LABELS[key] || { label: key, color: "#94a3b8", badgeClass: "badge-neutral", description: "" };
+            return (
+              <div key={key} className={`card tier-card tier-${key}`}>
+                <div className="card-body">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h3 className="heading-2 text-navy">{meta.label}</h3>
+                      <p className="caption text-text-muted">{meta.description}</p>
                     </div>
+                    <span className="heading-1" style={{ color: meta.color }}>{tier.count}</span>
+                  </div>
 
-                    {/* Progress Bar */}
-                    <div className="mb-4">
-                      <div className="progress-bar">
-                        <div
-                          className="progress-bar-fill"
-                          style={{ width: `${pct}%`, background: meta.color }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Recommended Difficulty */}
-                    <div className="flex items-center gap-4 mb-4 p-3 bg-white/60 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                        <span className="caption text-text-secondary font-medium">Recommended Difficulty:</span>
-                      </div>
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4, 5].map((d) => (
-                          <div
-                            key={d}
-                            className="w-8 h-2 rounded-full transition-all"
-                            style={{
-                              background: d <= tier.recommended_difficulty ? meta.color : "#e2e8f0",
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-sm font-mono font-semibold text-navy">
-                        Level {tier.recommended_difficulty}
-                      </span>
-                    </div>
-
-                    {/* Note */}
-                    <div className="p-3 bg-white/60 rounded-lg mb-4">
-                      <p className="body-sm text-text-secondary italic">{tier.note}</p>
-                    </div>
-
-                    {/* Students Grid */}
-                    {tier.students.length === 0 ? (
-                      <p className="caption text-text-muted text-center py-4">No students in this tier</p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        {tier.students.map((s) => (
+                  {tier.students.length === 0 ? (
+                    <p className="caption text-text-muted text-center py-4">No students in this group</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {tier.students.map((s) => {
+                        const moved = movementLabel(s);
+                        return (
                           <div
                             key={s.student_id}
                             className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/50"
                           >
                             <div className="min-w-0">
                               <div className="text-sm font-medium text-navy truncate">{s.name}</div>
-                              <div className="caption text-text-muted font-mono">{s.student_id}</div>
+                              <div className={`caption ${moved?.tone ?? "text-text-muted"}`}>
+                                {moved?.text ?? s.student_id}
+                                {s.tested_this_week === false ? " · not tested this week" : ""}
+                              </div>
                             </div>
                             <div className="text-right ml-2 shrink-0">
                               <div className="text-sm font-mono font-semibold text-navy">
-                                {Math.round(s.predicted_score * 100)}%
+                                {Math.round(currentScore(s) * 100)}%
                               </div>
                               <div className="caption text-text-muted">
-                                {s.attempts} try{s.attempts !== 1 ? "s" : ""}
+                                {s.attempts} test{s.attempts !== 1 ? "s" : ""}
                               </div>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && !error && !result && (
-        <div className="empty-state">
-          <div className="empty-state-icon">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-          </div>
-          <h3 className="heading-3 text-navy mb-1">Ready to classify</h3>
-          <p className="body-sm text-text-muted mb-4">
-            Select a subject and click &quot;Run Triage&quot; to classify students into performance tiers
-          </p>
-          <button type="button" onClick={runTriage} className="btn btn-primary btn-sm">
-            Run Triage
-          </button>
-        </div>
-      )}
-
-      {/* Previous Runs */}
-      {history.length > 1 && (
-        <div className="card">
-          <div className="card-body">
-            <h2 className="heading-2 text-navy mb-4">Previous Runs</h2>
-            <div className="space-y-2">
-              {history.slice(1).map((run, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-surface-elevated rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <span className="badge badge-neutral">{run.subject}</span>
-                    <span className="body-sm text-text-secondary">{run.total_students} students</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {Object.entries(run.tiers).map(([key, tier]) => {
-                      const meta = TIER_LABELS[key];
-                      return (
-                        <span key={key} className="text-xs font-mono" style={{ color: meta?.color }}>
-                          {tier.count}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

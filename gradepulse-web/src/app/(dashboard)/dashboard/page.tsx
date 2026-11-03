@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import type { BrainSummary, SchoolClass, TriageResult, Student } from "@/lib/types";
 import { TIER_LABELS, getStudentClassId } from "@/lib/types";
 import { activeSubject, useSubjects } from "@/lib/subjects";
+import { currentScore, hasLastWeek, movementLabel, pointsLabel, shortDate } from "@/lib/triage";
 
 function MetricCard({ accent, label, value, sub, icon }: {
   accent: string;
@@ -95,6 +96,10 @@ export default function DashboardPage() {
   const riskCount = tierCounts["remediation"] ?? 0;
   const aheadCount = tierCounts["ahead"] ?? 0;
   const pctOfAssessed = (count: number) => (totalTriaged > 0 ? Math.round((count / totalTriaged) * 100) : 0);
+  const compared = triage ? hasLastWeek(triage) : false;
+  const movedIn = triage?.changes?.moved_into_help ?? [];
+  const movedOut = triage?.changes?.left_help ?? [];
+  const watch = triage?.changes?.watch ?? [];
 
   if (authLoading || loading) {
     return (
@@ -177,7 +182,9 @@ export default function DashboardPage() {
           accent="var(--color-danger)"
           label="Need Help"
           value={riskCount}
-          sub={`${pctOfAssessed(riskCount)}% of assessed, below 40%`}
+          sub={compared
+            ? `${movedIn.length} new this week, ${movedOut.length} moved out`
+            : `${pctOfAssessed(riskCount)}% of assessed, below 40%`}
           icon={<svg className="w-4 h-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M12 9v4" /><path d="M12 17h.01" /><circle cx="12" cy="12" r="10" /></svg>}
         />
         <MetricCard
@@ -193,9 +200,9 @@ export default function DashboardPage() {
       {triage && totalTriaged === 0 && (
         <div className="card">
           <div className="card-body">
-            <h2 className="heading-2 text-navy">Performance Triage</h2>
+            <h2 className="heading-2 text-navy">Who needs help this week</h2>
             <p className="body-sm text-text-muted mt-1">
-              No {subject} scores recorded yet{classId ? " for this class" : ""}. Enter scores to see who needs help.
+              No {subject} scores recorded yet{classId ? " for this class" : ""}. Enter this week&apos;s test on the Scores page to see who needs help.
             </p>
           </div>
         </div>
@@ -204,15 +211,62 @@ export default function DashboardPage() {
       {triage?.tiers && totalTriaged > 0 && (
         <div className="card">
           <div className="card-body">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="heading-2 text-navy">Performance Triage</h2>
-                <p className="caption text-text-muted mt-0.5">
-                  {triage.subject} &middot; {totalTriaged} students classified
-                </p>
-              </div>
-              <span className="badge badge-neutral">Students with a {subject} score</span>
+            <div className="mb-5">
+              <h2 className="heading-2 text-navy">Who needs help this week</h2>
+              <p className="caption text-text-muted mt-0.5">
+                {triage.subject}
+                {triage.as_of ? ` \u00b7 week ending ${shortDate(triage.as_of)}` : ""}
+                {` \u00b7 each student's last ${triage.recent_tests ?? 3} tests`}
+                {triage.tested_this_week !== undefined
+                  ? ` \u00b7 ${triage.tested_this_week} of ${totalTriaged} tested this week`
+                  : ""}
+              </p>
             </div>
+
+            {/* Since last week */}
+            {compared ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+                {[
+                  { title: "New in needs help", list: movedIn, tone: "text-danger", empty: "Nobody new this week." },
+                  { title: "Moved out of needs help", list: movedOut, tone: "text-success", empty: "Nobody moved out this week." },
+                  { title: "Watch: latest test below 40%", list: watch, tone: "text-danger", empty: "Nobody else scored below 40%.", latest: true },
+                ].map((group) => (
+                  <div key={group.title} className="rounded-lg border border-border p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="body-sm font-semibold text-navy">{group.title}</h3>
+                      <span className={`text-sm font-mono font-semibold ${group.tone}`}>{group.list.length}</span>
+                    </div>
+                    {group.list.length === 0 ? (
+                      <p className="caption text-text-muted">{group.empty}</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {group.list.slice(0, 5).map((c) => (
+                          <li key={c.student_id} className="flex items-center justify-between gap-2 caption">
+                            <span className="text-navy truncate">{c.name}</span>
+                            <span className="font-mono text-text-secondary shrink-0">
+                              {"latest" in group
+                                ? `latest ${Math.round((c.latest_score ?? 0) * 100)}%, average ${Math.round(c.current_score * 100)}%`
+                                : <>
+                                    {c.previous_score != null ? `${Math.round(c.previous_score * 100)}% to ` : ""}
+                                    {Math.round(c.current_score * 100)}%
+                                    <span className={`ml-1 ${group.tone}`}>({pointsLabel(c.change)})</span>
+                                  </>}
+                            </span>
+                          </li>
+                        ))}
+                        {group.list.length > 5 && (
+                          <li className="caption text-text-muted">and {group.list.length - 5} more</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="caption text-text-muted mb-5">
+                Changes since last week will show here once a second week of {subject} tests is entered.
+              </p>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {Object.entries(triage.tiers).map(([key, tier]) => {
@@ -222,59 +276,44 @@ export default function DashboardPage() {
                 return (
                   <div key={key} className={`tier-card tier-${key}`}>
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <h3 className="heading-3 text-navy">{meta.label}</h3>
-                      </div>
+                      <h3 className="heading-3 text-navy">{meta.label}</h3>
                       <span className={`badge ${meta.badgeClass}`}>{tier.count}</span>
                     </div>
 
-                    {/* Progress Bar */}
                     <div className="mb-3">
                       <div className="progress-bar">
-                        <div
-                          className="progress-bar-fill"
-                          style={{
-                            width: `${pct}%`,
-                            background: meta.color,
-                          }}
-                        />
+                        <div className="progress-bar-fill" style={{ width: `${pct}%`, background: meta.color }} />
                       </div>
-                      <div className="flex justify-between mt-1">
-                        <span className="caption text-text-muted">{pct}% of total</span>
-                        <span className="caption text-text-muted">
-                          Difficulty: {tier.recommended_difficulty}
-                        </span>
-                      </div>
+                      <div className="caption text-text-muted mt-1">{pct}% of assessed &middot; {meta.description}</div>
                     </div>
 
-                    {/* Students */}
                     {tier.students.length > 0 ? (
                       <div className="space-y-1.5">
-                        {tier.students.slice(0, 4).map((s) => (
-                          <div key={s.student_id} className="flex items-center justify-between bg-white/60 rounded-lg px-3 py-2">
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium text-navy truncate">{s.name}</div>
-                              <div className="caption text-text-muted">{s.attempts} attempt{s.attempts !== 1 ? "s" : ""}</div>
+                        {tier.students.slice(0, 5).map((s) => {
+                          const moved = movementLabel(s);
+                          return (
+                            <div key={s.student_id} className="flex items-center justify-between bg-white/60 rounded-lg px-3 py-2">
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-navy truncate">{s.name}</div>
+                                <div className={`caption ${moved?.tone ?? "text-text-muted"}`}>
+                                  {moved?.text ?? `${s.attempts} test${s.attempts !== 1 ? "s" : ""}`}
+                                </div>
+                              </div>
+                              <span className="text-sm font-mono font-semibold text-navy ml-2">
+                                {Math.round(currentScore(s) * 100)}%
+                              </span>
                             </div>
-                            <span className="text-sm font-mono font-semibold text-navy ml-2">
-                              {Math.round((s.average_score ?? s.predicted_score ?? 0) * 100)}%
-                            </span>
-                          </div>
-                        ))}
-                        {tier.students.length > 4 && (
+                          );
+                        })}
+                        {tier.students.length > 5 && (
                           <div className="text-center caption text-text-muted py-1">
-                            +{tier.students.length - 4} more students
+                            +{tier.students.length - 5} more on the Triage page
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p className="caption text-text-muted">No students in this tier</p>
+                      <p className="caption text-text-muted">No students in this group</p>
                     )}
-
-                    {/* Recommendation */}
-                    <div className="mt-3 pt-3 border-t border-black/5">
-                      <p className="caption text-text-muted italic">{tier.note}</p>
-                    </div>
                   </div>
                 );
               })}

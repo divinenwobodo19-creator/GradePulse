@@ -412,47 +412,37 @@ Every recorded score for one student, oldest first.
 
 ### POST /triage
 
-Optional `class_id` in the body limits the report to one class of the caller's school.
+The weekly "who needs help" report for a subject, over the caller's own students (a teacher's classes only). Only students with at least one score in the subject are included.
 
-Group students by predicted performance.
+**Request:** `{ "subject": "MATH", "class_id": "...", "as_of": "2026-10-30" }`. `class_id` limits the report to one class; `as_of` reports as of that day, ignoring later tests (default: the date of the latest test in the subject).
 
-**Request:**
-```json
-{
-  "subject": "MATH"
-}
-```
+**How students are grouped:** each student's standing (`current_score`) is the average of their last `recent_tests` (3) tests in the subject up to `as_of`. "This week" is the 7 days ending on `as_of`; `previous_score` is the same average from the tests before this week, so `change` is the movement since last week. Bands: needs help (`remediation`) below 0.40 (F9), `on_track` 0.40 to 0.749 (E8 to B2), `ahead` 0.75 and above (A1).
 
 **Response (200):**
 ```json
 {
-  "subject": "MATH",
-  "total_students": 15,
+  "subject": "MATH", "as_of": "2026-10-30", "week_start": "2026-10-24", "recent_tests": 3,
+  "total_students": 10, "tested_this_week": 10,
   "tiers": {
     "remediation": {
-      "students": [{"student_id": "S005", "name": "Tunde", "average_score": 0.35}],
-      "count": 2,
-      "recommended_difficulty": 1,
-      "note": "Scored below 40% (F9). Needs extra practice."
+      "students": [{ "student_id": "S004", "name": "Tunde Bello", "current_score": 0.22, "predicted_score": 0.22,
+                     "previous_score": 0.22, "change": 0.0, "previous_tier": "remediation", "movement": "steady",
+                     "tested_this_week": true, "latest_score": 0.22, "last_assessed_on": "2026-10-30", "attempts": 3 }],
+      "count": 2, "recommended_difficulty": 1, "note": "Recent average below 40% (F9). Needs extra help now."
     },
-    "on_track": {
-      "students": [...],
-      "count": 8,
-      "recommended_difficulty": 3,
-      "note": "Scored 40-74% (E8 to B2). On track."
-    },
-    "ahead": {
-      "students": [...],
-      "count": 5,
-      "recommended_difficulty": 5,
-      "note": "Scored 75% or above (A1). Ahead of class."
-    }
+    "on_track": { "students": [...], "count": 6, "recommended_difficulty": 3, "note": "..." },
+    "ahead":    { "students": [...], "count": 2, "recommended_difficulty": 5, "note": "..." }
+  },
+  "changes": {
+    "moved_into_help": [], "left_help": [{ "student_id": "S002", "name": "Emeka Nwosu", "current_score": 0.43,
+                                           "previous_score": 0.33, "change": 0.1, "latest_score": 0.62 }],
+    "falling": [...], "rising": [...], "watch": [...]
   },
   "scope": "assessed_only"
 }
 ```
 
----
+`movement` is `new` (no test before this week), `moved_into_help`, `left_help`, `falling` (down 10 points or more), `rising` (up 10 or more) or `steady`. `changes` lists the students in each of those groups, plus `watch`: students whose latest test is below 0.40 but who are not in needs help on their average. Needs help is sorted lowest first, ahead highest first. `predicted_score` equals `current_score` and is kept for older clients; `recommended_difficulty` belongs to the switched-off recommendation engine.
 
 ### POST /calculate-reward
 

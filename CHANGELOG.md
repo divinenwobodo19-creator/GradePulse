@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Weekly triage (3 November 2026)
+
+- **"Who needs help" is now weekly.** Each student is grouped on the average of their last 3 tests in the subject, so an old bad test stops counting and the list follows recent work. Before, every score ever entered was averaged.
+- **Change since last week:** `POST /triage` compares with the tests before this week and reports who moved into or out of needs help, who rose or fell 10 points or more, and who scored below 40% on their latest test without being in needs help yet (`watch`). Optional `as_of` gives the report for an earlier day.
+- **Dashboard:** "Who needs help this week" with the week's date, how many were tested this week, and three boxes: new in needs help, moved out, and watch. Each student shows their change in points.
+- **Triage page:** now the full weekly list with subject and class filters, loaded automatically. The leftover "Run Triage" button, "Recommended Difficulty" panel, raw `assessed_only` badge and "Previous Runs" list are gone, as is "Difficulty: N" on the dashboard.
+- "Needs Intervention" is now "Needs Help" everywhere in the app.
+
 ### Free pilot terms (3 November 2026)
 
 - **`POST /billing/pilot`** (operator key): gives a school a free pilot term, so a pilot school can add its whole roster and print reports and parent progress sheets without paying. Stored as a ₦0 payment with a `pilot_` reference; it ends like a paid term, with the grace period and then the free plan.
