@@ -6,10 +6,18 @@ Provides:
 - Backup rotation with configurable retention
 - Backup restoration with validation
 - Atomic file operations to prevent corruption
+
+SQLite databases are copied with SQLite's own online backup, never as raw
+files: the live database runs in WAL mode, so a plain file copy can miss
+recent writes or catch a half-written page. Restoring goes the same way, into
+the live database, after the copy passes an integrity check. A restore first
+takes a "pre-restore" backup so it can be undone.
 """
 import logging
 import os
 import shutil
+import sqlite3
+import tempfile
 import time
 import json
 import threading
@@ -20,6 +28,39 @@ from dataclasses import dataclass
 
 
 logger = logging.getLogger("gradepulse.backup")
+
+_SQLITE_HEADER = b"SQLite format 3\x00"
+_SIDECARS = ("-wal", "-shm", "-journal")
+
+
+def is_sqlite(path) -> bool:
+    try:
+        with open(path, "rb") as f:
+            return f.read(16) == _SQLITE_HEADER
+    except OSError:
+        return False
+
+
+def copy_sqlite(src_path: str, dest_path: str) -> None:
+    """A consistent copy of a live SQLite database (WAL included)."""
+    src = sqlite3.connect(src_path)
+    dst = sqlite3.connect(dest_path)
+    try:
+        with dst:
+            src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+
+
+def sqlite_ok(path: str) -> bool:
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        conn.close()
 
 
 @dataclass
@@ -70,6 +111,9 @@ class BackupManager:
         self._backup_count = 0
     
     def register_file(self, filepath: str):
+        # A database's -wal/-shm files are folded into its backup copy.
+        if filepath.endswith(_SIDECARS):
+            return
         """Register a file for backup."""
         filepath = os.path.abspath(filepath)
         if filepath not in self._files_to_backup:
@@ -141,7 +185,10 @@ class BackupManager:
             # Atomic copy: write to temp file, then rename
             temp_path = dest.with_suffix(dest.suffix + ".tmp")
             try:
-                shutil.copy2(filepath, temp_path)
+                if is_sqlite(filepath):
+                    copy_sqlite(filepath, str(temp_path))
+                else:
+                    shutil.copy2(filepath, temp_path)
                 temp_path.rename(dest)
                 copied_files.append(filename)
             except Exception as e:
@@ -235,63 +282,97 @@ class BackupManager:
         
         return backups
     
-    def restore_backup(self, backup_path: str) -> bool:
+    def resolve_backup(self, backup_path: str) -> Optional[Path]:
+        """The backup folder for a name or path, only if it is one of ours
+        (directly inside backup_dir, with metadata)."""
+        candidate = Path(backup_path)
+        if not candidate.is_absolute() and len(candidate.parts) == 1:
+            candidate = self.backup_dir / candidate
+        try:
+            resolved = candidate.resolve()
+            inside = resolved.parent == self.backup_dir.resolve()
+        except OSError:
+            return None
+        if not inside or not (resolved / "_backup_meta.json").is_file():
+            return None
+        return resolved
+
+    def restore_backup(self, backup_path: str) -> Optional[Dict]:
         """
         Restore files from a backup.
-        
+
         Args:
-            backup_path: Path to the backup directory
-            
+            backup_path: a backup folder name, or its path inside backup_dir
+
         Returns:
-            True if successful, False otherwise
+            {"restored": [...], "pre_restore": path} if successful, None otherwise.
+            Nothing is changed unless every file in the backup checks out.
         """
-        backup_dir = Path(backup_path)
-        
-        if not backup_dir.exists():
-            logger.error(f"Backup path does not exist: {backup_path}")
-            return False
-        
-        # Read metadata
-        meta_path = backup_dir / "_backup_meta.json"
-        if not meta_path.exists():
-            logger.error(f"No backup metadata found at {meta_path}")
-            return False
-        
-        with open(meta_path) as f:
+        backup_dir = self.resolve_backup(backup_path)
+        if backup_dir is None:
+            logger.error("Not a backup in %s: %s", self.backup_dir, backup_path)
+            return None
+
+        with open(backup_dir / "_backup_meta.json") as f:
             meta = json.load(f)
-        
-        # Restore each file
-        restored = []
-        for filename in meta.get("files", []):
-            src = backup_dir / filename
-            if not src.exists():
-                logger.warning(f"File {filename} not found in backup")
-                continue
-            
-            # Find the original path
-            original_path = None
-            for registered in self._files_to_backup:
-                if os.path.basename(registered) == filename:
-                    original_path = registered
-                    break
-            
-            if original_path is None:
-                logger.warning(f"No registered path for {filename}")
-                continue
-            
-            # Atomic restore
-            temp_path = original_path + ".restore.tmp"
-            try:
-                shutil.copy2(src, temp_path)
-                os.replace(temp_path, original_path)
-                restored.append(filename)
-            except Exception as e:
-                logger.error(f"Could not restore {filename}: {e}")
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-        
-        return len(restored) > 0
-    
+
+        by_name = {os.path.basename(p): p for p in self._files_to_backup}
+        plan = []  # (source in backup, live path, kind)
+        with tempfile.TemporaryDirectory() as work:
+            for filename in meta.get("files", []):
+                if filename.endswith(_SIDECARS):
+                    continue  # older backups: folded in with their database below
+                src = backup_dir / filename
+                target = by_name.get(filename)
+                if not src.exists() or target is None:
+                    logger.warning("Skipping %s: missing from the backup or not a registered file", filename)
+                    continue
+                if is_sqlite(src):
+                    # Work on a copy (with any -wal from an older backup) so the
+                    # backup itself is never modified, then check it.
+                    staged = os.path.join(work, filename)
+                    shutil.copy2(src, staged)
+                    for suffix in ("-wal",):
+                        if (backup_dir / (filename + suffix)).exists():
+                            shutil.copy2(backup_dir / (filename + suffix), staged + suffix)
+                    if not sqlite_ok(staged):
+                        logger.error("Backup database %s fails its integrity check; nothing restored", src)
+                        return None
+                    plan.append((staged, target, "sqlite"))
+                else:
+                    if filename.endswith(".json"):
+                        try:
+                            with open(src) as f:
+                                json.load(f)
+                        except ValueError:
+                            logger.error("Backup file %s is not valid JSON; nothing restored", src)
+                            return None
+                    # Staged too: the pre-restore backup below may rotate
+                    # this backup folder away.
+                    staged = os.path.join(work, filename)
+                    shutil.copy2(src, staged)
+                    plan.append((staged, target, "file"))
+
+            if not plan:
+                return None
+
+            pre = self.create_backup("pre-restore")
+            restored = []
+            for src, target, kind in plan:
+                try:
+                    if kind == "sqlite":
+                        copy_sqlite(src, target)  # through SQLite, into the live database
+                    else:
+                        temp_path = target + ".restore.tmp"
+                        shutil.copy2(src, temp_path)
+                        os.replace(temp_path, target)
+                    restored.append(os.path.basename(target))
+                except Exception as e:
+                    logger.error("Could not restore %s: %s", os.path.basename(target), e)
+            if not restored:
+                return None
+            return {"restored": restored, "pre_restore": pre.path if pre else None}
+
     def get_latest_backup(self) -> Optional[BackupInfo]:
         """Get the most recent backup."""
         backups = self.list_backups()

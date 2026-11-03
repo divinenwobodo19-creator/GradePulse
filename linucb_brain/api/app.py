@@ -418,11 +418,8 @@ async def lifespan(app: FastAPI):
         backup_manager.register_file(BRAIN_STATE_PATH)
         backup_manager.register_file(CONFIG_PATH)
         if USER_DB_PATH:
+            # Copied through SQLite's backup API, uncheckpointed WAL writes included.
             backup_manager.register_file(USER_DB_PATH)
-            # SQLite WAL-mode sidecars carry uncheckpointed writes.
-            for suffix in ("-wal", "-shm"):
-                if os.path.exists(USER_DB_PATH + suffix):
-                    backup_manager.register_file(USER_DB_PATH + suffix)
         # Create initial backup
         backup_manager.create_backup("startup")
         # Start periodic backups
@@ -1055,31 +1052,38 @@ def list_backups(_: None = Depends(require_operator)):
 
 @app.post("/backup/restore")
 def restore_backup(backup_path: str, _: None = Depends(require_operator)):
-    """Restore brain state from a backup. Requires server restart after."""
+    """Restore the database and engine state from one of the server's backups
+    (its folder name from GET /backups, or its path). A "pre-restore" backup is
+    taken first, so a restore can itself be undone. The engine is reloaded
+    from the restored file; nothing in memory is written over it."""
+    global brain_instance
     if backup_manager is None:
         raise HTTPException(status_code=503, detail="Backup system not enabled")
-    
-    # Stop auto-save before restoring
+    if backup_manager.resolve_backup(backup_path) is None:
+        raise HTTPException(status_code=404, detail="No such backup on this server")
+
     if synchronizer is not None:
-        synchronizer.stop_auto_save()
-    
-    success = backup_manager.restore_backup(backup_path)
-    
-    if not success:
-        # Restart auto-save if restore failed
+        synchronizer.stop_auto_save()  # so it cannot save the old engine over the restored file
+    try:
+        result = backup_manager.restore_backup(backup_path)
+        if result is None:
+            raise HTTPException(status_code=500, detail="Backup restoration failed; nothing was changed")
+        if os.path.basename(BRAIN_STATE_PATH) in result["restored"]:
+            brain_instance = _load_brain()
+            if synchronizer is not None:
+                synchronizer.set_brain(brain_instance)
+    finally:
         if synchronizer is not None:
             synchronizer.start_auto_save(lambda path: brain_instance.save(path))
-        raise HTTPException(status_code=500, detail="Backup restoration failed")
-    
-    # Save current state to ensure consistency
-    if synchronizer is not None:
-        synchronizer.save_brain(brain_instance.save)
-        synchronizer.start_auto_save(lambda path: brain_instance.save(path))
-    
+
+    logger.warning("Restored %s from backup %s (pre-restore copy: %s)",
+                   ", ".join(result["restored"]), backup_path, result["pre_restore"])
     return {
         "status": "restored",
         "backup_path": backup_path,
-        "message": "Brain state restored. Reload may be required.",
+        "restored": result["restored"],
+        "pre_restore_backup": result["pre_restore"],
+        "message": "Restored. Run only one API worker, or restart the others so they reload.",
     }
 
 

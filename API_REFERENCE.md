@@ -658,17 +658,21 @@ List all available backups.
 
 ### POST /backup/restore
 
-Restore from a backup.
+Operator only. Restores the user database and engine state from one of this server's backups.
 
 **Query Parameters:**
-- `backup_path` (required) — path to backup directory
+- `backup_path` (required): the backup's folder name from `GET /backups` (e.g. `20261103_142419_793211`) or its path. Anything outside `BACKUP_DIR` is refused with 404.
+
+Every file is checked before anything changes (the database must pass SQLite's integrity check, JSON must parse); if one fails, nothing is restored (500). A `pre-restore` backup of the current state is taken first, so a restore can be undone by restoring that one. The database is written through SQLite into the live file, and the engine is reloaded from the restored state.
 
 **Response (200):**
 ```json
 {
   "status": "restored",
-  "backup_path": "backups/20260831_120000_000000",
-  "message": "Brain state restored. Reload may be required."
+  "backup_path": "20261103_142419_793211",
+  "restored": ["brain_state.json", "gradepulse_users.db"],
+  "pre_restore_backup": "/data/backups/20261103_150102_000001",
+  "message": "Restored. Run only one API worker, or restart the others so they reload."
 }
 ```
 

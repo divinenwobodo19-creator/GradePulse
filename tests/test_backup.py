@@ -114,8 +114,9 @@ class TestBackupManager:
             json.dump(modified_data, f)
         
         # Restore
-        success = manager.restore_backup(backup.path)
-        assert success is True
+        result = manager.restore_backup(backup.path)
+        assert result["restored"] == ["brain_state.json"]
+        assert result["pre_restore"] is not None  # the state just before, kept
         
         # Verify restored
         with open(brain_path) as f:
@@ -124,8 +125,7 @@ class TestBackupManager:
     
     def test_restore_nonexistent_backup(self, tmp_path):
         manager = BackupManager(backup_dir=str(tmp_path / "backups"), backup_interval=0)
-        success = manager.restore_backup("/nonexistent/path")
-        assert success is False
+        assert manager.restore_backup("/nonexistent/path") is None
     
     def test_get_latest_backup(self, tmp_path):
         brain_path = tmp_path / "brain_state.json"
