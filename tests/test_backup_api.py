@@ -131,13 +131,13 @@ class TestListBackups:
 # ── POST /backup/restore ──────────────────────────────────────────────────────
 
 class TestRestoreBackup:
-    def test_restore_nonexistent_backup_returns_500(self, token):
+    def test_restore_nonexistent_backup_returns_404(self, token):
         resp = requests.post(
             f"{BASE_URL}/backup/restore",
             params={"backup_path": "/nonexistent/path"},
             headers=_headers(token)
         )
-        assert resp.status_code == 500
+        assert resp.status_code == 404
 
     def test_restore_backup_without_auth_returns_401(self, api_ready):
         resp = requests.post(

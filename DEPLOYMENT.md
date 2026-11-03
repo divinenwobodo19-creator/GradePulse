@@ -233,13 +233,17 @@ docker cp $(docker compose ps -q api):/data/backups ./local-backups
 
 ### Restore
 
-> **Maintenance window required.** Restore overwrites the live model + registry + user DB. Stop writes first, restore, then restart.
+> Restore replaces every school's data with the backup's. Do it when schools are not entering scores. A `pre-restore` backup of the current state is taken first, so a mistaken restore can be undone by restoring that one.
 
 ```bash
-curl -X POST "http://localhost:8000/backup/restore?backup_path=/data/backups/20260927_100000_123456" \
+curl -s http://localhost:8000/backups -H "X-Operator-Key: $OPERATOR_KEY"   # pick a folder name
+curl -X POST "http://localhost:8000/backup/restore?backup_path=20260927_100000_123456" \
   -H "X-Operator-Key: $OPERATOR_KEY"
-docker compose restart api
 ```
+
+The backup is checked first (database integrity, JSON) and nothing changes if it fails. The database is written through SQLite into the live file and the engine reloads, so no restart is needed with one worker; with several, restart the API afterwards so every worker reloads.
+
+Backups copy the database with SQLite's online backup, so writes still in the `-wal` file are included and no `-wal`/`-shm` files are stored. Older backups that hold them restore correctly too.
 
 For a full-volume restore from a host copy:
 

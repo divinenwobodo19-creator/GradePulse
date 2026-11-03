@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Safe backups and restore (3 November 2026)
+
+- **Backups copy the database through SQLite** (online backup API) instead of copying the live file, which in WAL mode could miss recent writes or catch a half-written page. No loose `-wal`/`-shm` files are stored any more.
+- **Restore is checked and reversible:** only folders inside `BACKUP_DIR` can be restored (by name or path; others 404), every file is checked first (SQLite integrity check, valid JSON) and nothing changes if one fails, and a `pre-restore` backup is taken first.
+- **Restore no longer undoes itself:** before, the endpoint saved the running engine over the `brain_state.json` it had just restored. It now reloads the engine from the restored file, and writes the database through SQLite into the live file.
+
 ### Weekly triage (3 November 2026)
 
 - **"Who needs help" is now weekly.** Each student is grouped on the average of their last 3 tests in the subject, so an old bad test stops counting and the list follows recent work. Before, every score ever entered was averaged.
