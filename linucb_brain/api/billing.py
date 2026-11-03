@@ -17,6 +17,12 @@ stays visible: the free plan only holds back adding students past the limit,
 entering scores while over it, and the reports. With billing not configured
 (no Paystack key or price) nothing is limited.
 
+Pilot terms: the operator can give a school a free term (POST /billing/pilot,
+operator key). It is stored as a payment of ₦0 with a "pilot_" reference, so
+the school is on a paid plan until it ends, then gets the usual grace days and
+falls back to the free plan. A real payment during a pilot starts a full term
+of its own rather than topping up the pilot.
+
 Settings (environment):
   PAYSTACK_SECRET_KEY       sk_test_... or sk_live_...; billing is off without it
   PRICE_PER_STUDENT_NAIRA   price per student per term, whole naira
@@ -49,6 +55,7 @@ PAYSTACK_BASE_URL = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
 CURRENCY = "NGN"
 MAX_STUDENTS = 100_000
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PILOT_PREFIX = "pilot_"
 
 
 # ── Settings (read on each call so a restart is not needed in tests) ─────────
@@ -135,13 +142,23 @@ def _apply_charge(data: dict) -> None:
         return
     now = _now()
     # A payment made during a paid term is a top-up and ends with that term.
-    _, term_end = _current_term(store.list_paid_payments(payment["school_id"]), now)
+    # A pilot term does not count: paying during a pilot starts a full term.
+    _, term_end = _current_term(_paid_only(store.list_paid_payments(payment["school_id"])), now)
     period_end = term_end or now + timedelta(days=_term_days())
     if store.complete_payment(reference, now.isoformat(), now.isoformat(), period_end.isoformat()):
         logger.info("Payment %s recorded for school %s (%s students)", reference, payment["school_id"], payment["students"])
 
 
 # ── Plans ────────────────────────────────────────────────────────────────────
+
+def _is_pilot(payment: dict) -> bool:
+    return payment["reference"].startswith(PILOT_PREFIX)
+
+
+def _paid_only(payments: List[dict]) -> List[dict]:
+    """Payments with money behind them: pilot terms left out."""
+    return [p for p in payments if not _is_pilot(p)]
+
 
 def _end(payment: dict) -> Optional[datetime]:
     return datetime.fromisoformat(payment["period_end"]) if payment.get("period_end") else None
@@ -176,7 +193,7 @@ def school_plan(school_id: str) -> dict:
     students = store.count_students(school_id)
     free = _free_students()
     plan = {"students": students, "free_students": free, "paid_students": 0,
-            "paid_until": None, "grace_until": None}
+            "paid_until": None, "grace_until": None, "pilot_until": None}
     if not _configured():
         return {**plan, "state": "not_configured", "student_limit": None, "reports": True}
     payments = store.list_paid_payments(school_id)
@@ -184,14 +201,26 @@ def school_plan(school_id: str) -> dict:
     paid, term_end = _current_term(payments, now)
     if term_end is not None:
         state = "over_limit" if students > paid else "active"
+        pilot_ends = [_end(p) for p in payments if _is_pilot(p) and _end(p) > now]
+        pilot_until = max(pilot_ends).isoformat() if pilot_ends else None
         return {**plan, "state": state, "paid_students": paid, "paid_until": term_end.isoformat(),
-                "student_limit": max(paid, free), "reports": True}
+                "pilot_until": pilot_until, "student_limit": max(paid, free), "reports": True}
     paid, last_end = _last_term(payments)
     if last_end is not None and now < last_end + timedelta(days=_grace_days()):
         return {**plan, "state": "grace", "paid_students": paid, "paid_until": last_end.isoformat(),
                 "grace_until": (last_end + timedelta(days=_grace_days())).isoformat(),
                 "student_limit": max(paid, free), "reports": True}
     return {**plan, "state": "expired" if payments else "unpaid", "student_limit": free, "reports": False}
+
+
+def grant_pilot(school_id: str, students: int, days: int, granted_by: str = "operator") -> dict:
+    """Give a school a free pilot term starting now. Returns the payment row."""
+    now = _now()
+    reference = f"{PILOT_PREFIX}{uuid.uuid4().hex[:20]}"
+    store.create_payment(reference, school_id, students, 0, granted_by)
+    store.complete_payment(reference, now.isoformat(), now.isoformat(), (now + timedelta(days=days)).isoformat())
+    logger.info("Pilot term %s granted to school %s: %s students for %s days", reference, school_id, students, days)
+    return store.get_payment(reference)
 
 
 def _payment_required(user: dict, reason: str, admin_action: str = "Pay for the term on the Billing page.") -> HTTPException:
@@ -241,6 +270,12 @@ class CheckoutRequest(BaseModel):
     email: Optional[str] = Field(None, max_length=200)
 
 
+class PilotRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200, description="The school admin's email")
+    students: int = Field(1000, ge=1, le=MAX_STUDENTS)
+    days: Optional[int] = Field(None, ge=1, le=366, description="Defaults to one term (TERM_DAYS)")
+
+
 class VerifyRequest(BaseModel):
     reference: str = Field(..., min_length=1, max_length=100)
 
@@ -255,14 +290,20 @@ def billing_status(school_id: str) -> dict:
         "price_per_student": _price_naira(),
         "currency": CURRENCY,
         "term_days": _term_days(),
-        # A payment now adds students to the running term instead of starting one.
-        "top_up": plan["state"] in ("active", "over_limit"),
+        # A payment now adds students to the running paid term instead of
+        # starting one. A pilot term alone is not topped up.
+        "top_up": plan["state"] in ("active", "over_limit") and _in_paid_term(school_id),
         "payments": [
             {"reference": p["reference"], "students": p["students"], "amount_naira": p["amount_kobo"] // 100,
-             "paid_at": p["paid_at"], "period_end": p["period_end"]}
+             "paid_at": p["paid_at"], "period_end": p["period_end"], "pilot": _is_pilot(p)}
             for p in payments[:20]
         ],
     }
+
+
+def _in_paid_term(school_id: str) -> bool:
+    _, term_end = _current_term(_paid_only(store.list_paid_payments(school_id)), _now())
+    return term_end is not None
 
 
 def _admin_school_id(user: dict) -> str:
@@ -309,7 +350,7 @@ def checkout(request: CheckoutRequest, user: dict = Depends(require_admin)):
     if not _EMAIL_RE.match(email):
         raise HTTPException(status_code=422, detail="Enter a valid email address for the receipt")
     plan = school_plan(school_id)
-    if plan["state"] not in ("active", "over_limit") and request.students < plan["students"]:
+    if not _in_paid_term(school_id) and request.students < plan["students"]:
         # A new term covers the whole school; top-ups during a term can be any size.
         raise HTTPException(status_code=422, detail=f"Pay for at least {plan['students']} students: "
                                                     f"that is how many the school has.")

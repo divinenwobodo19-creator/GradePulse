@@ -594,6 +594,19 @@ def reset_password(http_request: Request, request: ResetPasswordRequest):
     return {"status": "password_updated"}
 
 
+@app.post("/billing/pilot")
+def grant_pilot_term(request: billing.PilotRequest, _: None = Depends(require_operator)):
+    """Operator: give the school of this admin a free pilot term (reports
+    included, no free-plan limit up to `students`). See billing.py."""
+    account = get_user_by_email(request.email)
+    if not account or account.get("role") != "admin" or not account.get("school_id"):
+        raise HTTPException(status_code=404, detail="No school admin with that email")
+    days = request.days or billing._term_days()
+    payment = billing.grant_pilot(account["school_id"], request.students, days)
+    return {"reference": payment["reference"], "school_id": account["school_id"],
+            "pilot_until": payment["period_end"], **billing.billing_status(account["school_id"])}
+
+
 @app.post("/auth/operator-reset", response_model=PasswordResetLink)
 def operator_reset(request: OperatorResetRequest, _: None = Depends(require_operator)):
     """For an admin who is locked out: the operator issues the reset code."""

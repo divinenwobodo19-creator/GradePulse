@@ -391,3 +391,71 @@ def test_failed_charge_is_final(client, school, fake):
     reference = client.post("/billing/checkout", headers=school["h"], json={"students": 3}).json()["reference"]
     fake.charges[reference] = {"reference": reference, "status": "failed", "amount": 150000, "currency": "NGN"}
     assert client.post("/billing/verify", headers=school["h"], json={"reference": reference}).json()["payment_status"] == "failed"
+
+
+# ── Pilot terms (operator) ───────────────────────────────────────────────────
+
+from conftest import OPERATOR_HEADERS  # noqa: E402
+
+
+def _pilot(client, school, **extra):
+    return client.post("/billing/pilot", headers=OPERATOR_HEADERS,
+                       json={"email": school["admin"]["email"], **extra})
+
+
+def test_pilot_needs_the_operator_key_and_a_school_admin(client, school, teacher):
+    body = {"email": school["admin"]["email"]}
+    assert client.post("/billing/pilot", json=body).status_code == 403
+    assert client.post("/billing/pilot", headers=school["h"], json=body).status_code == 403
+    assert client.post("/billing/pilot", headers={"X-Operator-Key": "wrong"}, json=body).status_code == 403
+    r = client.post("/billing/pilot", headers=OPERATOR_HEADERS, json={"email": "nobody@bill.local"})
+    assert r.status_code == 404
+    assert client.get("/billing", headers=school["h"]).json()["state"] == "unpaid"
+
+
+def test_pilot_lifts_the_free_limit_and_includes_reports(client, school, teacher, fake):
+    r = _pilot(client, school, students=200, days=90)
+    assert r.status_code == 200, r.text
+    assert r.json()["reference"].startswith("pilot_")
+    for i in range(3, FREE + 5):  # past the free plan
+        assert _add(client, school["h"], f"B{i}").status_code == 200
+    assert _score(client, school["h"]).status_code == 200
+    assert client.get("/scores", headers=school["h"]).status_code == 200
+    assert client.get("/scores", headers=teacher["h"]).status_code == 200
+
+    status = client.get("/billing", headers=school["h"]).json()
+    assert (status["state"], status["paid_students"], status["reports"]) == ("active", 200, True)
+    assert status["pilot_until"] == status["paid_until"]
+    assert status["top_up"] is False  # a payment would start a full term
+    assert [(p["pilot"], p["amount_naira"]) for p in status["payments"]] == [(True, 0)]
+    assert client.get("/billing/reminder", headers=school["h"]).json()["show"] is False
+    assert fake.calls == []  # Paystack is never involved
+
+
+def test_pilot_defaults_to_one_term(client, school):
+    status = _pilot(client, school).json()
+    end = datetime.fromisoformat(status["pilot_until"])
+    assert timedelta(days=119) < end - datetime.now(timezone.utc) <= timedelta(days=120)
+    assert status["paid_students"] == 1000
+
+
+def test_paying_during_a_pilot_starts_a_full_term(client, school, fake):
+    _pilot(client, school, students=200, days=10)
+    r = client.post("/billing/checkout", headers=school["h"], json={"students": 2})
+    assert r.status_code == 422  # a new term covers the whole school, pilot or not
+    status = _pay(client, school, fake, 3)
+    assert status["payment_status"] == "success"
+    paid = [p for p in status["payments"] if not p["pilot"]][0]
+    left = datetime.fromisoformat(paid["period_end"]) - datetime.now(timezone.utc)
+    assert left > timedelta(days=119)  # not cut short to the pilot's 10 days
+    assert status["pilot_until"] is not None and status["top_up"] is True
+
+
+def test_pilot_ends_like_a_term_grace_then_free_plan(client, school):
+    _pilot(client, school, students=200)
+    _end_terms(school, days_ago=1)
+    status = client.get("/billing", headers=school["h"]).json()
+    assert (status["state"], status["reports"], status["pilot_until"]) == ("grace", True, None)
+    _end_terms(school, days_ago=15)
+    status = client.get("/billing", headers=school["h"]).json()
+    assert (status["state"], status["student_limit"], status["reports"]) == ("expired", FREE, False)

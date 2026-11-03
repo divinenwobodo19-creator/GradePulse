@@ -568,10 +568,11 @@ Admin only. The school's standing:
 { "state": "active", "configured": true, "price_per_student": 500, "currency": "NGN", "term_days": 120,
   "students": 41, "free_students": 40, "student_limit": 41, "reports": true, "top_up": true,
   "paid_students": 41, "paid_until": "2027-02-10T09:00:00+00:00", "grace_until": null,
-  "payments": [{ "reference": "gp_...", "students": 41, "amount_naira": 20500, "paid_at": "...", "period_end": "..." }] }
+  "pilot_until": null,
+  "payments": [{ "reference": "gp_...", "students": 41, "amount_naira": 20500, "paid_at": "...", "period_end": "...", "pilot": false }] }
 ```
 
-`state` is `not_configured`, `unpaid` (free plan), `active`, `over_limit` (paid, but more students now than paid for), `grace` (the term ended less than `GRACE_DAYS` ago; `grace_until` says when it falls back) or `expired` (free plan again). `student_limit` is `null` when nothing is limited. `reports` says whether printable reports are included. `top_up` is true during a paid term: a payment then adds students to it instead of starting a new one.
+`state` is `not_configured`, `unpaid` (free plan), `active`, `over_limit` (paid, but more students now than paid for), `grace` (the term ended less than `GRACE_DAYS` ago; `grace_until` says when it falls back) or `expired` (free plan again). `student_limit` is `null` when nothing is limited. `reports` says whether printable reports are included. `top_up` is true during a paid term: a payment then adds students to it instead of starting a new one. A free pilot term on its own does not count, so `top_up` stays false and a payment starts a full term. `pilot_until` is set while a pilot term runs; pilot rows in `payments` have `"pilot": true` and `amount_naira: 0`.
 
 ### GET /billing/reminder
 
@@ -584,6 +585,10 @@ Admin only. Body `{ "students": 41 }`. Outside a paid term the payment starts a 
 ### POST /billing/verify
 
 Admin only, for the caller's school. Body `{ "reference": "gp_..." }`. Asks Paystack about a pending payment and records it if the charge succeeded for the expected amount. Returns the `GET /billing` body plus `payment_status` (`success`, `pending`, `failed`, `abandoned`, `amount_mismatch`, ...). A new term runs `TERM_DAYS` from the payment; a top-up ends with the term it adds to.
+
+### POST /billing/pilot
+
+Operator only (`X-Operator-Key`). Gives the school of a school admin a free pilot term starting now. Body `{ "email": "admin@school.ng", "students": 300, "days": 100 }`; `students` defaults to 1000 and `days` to `TERM_DAYS`. Stored as a ₦0 payment with a `pilot_...` reference, so the school is `active`, with reports, up to `students` students. When it ends the usual grace period and free plan follow. Returns the `GET /billing` body plus `reference`, `school_id` and `pilot_until`. 404 if the email is not a school admin; 403 without the key.
 
 ### POST /billing/webhook
 

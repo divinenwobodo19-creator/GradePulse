@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Free pilot terms (3 November 2026)
+
+- **`POST /billing/pilot`** (operator key): gives a school a free pilot term, so a pilot school can add its whole roster and print reports and parent progress sheets without paying. Stored as a ₦0 payment with a `pilot_` reference; it ends like a paid term, with the grace period and then the free plan.
+- A payment made during a pilot starts a full term instead of topping up the pilot (which would have ended with it).
+- The Billing page shows "Free pilot term" and lists the pilot as "Free pilot" in the payments table. `GET /billing` adds `pilot_until` and a `pilot` flag on each payment.
+
 ### Security update (24 October 2026)
 
 - **python-jose replaced by PyJWT 2.15.1** for login tokens. python-jose 3.5.0 has a critical, unpatched advisory (algorithm-confusion guard bypassed by DER-encoded public keys). GradePulse only uses HS256 with a shared secret, but the library has no fix. Existing tokens keep working; forged and unsigned tokens are refused.

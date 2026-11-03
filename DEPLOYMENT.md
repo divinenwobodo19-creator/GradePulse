@@ -201,6 +201,19 @@ Schools pay per student, per term, from the Billing page (admins only). To switc
 
 Plans: a school that has not paid is on the **free plan**, up to `FREE_STUDENTS` (default 40) students with everything except printable reports. A paid term covers the students paid for (never fewer than the free plan), reports and parent progress sheets included; paying for extra students during a term tops it up until the term ends. When a term ends the school keeps its paid plan for `GRACE_DAYS` (default 14), then falls back to the free plan. Nothing is deleted and the data always stays visible; the free plan only holds back adding students past the limit, entering scores while over it, and the reports. The admin sees a reminder bar when a term has ended, when the school has more students than it paid for, or when a free school reaches its limit. Without the Paystack settings nothing is limited.
 
+### Giving a school a free pilot term
+
+For a pilot school, give its admin's school a free term once they have signed up. It lifts the free-plan limit up to `students` and includes reports and parent progress sheets, without any payment:
+
+```bash
+curl -X POST http://localhost:8000/billing/pilot \
+  -H "X-Operator-Key: $OPERATOR_KEY" -H "Content-Type: application/json" \
+  -d '{"email":"admin@school.ng","students":600,"days":100}'
+# -> {"reference":"pilot_...","pilot_until":"...","state":"active",...}
+```
+
+`days` defaults to one term (`TERM_DAYS`) and `students` to 1000. The school's Billing page shows "Free pilot term" until it ends; then the usual `GRACE_DAYS` and the free plan follow. Paying during a pilot starts a full term of its own.
+
 ### A locked-out school admin
 
 Teachers get reset links from their school admin in Settings. If the admin themselves is locked out, issue a code with the operator key and send them the link:
