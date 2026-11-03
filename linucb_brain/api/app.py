@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Optional
+from datetime import date
 import hmac
 import json
 import logging
@@ -19,7 +20,7 @@ import numpy as np
 
 from .. import __version__
 from ..brain import Brain
-from ..core.triage import build_triage_report
+from ..core.triage import build_weekly_triage
 from ..models.student import Student
 from ..core.reward import calculate_reward
 from ..sync import BrainSynchronizer
@@ -950,19 +951,22 @@ def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_use
 @app.post("/triage")
 def triage(request: TriageRequest, user: dict = Depends(get_current_user)):
     # Triage is a school report over recorded scores: only the caller's own
-    # students who have been assessed in the subject are tiered.
+    # students who have been assessed in the subject are tiered, on their
+    # recent tests, with the change since last week (core/triage.py).
     if request.class_id:
         _require_class_in_scope(user, request.class_id)
-    results = []
-    for rec in store.list_students(user.get("school_id", ""), request.class_id or "", class_ids=_class_scope(user)):
-        grades = rec.grade_history.get(request.subject, [])
-        if grades:
-            results.append({
-                "student_id": rec.student_id, "name": rec.name,
-                "predicted": min(1.0, max(0.0, sum(grades) / len(grades))),
-                "attempts": len(grades),
-            })
-    return build_triage_report(request.subject, results)
+    school_id = user.get("school_id", "")
+    scope = _class_scope(user)
+    students = store.list_students(school_id, request.class_id or "", class_ids=scope)
+    dated: Dict[str, list] = {}
+    for row in store.list_school_scores(school_id, request.class_id or "", class_ids=scope,
+                                        subject=request.subject):
+        dated.setdefault(row["student_id"], []).append((date.fromisoformat(row["assessed_on"]), row["score"]))
+    return build_weekly_triage(
+        request.subject,
+        [{"student_id": r.student_id, "name": r.name, "scores": dated.get(r.student_id, [])} for r in students],
+        as_of=request.as_of,
+    )
 
 
 @app.post("/calculate-reward")

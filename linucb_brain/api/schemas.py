@@ -222,6 +222,7 @@ class SubjectsPayload(BaseModel):
 class TriageRequest(BaseModel):
     subject: str
     class_id: Optional[str] = None  # limit the report to one class
+    as_of: Optional[date] = None  # report as of this day; default: the latest test in the subject
 
 class UpdateStudentRequest(BaseModel):
     name: Optional[str] = None

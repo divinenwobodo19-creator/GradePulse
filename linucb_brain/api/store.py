@@ -521,11 +521,16 @@ def list_scores(student_pk: int) -> List[dict]:
     return [dict(r) for r in rows]
 
 
-def list_school_scores(school_id: str, class_id: str = "", class_ids: Optional[Iterable[str]] = None) -> List[dict]:
-    """Every recorded score in a school (or one class, or a teacher's classes), oldest first."""
+def list_school_scores(school_id: str, class_id: str = "", class_ids: Optional[Iterable[str]] = None,
+                       subject: str = "") -> List[dict]:
+    """Every recorded score in a school (or one class, or a teacher's classes,
+    or one subject), oldest first."""
     if not school_id:
         return []
     extra, extra_params = _class_filter("st.class_id", class_id, class_ids)
+    if subject:
+        extra += " AND sc.subject = ?"
+        extra_params = [*extra_params, subject]
     query = (
         "SELECT st.student_id, sc.subject, sc.score, sc.assessed_on, sc.label "
         "FROM scores sc JOIN students st ON st.id = sc.student_pk "

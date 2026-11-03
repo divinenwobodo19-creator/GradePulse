@@ -14,6 +14,8 @@
 
 > **Contract addition (2026-10-12, unreleased) — passwords:** `POST /auth/change-password` returns a new token (store it; older tokens stop working). `GET /members` and `POST /members/{id}/password-reset` (admin) issue a single-use reset code that `POST /auth/reset-password` redeems. A 401 on any request can now also mean "password changed elsewhere". See `API_REFERENCE.md` → Passwords.
 
+> **Contract addition (2026-11-03) — weekly triage:** `POST /triage` takes an optional `as_of` date and tiers each student on the average of their last 3 tests (`current_score`; `predicted_score` is kept equal to it). Each student adds `previous_score`, `change`, `previous_tier`, `movement`, `tested_this_week`, `latest_score` and `last_assessed_on`; the report adds `as_of`, `week_start`, `recent_tests`, `tested_this_week` and `changes` (`moved_into_help`, `left_help`, `falling`, `rising`, `watch`). Existing fields are unchanged. See `API_REFERENCE.md` → POST /triage.
+
 > **Contract change (2026-10-14, unreleased) — teacher scope:** a teacher's student, score, triage, report and class listings now cover only the classes assigned in `PUT /members/{id}/classes` (`GET /members` returns `class_ids`). Teachers get 403 on `DELETE /students/{id}`, class-list imports, and `POST`/`PUT /classes`; a class outside their scope given as `class_id` is 403, and a student outside it is 404.
 
 ---
@@ -156,7 +158,7 @@ All routes require the token **except**: `/health`, `/`, and the three `/auth/*`
 | POST | `/recommend` | `{student_id, topic?, top_n?=1}` | **Always a JSON array.** `top_n=1` → `[one content object]`; `top_n>1` → `[n objects]`; `[]` = nothing to recommend. Normalised at the backend (2026-09-27) so the shape no longer changes with `top_n`. |
 | POST | `/update` | `{student_id, content_id, reward(-1…1)}` | `{status: "success"}` |
 | POST | `/bulk-update` | `{entries: [{student_id, subject, score(0…1)}]}` | result object |
-| POST | `/triage` | `{subject}` | tiering report (see below) |
+| POST | `/triage` | `{subject, class_id?, as_of?}` | weekly tiering report (see below and `API_REFERENCE.md`) |
 | POST | `/calculate-reward` | `{before_score, after_score, completed, time_spent_ratio?=1.0, engaged?=true, churned?=false}` | `{reward}` |
 | GET | `/summary` | — | brain summary (see below) |
 | POST | `/save` | — | `{status: "saved", path}` |

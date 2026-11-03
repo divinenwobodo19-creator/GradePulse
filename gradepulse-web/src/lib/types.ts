@@ -121,11 +121,20 @@ export interface BrainSummary {
   last_neural_score: number | null;
 }
 
+export type TriageMovement = "new" | "moved_into_help" | "left_help" | "falling" | "rising" | "steady";
+
 export interface TriageStudent {
   student_id: string;
   name: string;
-  predicted_score: number;
-  average_score?: number | null;
+  predicted_score: number; // same as current_score; kept for older servers
+  current_score?: number; // average of the last `recent_tests` tests
+  previous_score?: number | null; // the same, from the tests before this week
+  change?: number | null; // current - previous
+  previous_tier?: string | null;
+  movement?: TriageMovement;
+  tested_this_week?: boolean;
+  latest_score?: number;
+  last_assessed_on?: string;
   attempts: number;
 }
 
@@ -136,10 +145,25 @@ export interface TriageTier {
   note: string;
 }
 
+export interface TriageChange {
+  student_id: string;
+  name: string;
+  current_score: number;
+  previous_score: number | null;
+  change: number | null;
+  latest_score?: number;
+}
+
 export interface TriageResult {
   subject: string;
+  as_of?: string | null; // the report's day: the latest test in the subject by default
+  week_start?: string | null;
+  recent_tests?: number;
   total_students: number;
+  tested_this_week?: number;
   tiers: Record<string, TriageTier>;
+  // watch: latest test below 40% but not (yet) in needs help on the average
+  changes?: Record<"moved_into_help" | "left_help" | "falling" | "rising" | "watch", TriageChange[]>;
   scope: string;
 }
 
@@ -200,19 +224,19 @@ export const TIER_LABELS: Record<string, { label: string; color: string; badgeCl
     label: "Ahead",
     color: "#10b981",
     badgeClass: "badge-success",
-    description: "Scored 75%+ (A1). Give advanced materials.",
+    description: "Recent average 75% or above (A1).",
   },
   on_track: {
     label: "On Track",
     color: "#3b82f6",
     badgeClass: "badge-info",
-    description: "Scored 40-74% (E8-B2). Standard curriculum.",
+    description: "Recent average 40 to 74% (E8 to B2).",
   },
   remediation: {
-    label: "Needs Intervention",
+    label: "Needs Help",
     color: "#ef4444",
     badgeClass: "badge-danger",
-    description: "Below 40% (F9). Extra practice needed.",
+    description: "Recent average below 40% (F9)."
   },
 };
 
