@@ -21,8 +21,16 @@ const STATE_TEXT: Record<string, { title: string; tone: string }> = {
   not_configured: { title: "Online payment not set up", tone: "badge-neutral" },
 };
 
+// A pilot alone (no paid term running alongside it) is shown as the pilot.
+function onPilotOnly(status: BillingStatus): boolean {
+  return status.state !== "grace" && status.pilot_until !== null && !status.top_up;
+}
+
 function planText(status: BillingStatus): string {
   const free = status.free_students;
+  if (onPilotOnly(status)) {
+    return `Your school is on a free pilot term for up to ${status.paid_students} students until ${formatDate(status.pilot_until)}. Printable reports and parent progress sheets are included. To keep them after the pilot, pay for the term before it ends.`;
+  }
   switch (status.state) {
     case "active":
       return `Paid for ${status.paid_students} students until ${formatDate(status.paid_until)}. Printable reports and parent progress sheets are included.`;
@@ -110,7 +118,11 @@ function Billing() {
   const count = Math.max(1, Math.floor(Number(students || suggested)));
   const tooFew = count < minStudents;
   const price = status?.price_per_student ?? 0;
-  const state = status ? STATE_TEXT[status.state] : null;
+  const state = status
+    ? onPilotOnly(status)
+      ? { title: "Free pilot term", tone: "badge-success" }
+      : STATE_TEXT[status.state]
+    : null;
 
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -234,7 +246,7 @@ function Billing() {
                       <tr key={p.reference}>
                         <td>{formatDate(p.paid_at)}</td>
                         <td className="num">{p.students}</td>
-                        <td className="num">{naira(p.amount_naira)}</td>
+                        <td className="num">{p.pilot ? "Free pilot" : naira(p.amount_naira)}</td>
                         <td>{formatDate(p.period_end)}</td>
                         <td className="font-mono text-xs">{p.reference}</td>
                       </tr>

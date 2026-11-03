@@ -36,8 +36,16 @@ export interface BillingStatus {
   paid_students: number;
   paid_until: string | null;
   grace_until: string | null;
-  top_up: boolean; // a payment now adds students to the running term
-  payments: { reference: string; students: number; amount_naira: number; paid_at: string; period_end: string }[];
+  pilot_until: string | null; // a free pilot term is running until then
+  top_up: boolean; // a payment now adds students to the running paid term
+  payments: {
+    reference: string;
+    students: number;
+    amount_naira: number;
+    paid_at: string;
+    period_end: string;
+    pilot: boolean; // a free pilot term given by GradePulse
+  }[];
 }
 
 export interface BillingPrice {
