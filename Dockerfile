@@ -14,7 +14,7 @@ RUN addgroup --system gradepulse && adduser --system --ingroup gradepulse gradep
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --retries 10 --timeout 60 -r requirements.txt
 
 COPY linucb_brain/ linucb_brain/
 COPY ingest.py .
