@@ -151,3 +151,39 @@ def test_backups_need_the_operator_key_not_a_school_account(client, monkeypatch)
         assert getattr(client, method)(path, headers=_hdr(admin["token"])).status_code == 403
         assert getattr(client, method)(path, headers={"X-Operator-Key": "wrong"}).status_code == 403
     assert client.get("/backups", headers={"X-Operator-Key": "op-key-for-tests"}).status_code in (200, 503)
+
+
+# ── Removing a teacher who has left (security assessment M4) ─────────────────
+
+def test_admin_removes_a_teacher_who_is_signed_out_at_once(client):
+    admin = client.post("/auth/signup", json={
+        "email": f"rm_adm_{uuid.uuid4().hex[:6]}@rm.local", "password": "Kettle-Mango-42", "school_name": "Remove School",
+    }).json()
+    a = {"Authorization": f"Bearer {admin['token']}"}
+    code = client.post("/invites", headers=a).json()["code"]
+    email = f"rm_tch_{uuid.uuid4().hex[:6]}@rm.local"
+    teacher = client.post("/auth/signup", json={"email": email, "password": "Kettle-Mango-42", "invite_code": code}).json()
+    t = {"Authorization": f"Bearer {teacher['token']}"}
+    assert client.get("/students", headers=t).status_code == 200
+
+    assert client.delete(f"/members/{teacher['id']}", headers=t).status_code == 403  # teachers cannot
+    assert client.delete(f"/members/{admin['id']}", headers=a).status_code == 400    # admins stay
+    assert client.delete(f"/members/{teacher['id']}", headers=a).json() == {"status": "removed"}
+
+    assert client.get("/students", headers=t).status_code == 401
+    assert client.post("/auth/login", json={"email": email, "password": "Kettle-Mango-42"}).status_code == 401
+    assert teacher["id"] not in [m["id"] for m in client.get("/members", headers=a).json()]
+    assert client.delete(f"/members/{teacher['id']}", headers=a).status_code == 404
+
+
+def test_an_admin_cannot_remove_another_schools_teacher(client):
+    def _school():
+        adm = client.post("/auth/signup", json={
+            "email": f"rx_{uuid.uuid4().hex[:6]}@rm.local", "password": "Kettle-Mango-42", "school_name": "X School",
+        }).json()
+        return {"Authorization": f"Bearer {adm['token']}"}
+    a1, a2 = _school(), _school()
+    code = client.post("/invites", headers=a1).json()["code"]
+    teacher = client.post("/auth/signup", json={
+        "email": f"rx_t_{uuid.uuid4().hex[:6]}@rm.local", "password": "Kettle-Mango-42", "invite_code": code}).json()
+    assert client.delete(f"/members/{teacher['id']}", headers=a2).status_code == 404

@@ -170,6 +170,17 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRemoveMember = async (member: Member) => {
+    if (!confirm(`Remove ${member.email} from your school? They are signed out now and can no longer sign in. The scores they entered stay.`)) return;
+    try {
+      await api.removeMember(member.id);
+      setMembers((prev) => prev.filter((m) => m.id !== member.id));
+      showToast("success", `${member.email} was removed`);
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not remove this teacher");
+    }
+  };
+
   const copyText = async (text: string, message: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -463,7 +474,8 @@ export default function SettingsPage() {
               <h2 className="heading-2 text-navy">People</h2>
               <p className="caption text-text-muted">
                 Tick the classes each teacher teaches; they see only those students, scores and reports. If a
-                teacher forgets their password, create a reset link (it works once and expires after 24 hours).
+                teacher forgets their password, create a reset link (it works once and expires after 24 hours). When a
+                teacher leaves, remove them to sign them out for good.
               </p>
             </div>
             <ul className="divide-y divide-border">
@@ -478,9 +490,20 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     {member.id !== user?.id && (
-                      <button type="button" onClick={() => handleResetMember(member)} className="btn btn-secondary btn-sm">
-                        Reset Password
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => handleResetMember(member)} className="btn btn-secondary btn-sm">
+                          Reset Password
+                        </button>
+                        {member.role === "teacher" && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(member)}
+                            className="btn btn-secondary btn-sm text-danger"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   {member.role === "teacher" && (

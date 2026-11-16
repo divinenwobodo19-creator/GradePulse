@@ -288,6 +288,23 @@ def list_school_members(school_id: str) -> list:
     return [dict(r) for r in rows]
 
 
+def remove_member(user_id: str) -> None:
+    """Delete a teacher's account: they are signed out at once (their token
+    no longer finds a user) and can join again only with a new invite. The
+    scores they entered stay, marked with their old ID."""
+    conn = _get_db()
+    conn.execute("DELETE FROM teacher_classes WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+    email = conn.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()
+    if email:
+        prefix = email["email"] + "|"
+        conn.execute("DELETE FROM login_failures WHERE email = ? OR substr(email, 1, ?) = ?",
+                     (email["email"], len(prefix), prefix))
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
 def set_password(user_id: str, password: str) -> None:
     """Store a new password. Sessions started before now stop working."""
     conn = _get_db()
