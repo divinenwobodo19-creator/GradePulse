@@ -2,6 +2,7 @@
 Scores as dated records: derived performance, corrections, per-student
 history, archiving, and roster imports. Run offline against TestClient.
 """
+import os
 import uuid
 
 import pytest
@@ -343,7 +344,7 @@ def test_recommendations_can_be_switched_off(client, school, monkeypatch):
 
 def test_health_reports_the_package_version(client):
     from linucb_brain import __version__
-    assert client.get("/health").json()["version"] == __version__
+    assert client.get("/health", headers={"X-Operator-Key": os.environ["OPERATOR_KEY"]}).json()["version"] == __version__
 
 
 def test_unexpected_error_is_logged_with_a_reference_the_client_can_quote(client, school, monkeypatch, caplog):

@@ -71,6 +71,7 @@ API (environment variables; `.env.example` has them all with comments):
 | `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA`, `TERM_DAYS` | empty, empty, 120 | Online payment through Paystack, per student per term. Off until the key and price are set, and then nothing is limited; see `DEPLOYMENT.md`. |
 | `FREE_STUDENTS`, `GRACE_DAYS` | 40, 14 | Students the free plan covers, and days a paid plan lasts after its term ends. |
 | `TRUST_FORWARDED_FOR` | `false` | Use `X-Forwarded-For` for sign-in rate limits behind nginx; see `DEPLOYMENT.md`. |
+| `TRUST_CF_CONNECTING_IP` | `false` | Use Cloudflare's `CF-Connecting-IP` for sign-in limits. Only when every request comes through Cloudflare (a Cloudflare Tunnel). |
 | `RECOMMENDATIONS_ENABLED` | `false` | Turns content suggestions on. |
 | `SEED_DEMO_DATA` | `false` | Seeds sample students and content into a brand-new engine state. Demos only. |
 | `LOG_LEVEL` | `info` | Application and uvicorn log level. |
