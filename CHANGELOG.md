@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security hardening (16 November 2026)
+
+From the security assessment of 4 November (L2, L3, L4, L5, L11, L12, M9).
+
+- **Operator tools are off the public path.** The web app's `/api` proxy answers 404 for backups, restore, save, the content catalogue, pilot terms and operator resets. They are used against the API's local port on the server, so a leaked operator key alone is not enough from the internet.
+- **API responses** carry `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, so student data is never cached by a browser or Cloudflare. The Docker image starts uvicorn with `--no-server-header`.
+- **CORS** trusts `localhost:3000/3001` only outside production, and `FRONTEND_URL` may list several origins separated by commas.
+- **`/health`** tells strangers only that the server is alive. Version, process ID and backup details need the operator key.
+- **`TRUST_CF_CONNECTING_IP`:** behind a Cloudflare Tunnel, sign-in limits use Cloudflare's visitor address, which a visitor cannot fake.
+- **docker-compose** has no default JWT secret (it stops until `.env` sets one), defaults to production, and publishes both ports on `127.0.0.1` only (`WEB_BIND` to change).
+- **CI** actions are pinned to commits, and `.github/dependabot.yml` opens weekly update PRs for pip, npm and the actions.
+
 ### Security fixes: sign-in (16 November 2026)
 
 From the security assessment of 4 November (M1, M2).

@@ -22,13 +22,15 @@ services:
     container_name: gradepulse-api
     restart: unless-stopped
     ports:
-      - "${PORT:-8000}:8000"
+      # Local only: the public reaches the API through the web app's /api proxy.
+      - "127.0.0.1:${PORT:-8000}:8000"
     env_file:
       - .env
     environment:
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
-      - JWT_SECRET=${JWT_SECRET:-gradepulse-dev-secret-change-in-production}
-      - GRADEPULSE_ENV=${GRADEPULSE_ENV:-development}
+      # No default secret: compose stops with this message until .env sets one.
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (python -c "import secrets; print(secrets.token_urlsafe(48))")}
+      - GRADEPULSE_ENV=${GRADEPULSE_ENV:-production}
       - BRAIN_STATE_PATH=/data/brain_state.json
       - CONFIG_PATH=/data/class_config.json
       - USER_DB_PATH=/data/gradepulse_users.db
@@ -37,6 +39,7 @@ services:
       - OPERATOR_KEY=${OPERATOR_KEY:-}
       - RECOMMENDATIONS_ENABLED=${RECOMMENDATIONS_ENABLED:-false}
       - TRUST_FORWARDED_FOR=${TRUST_FORWARDED_FOR:-false}
+      - TRUST_CF_CONNECTING_IP=${TRUST_CF_CONNECTING_IP:-false}
       - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
       - PRICE_PER_STUDENT_NAIRA=${PRICE_PER_STUDENT_NAIRA:-}
       - TERM_DAYS=${TERM_DAYS:-120}
@@ -65,7 +68,8 @@ services:
     container_name: gradepulse-web
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      # Local only: put a TLS proxy or tunnel in front, or set WEB_BIND=0.0.0.0.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"
     environment:
       - API_URL=http://api:8000
     depends_on:

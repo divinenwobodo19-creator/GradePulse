@@ -354,7 +354,17 @@ SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_S
 TRUST_FORWARDED_FOR = os.getenv("TRUST_FORWARDED_FOR", "false").lower() == "true"
 
 
+# Behind Cloudflare (the tunnel), Cloudflare sets CF-Connecting-IP to the
+# visitor's address and replaces any value the visitor sent. Trust it only
+# when every request reaches the API through Cloudflare.
+TRUST_CF_CONNECTING_IP = os.getenv("TRUST_CF_CONNECTING_IP", "false").lower() == "true"
+
+
 def _client_host(request: Request) -> str:
+    if TRUST_CF_CONNECTING_IP:
+        address = request.headers.get("cf-connecting-ip", "").strip()
+        if address:
+            return address
     if TRUST_FORWARDED_FOR:
         forwarded = [a.strip() for a in request.headers.get("x-forwarded-for", "").split(",") if a.strip()]
         if forwarded:
@@ -445,7 +455,8 @@ async def lifespan(app: FastAPI):
 
 # The interactive API docs help in development; a production server does not
 # advertise its endpoints.
-_DOCS = AUTH_ENV not in ("production", "prod")
+_PRODUCTION = AUTH_ENV in ("production", "prod")
+_DOCS = not _PRODUCTION
 app = FastAPI(
     title="GradePulse API", version=__version__, lifespan=lifespan,
     docs_url="/docs" if _DOCS else None, redoc_url="/redoc" if _DOCS else None,
@@ -510,9 +521,23 @@ class BodySizeLimit:
 
 app.add_middleware(BodySizeLimit, default_limit=512 * 1024, upload_limit=MAX_UPLOAD_BYTES + 256 * 1024)
 
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """API answers are data, never pages: no sniffing, no framing, and no
+    caching of student data by browsers or Cloudflare."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"],
+    # Local dev origins are trusted only outside production.
+    allow_origins=[u.strip().rstrip("/") for u in FRONTEND_URL.split(",") if u.strip()]
+    + ([] if _PRODUCTION else ["http://localhost:3000", "http://localhost:3001"]),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1298,31 +1323,37 @@ def ingest_data(
             pass
 
 
+def _is_operator(request: Request) -> bool:
+    try:
+        require_operator(request)
+        return True
+    except HTTPException:
+        return False
+
+
 @app.get("/health")
-def health_check():
-    """Health check endpoint with backup status."""
-    worker_count = int(os.getenv("WEB_CONCURRENCY", "1"))
-    backup_status = "disabled"
-    backup_count = 0
-    
-    if backup_manager is not None:
-        backup_status = "enabled"
-        backup_count = len(backup_manager.list_backups())
-    
-    return {
+def health_check(request: Request):
+    """Liveness for anyone; version, process and backup details only with
+    the operator key (they help an attacker more than a visitor)."""
+    public = {
         "status": "alive",
         "engine": "GradePulse",
-        "version": __version__,
-        "worker_pid": os.getpid(),
-        "expected_workers": worker_count,
-        "backup_status": backup_status,
-        "backup_count": backup_count,
         # Lets the web app hide screens for features this server has switched off.
         "features": {"recommendations": RECOMMENDATIONS_ENABLED},
+    }
+    if not _is_operator(request):
+        return public
+    return {
+        **public,
+        "version": __version__,
+        "worker_pid": os.getpid(),
+        "expected_workers": int(os.getenv("WEB_CONCURRENCY", "1")),
+        "backup_status": "enabled" if backup_manager is not None else "disabled",
+        "backup_count": len(backup_manager.list_backups()) if backup_manager is not None else 0,
     }
 
 
 @app.get("/")
-def root_health_check():
+def root_health_check(request: Request):
     """Root health check endpoint (backward compatible)."""
-    return health_check()
+    return health_check(request)

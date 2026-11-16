@@ -58,6 +58,17 @@ if (process.env.NODE_ENV === "development" && !process.env.SKIP_API_ENGINE_CHECK
     });
 }
 
+const OPERATOR_PATHS = [
+  "/api/backup",
+  "/api/backup/:path*",
+  "/api/backups",
+  "/api/backups/:path*",
+  "/api/save",
+  "/api/content",
+  "/api/billing/pilot",
+  "/api/auth/operator-reset",
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,  async headers() {
@@ -89,6 +100,11 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      // Operator tools (backups, restore, pilot terms, admin resets, the
+      // shared content catalogue) are used on the server itself, against the
+      // API's local port. The public /api path never forwards them, so a
+      // leaked operator key alone cannot reach them from the internet.
+      ...OPERATOR_PATHS.map((source) => ({ source, destination: "/operator-only" })),
       {
         source: "/api/:path*",
         destination: `${apiProxyTarget}/:path*`,

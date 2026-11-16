@@ -42,7 +42,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # ENV values are honored at runtime: HOST/PORT/WEB_CONCURRENCY/LOG_LEVEL.
 # Multi-worker (>1) is safe — BrainSynchronizer provides file locking (sync.py).
-CMD ["sh", "-c", "exec uvicorn linucb_brain.api.app:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --log-level ${LOG_LEVEL:-info}"]
+CMD ["sh", "-c", "exec uvicorn linucb_brain.api.app:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --log-level ${LOG_LEVEL:-info} --no-server-header"]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Stage 2: Frontend (Node.js / Next.js)
