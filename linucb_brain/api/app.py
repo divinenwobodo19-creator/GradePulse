@@ -626,6 +626,9 @@ def signup(request: Request, signup_request: SignupRequest):
             raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
         user = create_user(signup_request.email, signup_request.password)
         if not redeem_invite(invite_code, user["id"]):
+            # Someone else used the invite in the meantime: take the new
+            # account away again rather than leave it with no school.
+            remove_member(user["id"])
             raise HTTPException(status_code=400, detail="This invite code is invalid or has expired")
         role = ROLE_TEACHER
         # Put the teacher straight into the classes the admin chose for the invite.
@@ -826,9 +829,9 @@ def list_school_invites(user: dict = Depends(require_admin)):
     return list_pending_invites(_admin_school(user))
 
 
-@app.delete("/invites/{code}")
-def revoke_school_invite(code: str, user: dict = Depends(require_admin)):
-    if not revoke_invite(code, _admin_school(user)):
+@app.delete("/invites/{invite_id}")
+def revoke_school_invite(invite_id: str, user: dict = Depends(require_admin)):
+    if not revoke_invite(invite_id, _admin_school(user)):
         raise HTTPException(status_code=404, detail="Invite not found")
     return {"status": "revoked"}
 
@@ -845,9 +848,12 @@ def list_schools(user: dict = Depends(get_current_user)):
 
 @app.post("/schools", response_model=SchoolResponse)
 def create_school(request: CreateSchoolRequest, user: dict = Depends(get_current_user)):
+    """For an account with no school yet. A school nobody belongs to could
+    never be used or deleted, so an account that has one cannot add another."""
+    if store.get_school(user.get("school_id", "")):
+        raise HTTPException(status_code=400, detail="Your account already has a school")
     school = store.create_school(request.name)
-    if not user.get("school_id"):
-        update_user_school(user["id"], school["school_id"], role=ROLE_ADMIN)
+    update_user_school(user["id"], school["school_id"], role=ROLE_ADMIN)
     return school
 
 

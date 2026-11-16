@@ -185,7 +185,9 @@ class UserResponse(BaseModel):
     token: str = ""
 
 class InviteResponse(BaseModel):
-    code: str
+    id: str = ""      # for listing and revoking
+    code: str = ""    # the code itself: only in the response that creates it
+    hint: str = ""    # its last 4 characters, to tell invites apart
     created_at: str
     expires_at: str
     class_ids: List[str] = []  # classes the teacher joins

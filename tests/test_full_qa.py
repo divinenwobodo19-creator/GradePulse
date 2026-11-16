@@ -187,16 +187,26 @@ class TestSchoolsAPI:
     def test_list_schools_without_auth_returns_401(self, client):
         assert client.get("/schools").status_code == 401
 
-    def test_create_school_returns_200(self, client, auth_h):
-        r = client.post("/schools", headers=auth_h,
+    def _schoolless(self, client):
+        """An account whose school was deleted: the one case that may create a school."""
+        token, sid = self._own_school_token(client)
+        h = {"Authorization": f"Bearer {token}"}
+        assert client.delete(f"/schools/{sid}", headers=h).status_code == 200
+        return h
+
+    def test_create_school_returns_200(self, client):
+        r = client.post("/schools", headers=self._schoolless(client),
                         json={"name": f"QA School {uuid.uuid4().hex[:4]}"})
         assert r.status_code == 200
         assert "school_id" in r.json()
 
-    def test_create_school_uppercases_name(self, client, auth_h):
+    def test_create_school_uppercases_name(self, client):
         name = f"qa school {uuid.uuid4().hex[:4]}"
-        r = client.post("/schools", headers=auth_h, json={"name": name})
+        r = client.post("/schools", headers=self._schoolless(client), json={"name": name})
         assert r.json()["name"] == name.upper()
+
+    def test_create_second_school_is_refused(self, client, auth_h):
+        assert client.post("/schools", headers=auth_h, json={"name": "Another"}).status_code == 400
 
     def _own_school_token(self, client):
         email = f"own_{uuid.uuid4().hex[:6]}@test.com"

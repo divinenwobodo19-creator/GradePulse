@@ -118,8 +118,18 @@ def init_db():
         )
     """)
     # Classes the invited teacher is put into on joining (JSON list).
-    if "class_ids" not in {row["name"] for row in conn.execute("PRAGMA table_info(invites)")}:
+    invite_columns = {row["name"] for row in conn.execute("PRAGMA table_info(invites)")}
+    if "class_ids" not in invite_columns:
         conn.execute("ALTER TABLE invites ADD COLUMN class_ids TEXT NOT NULL DEFAULT '[]'")
+    # Invite codes are stored as a hash, like reset codes: `code` now holds a
+    # public ID for listing and revoking, `hint` the last 4 characters.
+    if "code_hash" not in invite_columns:
+        conn.execute("ALTER TABLE invites ADD COLUMN code_hash TEXT")
+        conn.execute("ALTER TABLE invites ADD COLUMN hint TEXT NOT NULL DEFAULT ''")
+    for row in conn.execute("SELECT code FROM invites WHERE code_hash IS NULL").fetchall():
+        conn.execute("UPDATE invites SET code = ?, code_hash = ?, hint = ? WHERE code = ?",
+                     (_new_invite_id(), _hash_code(row["code"]), row["code"][-4:], row["code"]))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS invites_code_hash ON invites (code_hash)")
     conn.commit()
     conn.close()
 
@@ -401,22 +411,30 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _new_invite_id() -> str:
+    return "inv_" + secrets.token_hex(6)
+
+
 def create_invite(school_id: str, created_by: str, class_ids: Optional[list] = None) -> dict:
     """A single-use invite. `class_ids` are the classes the teacher is put
-    into when they join (the caller checks they belong to the school)."""
+    into when they join (the caller checks they belong to the school). The
+    code is returned only here; the database keeps its hash."""
     now = datetime.now(timezone.utc)
+    code = secrets.token_urlsafe(9)
     invite = {
-        "code": secrets.token_urlsafe(9),
-        "school_id": school_id,
-        "created_by": created_by,
+        "id": _new_invite_id(),
+        "code": code,
+        "hint": code[-4:],
         "created_at": now.isoformat(),
         "expires_at": (now + timedelta(days=INVITE_TTL_DAYS)).isoformat(),
         "class_ids": list(class_ids or []),
     }
     conn = _get_db()
     conn.execute(
-        "INSERT INTO invites (code, school_id, created_by, created_at, expires_at, class_ids) VALUES (?, ?, ?, ?, ?, ?)",
-        (*list(invite.values())[:5], json.dumps(invite["class_ids"])),
+        "INSERT INTO invites (code, code_hash, hint, school_id, created_by, created_at, expires_at, class_ids) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (invite["id"], _hash_code(code), invite["hint"], school_id, created_by,
+         invite["created_at"], invite["expires_at"], json.dumps(invite["class_ids"])),
     )
     conn.commit()
     conn.close()
@@ -424,20 +442,21 @@ def create_invite(school_id: str, created_by: str, class_ids: Optional[list] = N
 
 
 def list_pending_invites(school_id: str) -> list:
+    """Pending invites, without their codes (only a hash is stored)."""
     conn = _get_db()
     rows = conn.execute(
-        "SELECT code, created_at, expires_at, class_ids FROM invites "
+        "SELECT code AS id, hint, created_at, expires_at, class_ids FROM invites "
         "WHERE school_id = ? AND used_by IS NULL AND expires_at > ? ORDER BY created_at DESC",
         (school_id, _now_iso()),
     ).fetchall()
     conn.close()
-    return [{**dict(r), "class_ids": json.loads(r["class_ids"] or "[]")} for r in rows]
+    return [{**dict(r), "code": "", "class_ids": json.loads(r["class_ids"] or "[]")} for r in rows]
 
 
-def revoke_invite(code: str, school_id: str) -> bool:
+def revoke_invite(invite_id: str, school_id: str) -> bool:
     conn = _get_db()
     cur = conn.execute(
-        "DELETE FROM invites WHERE code = ? AND school_id = ? AND used_by IS NULL", (code, school_id)
+        "DELETE FROM invites WHERE code = ? AND school_id = ? AND used_by IS NULL", (invite_id, school_id)
     )
     conn.commit()
     conn.close()
@@ -447,7 +466,8 @@ def revoke_invite(code: str, school_id: str) -> bool:
 def get_usable_invite(code: str) -> Optional[dict]:
     conn = _get_db()
     row = conn.execute(
-        "SELECT * FROM invites WHERE code = ? AND used_by IS NULL AND expires_at > ?", (code, _now_iso())
+        "SELECT * FROM invites WHERE code_hash = ? AND used_by IS NULL AND expires_at > ?",
+        (_hash_code(code), _now_iso())
     ).fetchone()
     conn.close()
     return dict(row) if row else None
@@ -457,8 +477,8 @@ def redeem_invite(code: str, user_id: str) -> bool:
     """Mark an invite used. Single-use: False if it was taken in the meantime."""
     conn = _get_db()
     cur = conn.execute(
-        "UPDATE invites SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL AND expires_at > ?",
-        (user_id, _now_iso(), code, _now_iso()),
+        "UPDATE invites SET used_by = ?, used_at = ? WHERE code_hash = ? AND used_by IS NULL AND expires_at > ?",
+        (user_id, _now_iso(), _hash_code(code), _now_iso()),
     )
     conn.commit()
     conn.close()

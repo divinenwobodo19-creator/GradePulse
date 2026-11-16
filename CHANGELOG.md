@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security fixes: invite and reset codes, orphan accounts (16 November 2026)
+
+From the security assessment of 4 November (L9, L10).
+
+- **Invite codes are stored as a hash**, like reset codes. An invite's code is shown once, when it is created; the list shows "Invite ending XXXX" with Revoke. `GET /invites` returns `id` and `hint` with `code: ""`, and `DELETE /invites/{id}` takes the ID. Pending invites from before keep working.
+- **Codes stay out of logs and history.** Invite and reset links put the code after `#` (`/signup#invite=…`, `/reset-password#code=…`), which browsers never send to a server, and the pages clear it from the address bar once read. Old `?invite=` and `?code=` links still work.
+- **No orphan accounts or schools.** If two people use one invite at once, the loser's new account is removed instead of being left without a school; `POST /schools` is refused (400) for an account that already has a school.
+
 ### Data protection (16 November 2026)
 
 From the security assessment of 4 November (H7, M11) and the NDPA review.
