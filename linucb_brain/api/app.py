@@ -32,7 +32,7 @@ from .auth import (
     require_admin, create_invite, list_pending_invites, revoke_invite,
     get_usable_invite, redeem_invite, ROLE_ADMIN, ROLE_TEACHER,
     verify_password, set_password, get_user_by_email, list_school_members,
-    create_password_reset, redeem_password_reset,
+    create_password_reset, redeem_password_reset, remove_member,
     login_wait_seconds, record_login_failure, clear_login_failures,
     ENV as AUTH_ENV,
 )
@@ -703,6 +703,21 @@ def member_password_reset(user_id: str, user: dict = Depends(require_admin)):
     if not any(member["id"] == user_id for member in list_school_members(school_id)):
         raise HTTPException(status_code=404, detail="No such member in your school")
     return create_password_reset(user_id, created_by=user["id"])
+
+
+@app.delete("/members/{user_id}")
+def remove_school_member(user_id: str, user: dict = Depends(require_admin)):
+    """Remove a teacher who has left: their account is deleted and every
+    session they have stops working at once."""
+    school_id = _admin_school(user)
+    member = next((m for m in list_school_members(school_id) if m["id"] == user_id), None)
+    if member is None:
+        raise HTTPException(status_code=404, detail="No such member in your school")
+    if member["role"] != ROLE_TEACHER:
+        raise HTTPException(status_code=400, detail="Only teachers can be removed. An admin account stays with the school.")
+    remove_member(user_id)
+    logger.info("Admin %s removed teacher %s from school %s", user["id"], user_id, school_id)
+    return {"status": "removed"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

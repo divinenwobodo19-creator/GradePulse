@@ -198,6 +198,10 @@ class ApiClient {
   }
 
   // A single-use reset code for one teacher. It is only returned here, once.
+  async removeMember(userId: string) {
+    return this.request<{ status: string }>("DELETE", `/members/${encodeURIComponent(userId)}`);
+  }
+
   async createMemberPasswordReset(userId: string) {
     return this.request<PasswordResetLink>("POST", `/members/${encodeURIComponent(userId)}/password-reset`);
   }
