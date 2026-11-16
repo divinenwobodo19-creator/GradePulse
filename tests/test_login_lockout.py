@@ -1,9 +1,10 @@
 """
 Brute-force protection per account, and the rules for new passwords.
 
-Wrong passwords for one email slow it down from the 5th (15 s, doubling)
-and pause it for 15 minutes at the 10th, whatever address they come from;
-a correct sign-in or a reset ends it. Waiting is simulated by moving
+Wrong passwords for one email from one address slow that address down from
+the 5th (15 s, doubling) and pause it for 15 minutes at the 10th; other
+addresses can still sign in with the right password. A correct sign-in ends
+the address's pause, a reset ends them all. Waiting is simulated by moving
 blocked_until into the past.
 """
 import uuid
@@ -17,6 +18,7 @@ from linucb_brain.api import auth
 from linucb_brain.api.app import app
 
 PASSWORD = "Kettle-Mango-42"
+HOST = "testclient"  # the address TestClient requests come from
 
 
 @pytest.fixture(scope="module")
@@ -46,14 +48,14 @@ def _login(client, email, password):
 def _wait_over(email):
     conn = auth._get_db()
     past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
-    conn.execute("UPDATE login_failures SET blocked_until = ? WHERE email = ?", (past, email.lower()))
+    conn.execute("UPDATE login_failures SET blocked_until = ? WHERE email = ?", (past, f"{email.lower()}|{HOST}"))
     conn.commit()
     conn.close()
 
 
 def _failures(email):
     conn = auth._get_db()
-    row = conn.execute("SELECT failures FROM login_failures WHERE email = ?", (email.lower(),)).fetchone()
+    row = conn.execute("SELECT failures FROM login_failures WHERE email = ?", (f"{email.lower()}|{HOST}",)).fetchone()
     conn.close()
     return row["failures"] if row else 0
 
@@ -67,7 +69,7 @@ def test_four_wrong_passwords_cost_nothing_the_fifth_starts_a_wait(client, accou
     assert "Too many wrong passwords" in r.json()["detail"]
 
 
-def test_a_paused_account_refuses_even_the_right_password(client, account):
+def test_a_paused_address_refuses_even_the_right_password(client, account):
     for _ in range(5):
         _login(client, account["email"], "wrong-password-1")
     assert _login(client, account["email"], PASSWORD).status_code == 429
@@ -81,7 +83,7 @@ def test_waits_double_then_ten_failures_pause_for_fifteen_minutes(client, accoun
     for _ in range(10):
         _wait_over(account["email"])
         assert _login(client, account["email"], "wrong-password-1").status_code == 401
-        waits.append(auth.login_wait_seconds(account["email"]))
+        waits.append(auth.login_wait_seconds(account["email"], HOST))
     assert waits[:4] == [0, 0, 0, 0]
     assert [w // 5 * 5 for w in waits[4:9]] == [15, 30, 60, 120, 240]
     assert 14 * 60 < waits[9] <= 15 * 60
@@ -121,6 +123,43 @@ def test_wrong_current_password_on_change_counts_too(client, account):
     r = client.post("/auth/change-password", headers=h,
                     json={"current_password": PASSWORD, "new_password": "Brand-New-Kettle-5"})
     assert r.status_code == 429
+
+
+def test_failures_from_other_addresses_do_not_lock_the_owner_out(client, account, monkeypatch):
+    # An attacker rotating addresses used to pause the account for everyone.
+    monkeypatch.setattr(app_module, "TRUST_FORWARDED_FOR", True)
+    for i in range(15):  # 5 failures from each of 3 addresses pauses all three
+        client.post("/auth/login", headers={"X-Forwarded-For": f"203.0.113.{i % 3}"},
+                    json={"email": account["email"], "password": "wrong-password-1"})
+    owner = client.post("/auth/login", headers={"X-Forwarded-For": "198.51.100.7"},
+                        json={"email": account["email"], "password": PASSWORD})
+    assert owner.status_code == 200
+    # The guessing addresses stay paused.
+    r = client.post("/auth/login", headers={"X-Forwarded-For": "203.0.113.0"},
+                    json={"email": account["email"], "password": PASSWORD})
+    assert r.status_code == 429
+
+
+def test_long_passwords_work_and_do_not_reveal_accounts(client):
+    long_password = "correct horse battery staple " * 4  # 116 bytes, over bcrypt's 72
+    email = f"long_{uuid.uuid4().hex[:8]}@lock.local"
+    r = client.post("/auth/signup", json={"email": email, "password": long_password, "school_name": "Long School"})
+    assert r.status_code == 200, r.text
+    assert _login(client, email, long_password).status_code == 200
+    # Only the first 72 bytes used to count: a different ending must fail.
+    assert _login(client, email, long_password[:-1] + "X").status_code == 401
+    # A long wrong password answers 401 for known and unknown emails alike (was 500 vs 401).
+    assert _login(client, email, "x" * 100).status_code == 401
+    assert _login(client, f"nobody_{uuid.uuid4().hex[:8]}@lock.local", "x" * 100).status_code == 401
+    assert client.post("/auth/signup", json={"email": f"huge_{uuid.uuid4().hex[:8]}@lock.local",
+                                              "password": "Kettle-Mango-" * 30, "school_name": "S"}).status_code == 422
+
+
+def test_short_passwords_hash_exactly_as_before():
+    import bcrypt
+    old_style = bcrypt.hashpw(PASSWORD.encode(), bcrypt.gensalt()).decode()
+    assert auth.verify_password(PASSWORD, old_style)
+    assert not auth.verify_password("other-password", old_style)
 
 
 # ── New passwords ────────────────────────────────────────────────────────────

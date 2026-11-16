@@ -1,6 +1,7 @@
 """
 Authentication module — JWT + bcrypt + SQLite user store.
 """
+import base64
 import hashlib
 import json
 import logging
@@ -123,12 +124,31 @@ def init_db():
     conn.close()
 
 
+def _bcrypt_input(password: str) -> bytes:
+    """bcrypt reads at most 72 bytes and bcrypt 5 refuses longer input. A
+    longer password (a passphrase, or many non-Latin characters) is hashed
+    with SHA-256 first, so every character counts. Passwords up to 72 bytes
+    are used as they are, which keeps every existing hash valid."""
+    raw = password.encode("utf-8")
+    if len(raw) <= 72:
+        return raw
+    return base64.b64encode(hashlib.sha256(raw).digest())
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(_bcrypt_input(password), hashed.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+# Checked against when the email has no account, so a sign-in takes as long
+# either way and the timing does not tell which emails are registered.
+_DUMMY_HASH = bcrypt.hashpw(b"no account has this password", bcrypt.gensalt()).decode("utf-8")
 
 
 def create_access_token(data: dict) -> str:
@@ -188,32 +208,38 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
     user = conn.execute("SELECT * FROM users WHERE email = ?", (email.lower().strip(),)).fetchone()
     conn.close()
     if not user:
+        verify_password(password, _DUMMY_HASH)
         return None
     if not verify_password(password, user["password_hash"]):
         return None
     return dict(user)
 
 
-# ── Sign-in throttling per account ─────────────────────────────────────────
-# Counted per email whatever address the attempts come from, so guessing one
-# account's password from many machines is slowed down too. The same rules
+# ── Sign-in throttling per account and address ────────────────────────────
+# Wrong passwords are counted per email AND the address they come from. A
+# pause therefore stops the guesser, not the account: someone failing from
+# many addresses can no longer lock a school's admin out, because the admin's
+# own address has no failures. Each address gets the full schedule below,
+# and the per-address request limits in app.py cap the total. The same rules
 # apply to emails with no account, so a refusal says nothing about whether
 # an account exists.
 LOGIN_SLOW_AFTER = 5            # from the 5th failure, wait before the next try
 LOGIN_FIRST_WAIT_SECONDS = 15   # ...15 s, then 30 s, 60 s, 120 s, 240 s
-LOGIN_LOCK_AFTER = 10           # 10 failures inside the window pause the account
+LOGIN_LOCK_AFTER = 10           # 10 failures inside the window pause that address
 LOGIN_LOCK_MINUTES = 15
 LOGIN_WINDOW_MINUTES = 15       # failures older than this are forgotten
 
 
-def _login_key(email: str) -> str:
-    return email.strip().lower()
+def _login_key(email: str, address: str = "") -> str:
+    email = email.strip().lower()
+    return f"{email}|{address}" if address else email
 
 
-def login_wait_seconds(email: str) -> int:
-    """Seconds this account must wait before it may try to sign in again (0 = now)."""
+def login_wait_seconds(email: str, address: str = "") -> int:
+    """Seconds before this email may try to sign in again from this address (0 = now)."""
     conn = _get_db()
-    row = conn.execute("SELECT blocked_until FROM login_failures WHERE email = ?", (_login_key(email),)).fetchone()
+    row = conn.execute("SELECT blocked_until FROM login_failures WHERE email = ?",
+                       (_login_key(email, address),)).fetchone()
     conn.close()
     if row is None:
         return 0
@@ -221,9 +247,9 @@ def login_wait_seconds(email: str) -> int:
     return max(0, int(remaining + 0.999))
 
 
-def record_login_failure(email: str) -> None:
+def record_login_failure(email: str, address: str = "") -> None:
     now = datetime.now(timezone.utc)
-    key = _login_key(email)
+    key = _login_key(email, address)
     conn = _get_db()
     row = conn.execute("SELECT failures, first_failed_at FROM login_failures WHERE email = ?", (key,)).fetchone()
     if row is None or now - datetime.fromisoformat(row["first_failed_at"]) > timedelta(minutes=LOGIN_WINDOW_MINUTES):
@@ -242,13 +268,23 @@ def record_login_failure(email: str) -> None:
         "first_failed_at = excluded.first_failed_at, blocked_until = excluded.blocked_until",
         (key, failures, first.isoformat(), (now + wait).isoformat()),
     )
+    # Forget old records so the table does not grow with every address tried.
+    cutoff = (now - timedelta(minutes=max(LOGIN_WINDOW_MINUTES, LOGIN_LOCK_MINUTES) * 2)).isoformat()
+    conn.execute("DELETE FROM login_failures WHERE blocked_until < ? AND first_failed_at < ?", (cutoff, cutoff))
     conn.commit()
     conn.close()
 
 
-def clear_login_failures(email: str) -> None:
+def clear_login_failures(email: str, address: Optional[str] = None) -> None:
+    """A correct sign-in clears that address's record; a password reset
+    (address None) clears every record for the email."""
     conn = _get_db()
-    conn.execute("DELETE FROM login_failures WHERE email = ?", (_login_key(email),))
+    if address is None:
+        prefix = _login_key(email) + "|"
+        conn.execute("DELETE FROM login_failures WHERE email = ? OR substr(email, 1, ?) = ?",
+                     (_login_key(email), len(prefix), prefix))
+    else:
+        conn.execute("DELETE FROM login_failures WHERE email = ?", (_login_key(email, address),))
     conn.commit()
     conn.close()
 
