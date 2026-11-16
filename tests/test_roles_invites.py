@@ -101,7 +101,7 @@ def test_bad_or_expired_invite_is_rejected_without_creating_an_account(client):
     code = _invite(client, admin)
     conn = auth._get_db()
     past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
-    conn.execute("UPDATE invites SET expires_at = ? WHERE code = ?", (past, code))
+    conn.execute("UPDATE invites SET expires_at = ? WHERE code_hash = ?", (past, auth._hash_code(code)))
     conn.commit()
     conn.close()
     assert _signup(client, "xi_late", invite_code=code).status_code == 400
@@ -109,12 +109,16 @@ def test_bad_or_expired_invite_is_rejected_without_creating_an_account(client):
 
 def test_admin_can_list_and_revoke_invites(client):
     admin = _admin(client, "omicron")
-    code = _invite(client, admin)
-    assert [i["code"] for i in client.get("/invites", headers=_hdr(admin["token"])).json()] == [code]
+    created = client.post("/invites", headers=_hdr(admin["token"])).json()
+    code, invite_id = created["code"], created["id"]
+    listed = client.get("/invites", headers=_hdr(admin["token"])).json()
+    # The list never shows the code again: only its ID and last 4 characters.
+    assert [(i["id"], i["code"], i["hint"]) for i in listed] == [(invite_id, "", code[-4:])]
 
     other = _admin(client, "pi")
-    assert client.delete(f"/invites/{code}", headers=_hdr(other["token"])).status_code == 404
-    assert client.delete(f"/invites/{code}", headers=_hdr(admin["token"])).status_code == 200
+    assert client.delete(f"/invites/{invite_id}", headers=_hdr(other["token"])).status_code == 404
+    assert client.delete(f"/invites/{code}", headers=_hdr(admin["token"])).status_code == 404  # the code is not the ID
+    assert client.delete(f"/invites/{invite_id}", headers=_hdr(admin["token"])).status_code == 200
     assert _signup(client, "omicron_late", invite_code=code).status_code == 400
 
 
@@ -187,3 +191,31 @@ def test_an_admin_cannot_remove_another_schools_teacher(client):
     teacher = client.post("/auth/signup", json={
         "email": f"rx_t_{uuid.uuid4().hex[:6]}@rm.local", "password": "Kettle-Mango-42", "invite_code": code}).json()
     assert client.delete(f"/members/{teacher['id']}", headers=a2).status_code == 404
+
+
+def test_invite_codes_are_stored_only_as_a_hash(client):
+    admin = _admin(client, "rho")
+    code = _invite(client, admin)
+    conn = auth._get_db()
+    rows = conn.execute("SELECT code, code_hash FROM invites WHERE code_hash = ?", (auth._hash_code(code),)).fetchall()
+    assert len(rows) == 1 and rows[0]["code"] != code
+    assert conn.execute("SELECT COUNT(*) FROM invites WHERE code = ?", (code,)).fetchone()[0] == 0
+    conn.close()
+
+
+def test_a_failed_invite_signup_leaves_no_account_behind(client, monkeypatch):
+    # Two people using the same invite at once: the loser must not be left with
+    # an account that has no school (security assessment L10).
+    admin = _admin(client, "sigma")
+    code = _invite(client, admin)
+    monkeypatch.setattr(app_module, "redeem_invite", lambda *_: False)
+    email = f"sigma_late_{uuid.uuid4().hex[:6]}@roles.local"
+    r = client.post("/auth/signup", json={"email": email, "password": "Kettle-Mango-42", "invite_code": code})
+    assert r.status_code == 400
+    assert auth.get_user_by_email(email) is None
+
+
+def test_a_user_with_a_school_cannot_create_another(client):
+    admin = _admin(client, "tau")
+    r = client.post("/schools", headers=_hdr(admin["token"]), json={"name": "Second School"})
+    assert r.status_code == 400

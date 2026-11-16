@@ -57,7 +57,12 @@ export interface BillingPrice {
 }
 
 export interface Invite {
+  id: string;
+  // The code itself, only in the response that created the invite; the
+  // server keeps just a hash, so listed invites have code "".
   code: string;
+  // Last 4 characters of the code, to tell invites apart.
+  hint: string;
   created_at: string;
   expires_at: string;
   // Classes the teacher is put into when they join.

@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { takeLinkCode } from "@/lib/linkCode";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 
@@ -22,9 +23,8 @@ function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [schoolName, setSchoolName] = useState("");
-  // An admin's invite link is /signup?invite=CODE.
-  const searchParams = useSearchParams();
-  const [inviteCode, setInviteCode] = useState(() => searchParams.get("invite") ?? "");
+  // An admin's invite link is /signup#invite=CODE (older links: ?invite=CODE).
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { user, loading: authLoading, signup } = useAuth();
@@ -33,6 +33,13 @@ function SignupForm() {
   useEffect(() => {
     if (!authLoading && user) router.replace("/dashboard");
   }, [authLoading, router, user]);
+
+  useEffect(() => {
+    // Read once, then the code is cleared from the address bar.
+    const code = takeLinkCode("invite");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the link is only readable in the browser
+    if (code) setInviteCode(code);
+  }, []);
 
   const joining = inviteCode.trim().length > 0;
 

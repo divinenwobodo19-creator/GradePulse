@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { takeLinkCode } from "@/lib/linkCode";
 import Link from "next/link";
 import { api } from "@/lib/api";
 
@@ -19,9 +20,14 @@ export default function ResetPasswordPage() {
 
 function ResetPasswordForm() {
   const router = useRouter();
-  // A reset link is /reset-password?code=CODE.
-  const searchParams = useSearchParams();
-  const [code, setCode] = useState(() => searchParams.get("code") ?? "");
+  // A reset link is /reset-password#code=CODE (older links: ?code=CODE).
+  const [code, setCode] = useState("");
+  useEffect(() => {
+    // Read once, then the code is cleared from the address bar.
+    const fromLink = takeLinkCode("code");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the link is only readable in the browser
+    if (fromLink) setCode(fromLink);
+  }, []);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");

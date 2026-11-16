@@ -165,7 +165,7 @@ export default function SettingsPage() {
       const { code } = await api.createMemberPasswordReset(member.id);
       setResetLink({
         memberId: member.id,
-        url: `${window.location.origin}/reset-password?code=${encodeURIComponent(code)}`,
+        url: `${window.location.origin}/reset-password#code=${encodeURIComponent(code)}`,
       });
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Could not create a reset link");
@@ -217,7 +217,9 @@ export default function SettingsPage() {
     }
   };
 
-  const inviteLink = (code: string) => `${window.location.origin}/signup?invite=${encodeURIComponent(code)}`;
+  // The code goes after "#": browsers never send that part to a server, so it
+  // stays out of server and analytics logs.
+  const inviteLink = (code: string) => `${window.location.origin}/signup#invite=${encodeURIComponent(code)}`;
 
   const handleCreateInvite = async () => {
     setInviting(true);
@@ -225,7 +227,7 @@ export default function SettingsPage() {
       const invite = await api.createInvite(inviteClasses);
       setInvites((prev) => [invite, ...prev]);
       setInviteClasses([]);
-      showToast("success", "Invite created. Send the link to your teacher.");
+      showToast("success", "Invite created. Copy the link now: it is shown only once.");
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Could not create invite");
     } finally {
@@ -242,10 +244,10 @@ export default function SettingsPage() {
     }
   };
 
-  const handleRevokeInvite = async (code: string) => {
+  const handleRevokeInvite = async (inviteId: string) => {
     try {
-      await api.revokeInvite(code);
-      setInvites((prev) => prev.filter((i) => i.code !== code));
+      await api.revokeInvite(inviteId);
+      setInvites((prev) => prev.filter((i) => i.id !== inviteId));
       showToast("success", "Invite revoked");
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Could not revoke invite");
@@ -462,9 +464,16 @@ export default function SettingsPage() {
             ) : (
               <ul className="space-y-2">
                 {invites.map((invite) => (
-                  <li key={invite.code} className="flex flex-wrap items-center justify-between gap-3 p-4 bg-surface-elevated rounded-xl">
+                  <li key={invite.id} className="flex flex-wrap items-center justify-between gap-3 p-4 bg-surface-elevated rounded-xl">
                     <div className="min-w-0">
-                      <div className="font-mono text-sm text-navy break-all">{invite.code}</div>
+                      <div className="font-mono text-sm text-navy break-all">
+                        {invite.code || `Invite ending ${invite.hint}`}
+                      </div>
+                      {!invite.code && (
+                        <div className="caption text-text-muted">
+                          The link was shown when you created it. If it was lost, revoke this one and create another.
+                        </div>
+                      )}
                       <div className="caption text-text-muted mt-0.5">
                         {invite.class_ids.length > 0
                           ? `For ${invite.class_ids.map(classLabel).filter(Boolean).join(", ")} · `
@@ -473,13 +482,15 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => handleCopyInvite(invite.code)} className="btn btn-secondary btn-sm">
-                        Copy Link
-                      </button>
+                      {invite.code && (
+                        <button type="button" onClick={() => handleCopyInvite(invite.code)} className="btn btn-secondary btn-sm">
+                          Copy Link
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => handleRevokeInvite(invite.code)}
-                        aria-label={`Revoke invite ${invite.code}`}
+                        onClick={() => handleRevokeInvite(invite.id)}
+                        aria-label={`Revoke invite ending ${invite.hint}`}
                         className="btn btn-ghost btn-sm text-danger"
                       >
                         Revoke

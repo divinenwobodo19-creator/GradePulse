@@ -254,8 +254,8 @@ class ApiClient {
     return this.request<Invite[]>("GET", "/invites", undefined, signal);
   }
 
-  async revokeInvite(code: string) {
-    return this.request<{ status: string }>("DELETE", `/invites/${encodeURIComponent(code)}`);
+  async revokeInvite(inviteId: string) {
+    return this.request<{ status: string }>("DELETE", `/invites/${encodeURIComponent(inviteId)}`);
   }
 
   logout() {
