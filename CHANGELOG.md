@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security fixes: sign-in (16 November 2026)
+
+From the security assessment of 4 November (M1, M2).
+
+- **Long passwords work.** Passwords over bcrypt's 72-byte limit are hashed with SHA-256 first, so a long passphrase now signs up and every character counts. Before, they caused a 500 error for registered emails and a 401 for unknown ones, which showed who had an account. Existing passwords are unchanged. New passwords can be up to 256 characters.
+- **Sign-in takes as long for an unknown email** as for a real one (a dummy password check), so timing no longer reveals accounts.
+- **Nobody can lock a school's admin out any more.** Wrong passwords are counted per email and address. The address doing the guessing is slowed and then paused as before, but the owner signing in from their own address gets in with the right password. A password reset clears every pause for the account.
+
 ### Removing a teacher (16 November 2026)
 
 - **An admin can remove a teacher who has left** (security assessment M4): **Remove** on the Settings page, People list, or `DELETE /members/{user_id}`. The teacher's account is deleted, so every session they have stops at once and they cannot sign in; they can join again only with a new invite. The scores they entered stay. Admin accounts cannot be removed this way.

@@ -84,6 +84,7 @@ class BrainSummary(BaseModel):
     last_neural_score: Optional[float]
 
 PASSWORD_MIN_LENGTH = 10
+PASSWORD_MAX_LENGTH = 256
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # Passwords that are guessed first. A new password is refused when it is one of
@@ -103,6 +104,8 @@ nigeria naija enugu lagos abuja jesus god godisgood blessed blessing football ch
 def _valid_new_password(value: str) -> str:
     if len(value) < PASSWORD_MIN_LENGTH:
         raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
+    if len(value) > PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password can be at most {PASSWORD_MAX_LENGTH} characters")
     lowered = value.lower()
     letters = re.sub(r"[^a-z]", "", lowered)
     if lowered in _COMMON_PASSWORDS or letters in _COMMON_WORDS or len(set(lowered)) < 4:
@@ -142,23 +145,23 @@ class SignupRequest(BaseModel):
         return self
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=1024)
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
+    current_password: str = Field(..., max_length=1024)
     new_password: str
 
     _check_new = field_validator("new_password")(classmethod(lambda cls, v: _valid_new_password(v)))
 
 class ResetPasswordRequest(BaseModel):
-    code: str
+    code: str = Field(..., max_length=128)
     new_password: str
 
     _check_new = field_validator("new_password")(classmethod(lambda cls, v: _valid_new_password(v)))
 
 class OperatorResetRequest(BaseModel):
-    email: str
+    email: str = Field(..., max_length=254)
 
 class PasswordResetLink(BaseModel):
     code: str
