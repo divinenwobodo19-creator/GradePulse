@@ -124,13 +124,29 @@ def _clean_header(name) -> str:
     return "_".join(str(name).strip().lower().split())
 
 
+# A school's roster is a few hundred rows. The caps stop a small file that
+# expands to a huge sheet (a 1.7 MB file can hold 170,000 rows) from tying up
+# the server while it is read.
+MAX_ROWS = int(os.getenv("INGEST_MAX_ROWS", "5000"))
+MAX_COLUMNS = 60
+MAX_XLSX_UNPACKED_BYTES = 40 * 1024 * 1024
+# Spreadsheets often carry formatted but empty rows below the data; after
+# this many blank rows in a row, the data has ended.
+BLANK_RUN_END = 1000
+
+
+class IngestFileError(ValueError):
+    """A problem with the uploaded file that is safe to show to its uploader."""
+
+
 def _clean_rows(raw_rows) -> List[Dict]:
     """Normalise headers, trim values, and drop columns with no header and rows with no values
     (spreadsheets often carry blank, formatted rows below the data)."""
     rows = []
+    blank_run = 0
     for raw in raw_rows:
         row = {}
-        for key, value in raw.items():
+        for key, value in list(raw.items())[:MAX_COLUMNS]:
             if key is None:
                 continue
             header = _clean_header(key)
@@ -139,6 +155,14 @@ def _clean_rows(raw_rows) -> List[Dict]:
             row[header] = value.strip() if isinstance(value, str) else value
         if any(v not in ("", None) for v in row.values()):
             rows.append(row)
+            blank_run = 0
+            if len(rows) > MAX_ROWS:
+                raise IngestFileError(
+                    f"The file has more than {MAX_ROWS:,} rows. Split it into smaller files, one per class.")
+        else:
+            blank_run += 1
+            if blank_run >= BLANK_RUN_END:
+                break
     return rows
 
 
@@ -162,19 +186,95 @@ def read_csv(filepath: str) -> List[Dict]:
             return rows
         except (UnicodeDecodeError, UnicodeError):
             continue
-    raise ValueError(f"Could not read {filepath} with any supported encoding")
+    raise IngestFileError("Could not read the file's text. Save it as CSV UTF-8 or .xlsx and try again.")
+
+
+def _header_names(values) -> List[Optional[str]]:
+    """Column names from a header row; repeats become 'name.1', 'name.2' as pandas named them."""
+    names: List[Optional[str]] = []
+    seen: Dict[str, int] = {}
+    for value in values:
+        if value is None or str(value).strip() == "":
+            names.append(None)
+            continue
+        name = str(value).strip()
+        count = seen.get(name, 0)
+        seen[name] = count + 1
+        names.append(name if count == 0 else f"{name}.{count}")
+    return names
+
+
+def _cell_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _sheet_rows(value_rows):
+    """Dicts keyed by the first non-blank row, from an iterator of row tuples."""
+    header = None
+    for values in value_rows:
+        values = list(values)[:MAX_COLUMNS]
+        if header is None:
+            if any(v is not None and str(v).strip() != "" for v in values):
+                header = _header_names(values)
+            continue
+        yield {name: _cell_text(v) for name, v in zip(header, values)}
+
+
+def _read_xlsx(filepath: str) -> List[Dict]:
+    import zipfile
+    try:
+        with zipfile.ZipFile(filepath) as archive:
+            unpacked = sum(info.file_size for info in archive.infolist())
+    except zipfile.BadZipFile:
+        raise IngestFileError("This is not a valid .xlsx file. Open it in Excel and save it again.")
+    if unpacked > MAX_XLSX_UNPACKED_BYTES:
+        raise IngestFileError(
+            f"The spreadsheet is too large once opened. Keep it under {MAX_ROWS:,} rows, one class per file.")
+    from openpyxl import load_workbook
+    # Read-only mode streams the sheet instead of building it all in memory.
+    workbook = load_workbook(filepath, read_only=True, data_only=True)
+    try:
+        sheet = workbook.worksheets[0]
+        return _clean_rows(_sheet_rows(sheet.iter_rows(values_only=True, max_col=MAX_COLUMNS)))
+    finally:
+        workbook.close()
+
+
+def _read_xls(filepath: str) -> List[Dict]:
+    import xlrd
+    try:
+        book = xlrd.open_workbook(filepath, on_demand=True)
+    except xlrd.XLRDError:
+        raise IngestFileError("This is not a valid .xls file. Save it as .xlsx and try again.")
+    try:
+        sheet = book.sheet_by_index(0)
+
+        def values():
+            for i in range(sheet.nrows):
+                row = []
+                for cell in sheet.row(i)[:MAX_COLUMNS]:
+                    if cell.ctype == xlrd.XL_CELL_DATE:
+                        row.append(xlrd.xldate_as_datetime(cell.value, book.datemode))
+                    elif cell.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+                        row.append(None)
+                    else:
+                        row.append(cell.value)
+                yield row
+
+        return _clean_rows(_sheet_rows(values()))
+    finally:
+        book.release_resources()
 
 
 def read_excel(filepath: str) -> List[Dict]:
-    """Read Excel file using pandas."""
-    try:
-        import pandas as pd
-    except ImportError:
-        raise ImportError("pandas is required for Excel files. Install with: pip install pandas openpyxl")
-    # .xlsx is read with openpyxl and .xls with xlrd; both are in requirements.txt.
-    df = pd.read_excel(filepath, dtype=str)
-    df = df.fillna("")
-    return _clean_rows(df.to_dict("records"))
+    """Read the first sheet of an Excel file (.xlsx with openpyxl, .xls with xlrd)."""
+    if Path(filepath).suffix.lower() == ".xls":
+        return _read_xls(filepath)
+    return _read_xlsx(filepath)
 
 
 def read_data_file(filepath: str) -> List[Dict]:
@@ -185,7 +285,7 @@ def read_data_file(filepath: str) -> List[Dict]:
     elif ext in (".xlsx", ".xls"):
         return read_excel(filepath)
     else:
-        raise ValueError(f"Unsupported file format: {ext}. Use .csv or .xlsx")
+        raise IngestFileError(f"Unsupported file format: {ext}. Use .csv or .xlsx")
 
 
 # ── Validators ─────────────────────────────────────────────────────────────────

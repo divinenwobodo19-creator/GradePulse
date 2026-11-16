@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security fixes: teacher scope and request limits (16 November 2026)
+
+From the security assessment of 4 November (H1, H2, H3, L6, L7).
+
+- **A teacher can no longer read a student outside their classes through `POST /students`.** Sending an ID that already belongs to another class's student used to return that student's record and scores; it now returns **409** "That student ID is already used in your school".
+- **Uploads cannot freeze the API.** `/ingest` runs in the worker's thread pool instead of the event loop; files are read row by row (Excel in streaming mode), stop at 5,000 rows (`INGEST_MAX_ROWS`) and 60 columns, `.xlsx` files that unpack to over 40 MB are refused, and 1,000 blank rows in a row end the sheet. Each user may upload 30 files per 10 minutes (`RATE_LIMIT_INGEST_USER`). A 170,000-row file used to stop the API for 84 seconds.
+- **Score sheets are capped:** at most 2,000 entries per `POST /bulk-update`, and only the school's own subjects (400 otherwise), so free-text subjects can no longer add items to the shared engine.
+- **Request bodies over 512 KB are refused with 413** (uploads: 2 MB plus form overhead).
+- **Length limits** on names (120), topics (120), IDs (64), subjects (40), class labels (60), student metadata (4 KB) and `grade_history`; `top_n` on `/recommend` is 1 to 20.
+- **Upload errors no longer show internal exception text.** File problems get a plain message (400); anything unexpected is logged with a reference the uploader can quote.
+
 ### Safe backups and restore (3 November 2026)
 
 - **Backups copy the database through SQLite** (online backup API) instead of copying the live file, which in WAL mode could miss recent writes or catch a half-written page. No loose `-wal`/`-shm` files are stored any more.

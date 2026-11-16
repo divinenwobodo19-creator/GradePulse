@@ -339,6 +339,9 @@ def _limit_from_env(name: str, default: int) -> int:
 
 LOGIN_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_LOGIN_EMAIL", 30), window_seconds=60)
 LOGIN_HOST_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_LOGIN_HOST", 120), window_seconds=60)
+# Uploads per user: an admin importing a school's classes one by one needs a
+# few dozen, not hundreds.
+INGEST_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_INGEST_USER", 30), window_seconds=600)
 SIGNUP_LIMITER = SlidingWindowLimiter(max_requests=_limit_from_env("RATE_LIMIT_SIGNUP_HOST", 30), window_seconds=60)
 
 
@@ -450,6 +453,62 @@ app = FastAPI(
 )
 
 app.include_router(billing_router)
+
+
+class _BodyTooLarge(HTTPException):
+    # An HTTPException, so FastAPI's body parsing passes it on as a 413.
+    def __init__(self):
+        super().__init__(status_code=413, detail="Request is too large")
+
+
+class BodySizeLimit:
+    """Refuse request bodies over a size limit before they are read into
+    memory: uploads up to MAX_UPLOAD_BYTES plus form overhead, everything
+    else 512 KB (a full score sheet is under 200 KB)."""
+
+    def __init__(self, app, default_limit: int, upload_limit: int):
+        self.app = app
+        self.default_limit = default_limit
+        self.upload_limit = upload_limit
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        limit = self.upload_limit if scope.get("path", "").rstrip("/").endswith("/ingest") else self.default_limit
+        declared = dict(scope.get("headers") or []).get(b"content-length")
+        too_large = JSONResponse(status_code=413, content={"detail": "Request is too large"})
+        if declared is not None:
+            try:
+                if int(declared) > limit:
+                    return await too_large(scope, receive, send)
+            except ValueError:
+                return await JSONResponse(status_code=400, content={"detail": "Bad Content-Length"})(scope, receive, send)
+        received = 0
+        response_started = False
+
+        async def counted_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > limit:
+                    raise _BodyTooLarge()
+            return message
+
+        async def tracked_send(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counted_receive, tracked_send)
+        except _BodyTooLarge:
+            if not response_started:
+                await too_large(scope, receive, send)
+
+
+app.add_middleware(BodySizeLimit, default_limit=512 * 1024, upload_limit=MAX_UPLOAD_BYTES + 256 * 1024)
 
 app.add_middleware(
     CORSMiddleware,
@@ -809,8 +868,15 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Choose one of your classes for the student")
     if class_id:
         _require_class_in_scope(user, class_id)
-    if store.get_student(school_id, student.student_id) is None:
+    existing = store.get_student(school_id, student.student_id)
+    if existing is None:
         billing.check_can_add_students(user, 1)
+    else:
+        scope = _class_scope(user)
+        if scope is not None and existing.class_id not in scope:
+            # The ID belongs to a student in a class this teacher does not
+            # teach. Returning that record would hand over their scores.
+            raise HTTPException(status_code=409, detail="That student ID is already used in your school")
     # An ID that already exists in this school returns that student unchanged.
     rec, _created = store.add_student(
         school_id, student.student_id, student.name,
@@ -928,6 +994,11 @@ def update(request: UpdateRequest, user: dict = Depends(get_current_user)):
 @app.post("/bulk-update")
 def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_user)):
     billing.check_can_enter_scores(user)
+    # Only the school's own subjects: every new subject name also becomes an
+    # item in the shared engine, so free text would let one school grow it.
+    known = {store.normalize_label(s) for s in store.get_subjects(user.get("school_id", ""))}
+    if any(store.normalize_label(e.subject) not in known for e in request.entries):
+        raise HTTPException(status_code=400, detail="Use one of your school's subjects (Settings, Subjects)")
     records = {}
     for entry in request.entries:
         if entry.student_id not in records:
@@ -1092,7 +1163,7 @@ def restore_backup(backup_path: str, _: None = Depends(require_operator)):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/ingest", response_model=IngestResponse)
-async def ingest_data(
+def ingest_data(
     request: Request,
     file: UploadFile = File(...),
     type: str = Form(...),
@@ -1123,22 +1194,27 @@ async def ingest_data(
     if ext not in (".csv", ".xlsx", ".xls"):
         raise HTTPException(status_code=400, detail="File must be CSV or Excel (.csv, .xlsx, .xls)")
     
-    # Save uploaded file to temp location
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if not INGEST_LIMITER.allow(user["id"]):
+        raise HTTPException(status_code=429, detail="Too many uploads. Wait a few minutes and try again.")
+
+    # A plain def endpoint runs in the worker's thread pool, so reading a
+    # file never stops the API answering other schools.
+    content = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File is too large (limit 2 MB)")
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save upload: {str(e)}")
+    except Exception:
+        logger.exception("Could not save an upload to a temporary file")
+        raise HTTPException(status_code=500, detail="Could not save the upload. Try again.")
     
     try:
         # Import ingestion functions (ingest.py is a top-level module; launch
         # contract is PYTHONPATH=<project root>. The old relative `from ...ingest`
         # raised ImportError beyond the top-level package.)
-        from ingest import ingest_content
+        from ingest import ingest_content, IngestFileError
         
         # Run ingestion
         if type == "students":
@@ -1187,9 +1263,16 @@ async def ingest_data(
         )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception("Ingestion of %s (%s) failed", filename, type)
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+    except IngestFileError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        # The exception text can name server paths and libraries; it goes to
+        # the log, and the uploader gets a reference to quote.
+        error_id = uuid.uuid4().hex[:12]
+        logger.exception("Ingestion %s of %s (%s) failed", error_id, filename, type)
+        raise HTTPException(status_code=400, detail=(
+            "Could not read this file. Check it is a class list saved as .xlsx or .csv, "
+            f"and try again (reference {error_id})."))
     finally:
         # Clean up temp file
         try:

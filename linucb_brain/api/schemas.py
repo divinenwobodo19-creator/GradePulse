@@ -3,15 +3,40 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, List, Optional, Any
 from datetime import date, datetime
 
+# Upper bounds on what one request may carry. Without them a single request
+# with a 500,000-character name or 100,000 score entries could stall the API.
+ID_MAX = 64
+NAME_MAX = 120
+TOPIC_MAX = 120
+SUBJECT_MAX = 40
+BULK_MAX_ENTRIES = 2000
+METADATA_MAX_BYTES = 4096
+
+
 class StudentSchema(BaseModel):
-    student_id: str
-    name: str
-    class_id: str = ""
-    school_id: str = ""
-    grade_history: Dict[str, List[float]] = {}
+    student_id: str = Field(..., max_length=ID_MAX)
+    name: str = Field(..., max_length=NAME_MAX)
+    class_id: str = Field("", max_length=ID_MAX)
+    school_id: str = Field("", max_length=ID_MAX)
+    grade_history: Dict[str, List[float]] = Field(default_factory=dict, max_length=40)
     performance_score: float = 0.5
-    current_topic: str = ""
-    metadata: Dict[str, Any] = {}
+    current_topic: str = Field("", max_length=TOPIC_MAX)
+    metadata: Dict[str, Any] = Field(default_factory=dict, max_length=20)
+
+    @field_validator("grade_history")
+    @classmethod
+    def _check_history(cls, value: Dict[str, List[float]]) -> Dict[str, List[float]]:
+        if any(len(subject) > SUBJECT_MAX or len(scores) > 200 for subject, scores in value.items()):
+            raise ValueError("grade_history is too large")
+        return value
+
+    @field_validator("metadata")
+    @classmethod
+    def _check_metadata(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        import json
+        if len(json.dumps(value, default=str)) > METADATA_MAX_BYTES:
+            raise ValueError("metadata is too large")
+        return value
 
 class ContentSchema(BaseModel):
     content_id: str
@@ -22,8 +47,8 @@ class ContentSchema(BaseModel):
 
 class RecommendationRequest(BaseModel):
     student_id: str
-    topic: Optional[str] = None
-    top_n: int = 1
+    topic: Optional[str] = Field(None, max_length=TOPIC_MAX)
+    top_n: int = Field(1, ge=1, le=20)
 
 class UpdateRequest(BaseModel):
     student_id: str
@@ -92,10 +117,10 @@ def password_mentions_email(password: str, email: str) -> bool:
 
 
 class SignupRequest(BaseModel):
-    email: str
+    email: str = Field(..., max_length=254)
     password: str
-    school_name: Optional[str] = None
-    invite_code: Optional[str] = None  # join an existing school as a teacher
+    school_name: Optional[str] = Field(None, max_length=NAME_MAX)
+    invite_code: Optional[str] = Field(None, max_length=128)  # join an existing school as a teacher
 
     @field_validator("email")
     @classmethod
@@ -171,7 +196,7 @@ class SchoolResponse(BaseModel):
     classes: List[Dict[str, Any]] = []
 
 class CreateSchoolRequest(BaseModel):
-    name: str
+    name: str = Field(..., max_length=NAME_MAX)
 
 class ClassResponse(BaseModel):
     class_id: str
@@ -180,15 +205,16 @@ class ClassResponse(BaseModel):
     arm: str
 
 class CreateClassRequest(BaseModel):
-    label: str
+    label: str = Field(..., max_length=60)
 
 class BulkUpdateEntry(BaseModel):
-    student_id: str
-    subject: str
+    student_id: str = Field(..., max_length=ID_MAX)
+    subject: str = Field(..., max_length=SUBJECT_MAX)
     score: float = Field(..., ge=0.0, le=1.0)
 
 class BulkUpdateRequest(BaseModel):
-    entries: List[BulkUpdateEntry]
+    # A class is under 100 students; 2,000 covers a whole school sheet.
+    entries: List[BulkUpdateEntry] = Field(..., max_length=BULK_MAX_ENTRIES)
     # One sitting: the day the test was taken (today if omitted) and an
     # optional name for it, e.g. "Week 4 test". Re-sending the same student,
     # subject, date and label corrects the earlier score.
@@ -220,14 +246,14 @@ class SubjectsPayload(BaseModel):
         return value
 
 class TriageRequest(BaseModel):
-    subject: str
-    class_id: Optional[str] = None  # limit the report to one class
+    subject: str = Field(..., max_length=SUBJECT_MAX)
+    class_id: Optional[str] = Field(None, max_length=ID_MAX)  # limit the report to one class
     as_of: Optional[date] = None  # report as of this day; default: the latest test in the subject
 
 class UpdateStudentRequest(BaseModel):
-    name: Optional[str] = None
-    current_topic: Optional[str] = None
-    class_id: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=NAME_MAX)
+    current_topic: Optional[str] = Field(None, max_length=TOPIC_MAX)
+    class_id: Optional[str] = Field(None, max_length=ID_MAX)
 
 class IngestResponse(BaseModel):
     status: str
