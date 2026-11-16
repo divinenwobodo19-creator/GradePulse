@@ -86,7 +86,9 @@ function Billing() {
               ? "Payment received. Thank you."
               : result.payment_status === "pending"
                 ? "Paystack has not confirmed this payment yet. Refresh in a minute."
-                : "That payment did not go through. Nothing was charged for this term."
+                : result.payment_status === "late_top_up"
+                  ? "This payment arrived after the term ended, so it does not cover the new term for the whole school. Contact GradePulse on WhatsApp (0803 698 9732) and we will refund it or count it towards the new term."
+                  : "That payment did not go through. Nothing was charged for this term."
           );
           router.replace("/billing");
           return;

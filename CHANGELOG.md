@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security fix: late top-ups (16 November 2026)
+
+- **A small top-up can no longer buy a whole term** (security assessment M3). Whether a payment is a top-up or a new term is now decided when Paystack confirms it. A top-up started during a term but confirmed after the term ended used to start a full term for the whole school, so ₦500 unlocked reports. Such a payment is now recorded as `late_top_up` and grants nothing; the server logs it for a refund or credit, and the Billing page tells the admin to get in touch.
+
 ### Security fixes: teacher scope and request limits (16 November 2026)
 
 From the security assessment of 4 November (H1, H2, H3, L6, L7).
