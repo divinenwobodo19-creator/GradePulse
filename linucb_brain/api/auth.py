@@ -15,7 +15,7 @@ from typing import Optional
 
 import bcrypt
 import jwt  # PyJWT; python-jose was dropped (unpatched algorithm-confusion advisory)
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 DEV_SECRET = "gradepulse-dev-secret-change-in-production"
@@ -490,10 +490,50 @@ def _token_predates_password(payload: dict, user: dict) -> bool:
     return int(payload.get("iat", 0)) < int(user.get("password_changed_at") or 0)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    if not credentials:
+# ── Session cookie ─────────────────────────────────────────────────────────
+# The web app's session lives in an httpOnly cookie, which page scripts cannot
+# read, so a script injected into a page could not steal it. SameSite=Strict
+# keeps other sites from sending it; on top of that, a change made with the
+# cookie must carry the X-Requested-With header, which a page on another site
+# cannot add without CORS allowing it. A second, readable cookie only tells
+# the web app that someone is signed in. Scripts and tests can still send the
+# token as a Bearer header.
+SESSION_COOKIE = "gp_session"
+SIGNED_IN_COOKIE = "gp_signed_in"
+CSRF_HEADER_VALUE = "GradePulse"
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes") or (
+    os.getenv("COOKIE_SECURE", "").strip() == "" and ENV in ("production", "prod"))
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    age = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    response.set_cookie(SESSION_COOKIE, token, max_age=age, httponly=True, secure=COOKIE_SECURE,
+                        samesite="strict", path="/")
+    response.set_cookie(SIGNED_IN_COOKIE, "1", max_age=age, httponly=False, secure=COOKIE_SECURE,
+                        samesite="strict", path="/")
+
+
+def clear_session_cookie(response: Response) -> None:
+    for name in (SESSION_COOKIE, SIGNED_IN_COOKIE):
+        response.delete_cookie(name, path="/", secure=COOKIE_SECURE, samesite="strict")
+
+
+def _request_token(request: Request, credentials: Optional[HTTPAuthorizationCredentials]) -> Optional[str]:
+    if credentials:
+        return credentials.credentials
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and request.method not in _SAFE_METHODS and \
+            request.headers.get("x-requested-with") != CSRF_HEADER_VALUE:
+        raise HTTPException(status_code=403, detail="This request did not come from the GradePulse app")
+    return token
+
+
+def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    token = _request_token(request, credentials)
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = decode_token(credentials.credentials)
+    payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     user = get_user_by_id(payload.get("sub"))
@@ -510,10 +550,14 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
-def optional_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Optional[dict]:
-    if not credentials:
+def optional_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)) -> Optional[dict]:
+    try:
+        token = _request_token(request, credentials)
+    except HTTPException:
         return None
-    payload = decode_token(credentials.credentials)
+    if not token:
+        return None
+    payload = decode_token(token)
     if not payload:
         return None
     user = get_user_by_id(payload.get("sub"))

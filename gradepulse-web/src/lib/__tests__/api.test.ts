@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError, UNAUTHORIZED_EVENT, errorDetail } from "../api";
+import { api, ApiError, UNAUTHORIZED_EVENT, errorDetail, hasSessionCookie, legacyStoredToken } from "../api";
 
 const originalFetch = globalThis.fetch;
 
@@ -15,7 +15,6 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 describe("api client", () => {
   beforeEach(() => {
     localStorage.clear();
-    api.setToken(null);
   });
 
   afterEach(() => {
@@ -24,16 +23,45 @@ describe("api client", () => {
     vi.restoreAllMocks();
   });
 
-  it("sends the bearer token from storage on authenticated requests", async () => {
+  it("relies on the session cookie and sends the app header, never a stored token", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
-    api.setToken("token-123");
+    localStorage.setItem("gradepulse_token", "old-token");
 
     await api.getStudents("SCH-1", "CLASS-1");
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
     expect(url).toContain("/api/students?school_id=SCH-1&class_id=CLASS-1");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer token-123");
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers["X-Requested-With"]).toBe("GradePulse");
+    expect(init.credentials).toBe("same-origin");
+  });
+
+  it("does not keep the token from a sign-in response", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse({ id: "u1", email: "a@b.c", school_id: "s", school_name: "S", role: "admin", token: "secret" })
+    ) as unknown as typeof fetch;
+    await api.login("a@b.c", "Kettle-Mango-42");
+    expect(legacyStoredToken()).toBeNull();
+    expect(JSON.stringify(localStorage)).not.toContain("secret");
+  });
+
+  it("moves an old stored session to the cookie with one Bearer call", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "u1", email: "a@b.c" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await api.me("old-token");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/auth/me");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer old-token");
+  });
+
+  it("reads the signed-in marker cookie", () => {
+    document.cookie = "gp_signed_in=; max-age=0; path=/";
+    expect(hasSessionCookie()).toBe(false);
+    document.cookie = "gp_signed_in=1; path=/";
+    expect(hasSessionCookie()).toBe(true);
+    document.cookie = "gp_signed_in=; max-age=0; path=/";
   });
 
   it("serializes request bodies as JSON", async () => {
@@ -152,14 +180,17 @@ describe("api client", () => {
     expect(await api.recommend("S001", 3)).toEqual([]);
   });
 
-  it("clears the stored token on logout", () => {
-    api.setToken("token-123");
-    expect(localStorage.getItem("gradepulse_token")).toBe("token-123");
+  it("signs out on the server and forgets any old stored token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "signed_out" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    localStorage.setItem("gradepulse_token", "old-token");
 
-    api.logout();
+    await api.logout();
 
     expect(localStorage.getItem("gradepulse_token")).toBeNull();
-    expect(api.getToken()).toBeNull();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/auth/logout");
+    expect(init.method).toBe("POST");
   });
 
   it("keeps the status on 429 and preserves the server's guidance", async () => {
@@ -245,7 +276,6 @@ describe("api client", () => {
       jsonResponse({ status: "success", report: { stats: {}, errors: [], warnings: [] } })
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
-    api.setToken("token-123");
 
     await api.importRoster(new File(["student_id,name\nS1,Ada"], "roster.csv", { type: "text/csv" }), true);
 
@@ -254,7 +284,7 @@ describe("api client", () => {
     const form = init.body as FormData;
     expect(url).toContain("/api/ingest");
     expect(headers["Content-Type"]).toBeUndefined();
-    expect(headers.Authorization).toBe("Bearer token-123");
+    expect(headers["X-Requested-With"]).toBe("GradePulse");
     expect(form.get("type")).toBe("students");
     expect(form.get("dry_run")).toBe("true");
     expect((form.get("file") as File).name).toBe("roster.csv");

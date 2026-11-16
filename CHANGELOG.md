@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security: the session is an httpOnly cookie (16 November 2026)
+
+From the security assessment of 4 November (L1, token storage).
+
+- **The sign-in token is no longer kept in browser storage.** Sign-up, sign-in and password change set `gp_session`, an httpOnly, Secure (in production), SameSite=Strict cookie that page scripts cannot read, so an injected script could not steal a session. A readable `gp_signed_in` marker tells the web app someone is signed in.
+- **Changes made with the cookie need `X-Requested-With: GradePulse`** (403 otherwise), which a page on another site cannot send. Bearer tokens still work for scripts and are not affected.
+- **`POST /auth/logout`** removes the cookies. Sign Out calls it.
+- **Nobody is signed out by the change:** a token found in the old storage is sent once to `GET /auth/me`, which moves the session into the cookie, and is then deleted.
+- `COOKIE_SECURE` (default: on in production) controls the Secure flag.
+
 ### Security fixes: invite and reset codes, orphan accounts (16 November 2026)
 
 From the security assessment of 4 November (L9, L10).
