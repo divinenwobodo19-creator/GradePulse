@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Data protection (16 November 2026)
+
+From the security assessment of 4 November (H7, M11) and the NDPA review.
+
+- **Deleted records are now deleted.** Students, classes and schools that are deleted stay archived for 14 days (`ARCHIVE_PURGE_DAYS`) so a mistake can be undone, then a daily job removes them for good with their scores and engine state. Before, nothing was ever really deleted, contrary to the privacy page.
+- **Audit log:** viewing students or scores, adding, changing or deleting students, entering scores, importing class lists, deleting classes or the school, removing teachers, reset links and exports are recorded with who did it. Entries are kept for 12 months (`AUDIT_KEEP_DAYS`). `GET /audit` (admin) and "Show Recent Activity" in Settings list the school's own.
+- **School data export:** `GET /export` (admin) and "Download School Data" in Settings give every class, student and score as CSV files in a .zip, on every plan. Cells that start like a formula are defused for Excel.
+- **Privacy page:** names Google Drive (encrypted off-site backups, possibly outside Nigeria), the activity record, the 14-day deletion plus up to 30 days for backups, and the export.
+
 ### Security hardening (16 November 2026)
 
 From the security assessment of 4 November (L2, L3, L4, L5, L11, L12, M9).

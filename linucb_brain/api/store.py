@@ -20,7 +20,7 @@ import json
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from ..models.school import SchoolClass, normalize_label
@@ -146,6 +146,20 @@ def init_store():
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS scores_student_subject ON scores (student_pk, subject, assessed_on, id);
+
+        -- Who viewed or changed student data, for a school's own records and
+        -- for working out what a breach exposed (NDPA s.40). Kept for
+        -- AUDIT_KEEP_DAYS, then deleted.
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at TEXT NOT NULL,
+            user_id TEXT NOT NULL DEFAULT '',
+            school_id TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL,
+            target TEXT NOT NULL DEFAULT '',
+            address TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS audit_log_school ON audit_log (school_id, at);
     """)
     conn.commit()
     conn.close()
@@ -670,3 +684,86 @@ def replace_imported_scores(student_pk: int, subject: str, values: Iterable[floa
 
 
 init_store()
+
+
+# ── Deleting for good, the audit log, and export ────────────────────────────
+# Deleting a student, class or school archives it first, so a mistake can be
+# put right by the operator. After ARCHIVE_PURGE_DAYS the archived rows and
+# their scores are deleted for good; the rolling backups lose them a few days
+# later. Payments stay: they are the school's financial record.
+
+def _days_ago(days: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+def purge_archived(older_than_days: int) -> dict:
+    """Delete students, classes and schools archived more than
+    `older_than_days` ago, with their scores. Returns counts and the engine
+    keys of the deleted students (for the caller to drop from the Brain)."""
+    cutoff = _days_ago(older_than_days)
+    conn = _get_db()
+    old_students = "SELECT id FROM students WHERE archived_at IS NOT NULL AND archived_at < ?"
+    keys = [f"s{row[0]}" for row in conn.execute(old_students, (cutoff,)).fetchall()]
+    scores = conn.execute(f"DELETE FROM scores WHERE student_pk IN ({old_students})", (cutoff,)).rowcount
+    students = conn.execute("DELETE FROM students WHERE archived_at IS NOT NULL AND archived_at < ?",
+                            (cutoff,)).rowcount
+    old_classes = "SELECT class_id FROM classes WHERE archived_at IS NOT NULL AND archived_at < ?"
+    conn.execute(f"DELETE FROM teacher_classes WHERE class_id IN ({old_classes})", (cutoff,))
+    classes = conn.execute("DELETE FROM classes WHERE archived_at IS NOT NULL AND archived_at < ?",
+                           (cutoff,)).rowcount
+    schools = conn.execute("DELETE FROM schools WHERE archived_at IS NOT NULL AND archived_at < ?",
+                           (cutoff,)).rowcount
+    conn.commit()
+    conn.close()
+    return {"students": students, "scores": scores, "classes": classes, "schools": schools, "engine_keys": keys}
+
+
+def audit(user_id: str, school_id: str, action: str, target: str = "", address: str = "") -> None:
+    conn = _get_db()
+    conn.execute(
+        "INSERT INTO audit_log (at, user_id, school_id, action, target, address) VALUES (?, ?, ?, ?, ?, ?)",
+        (_now(), user_id, school_id, action, target[:200], address[:64]),
+    )
+    conn.commit()
+    conn.close()
+
+
+def purge_audit(older_than_days: int) -> int:
+    conn = _get_db()
+    n = conn.execute("DELETE FROM audit_log WHERE at < ?", (_days_ago(older_than_days),)).rowcount
+    conn.commit()
+    conn.close()
+    return n
+
+
+def list_audit(school_id: str, limit: int = 500) -> List[dict]:
+    """The school's audit entries, newest first, with the email of who acted."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT a.at, a.action, a.target, COALESCE(u.email, a.user_id) AS who "
+        "FROM audit_log a LEFT JOIN users u ON u.id = a.user_id "
+        "WHERE a.school_id = ? ORDER BY a.at DESC, a.id DESC LIMIT ?",
+        (school_id, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def export_rows(school_id: str) -> Dict[str, List[dict]]:
+    """Everything a school has entered, for its own copy (NDPA s.34, s.38)."""
+    conn = _get_db()
+    classes = conn.execute(
+        "SELECT class_id, label FROM classes WHERE school_id = ? AND archived_at IS NULL ORDER BY created_at, rowid",
+        (school_id,)).fetchall()
+    students = conn.execute(
+        "SELECT st.student_id, st.name, COALESCE(c.label, '') AS class, st.created_at "
+        "FROM students st LEFT JOIN classes c ON c.class_id = st.class_id "
+        "WHERE st.school_id = ? AND st.archived_at IS NULL ORDER BY c.label, st.name", (school_id,)).fetchall()
+    scores = conn.execute(
+        "SELECT st.student_id, st.name, sc.subject, ROUND(sc.score * 100, 1) AS score_percent, sc.assessed_on, "
+        "sc.label AS test, sc.source FROM scores sc JOIN students st ON st.id = sc.student_pk "
+        "WHERE st.school_id = ? AND st.archived_at IS NULL ORDER BY sc.assessed_on, st.student_id, sc.id",
+        (school_id,)).fetchall()
+    conn.close()
+    return {"classes": [dict(r) for r in classes], "students": [dict(r) for r in students],
+            "scores": [dict(r) for r in scores]}
