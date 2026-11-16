@@ -70,6 +70,8 @@ API (environment variables; `.env.example` has them all with comments):
 | `BACKUP_ENABLED`, `BACKUP_DIR`, `BACKUP_INTERVAL`, `BACKUP_MAX_COUNT` | on, `backups/`, 6 h, 24 | Scheduled backups of the data files. |
 | `PAYSTACK_SECRET_KEY`, `PRICE_PER_STUDENT_NAIRA`, `TERM_DAYS` | empty, empty, 120 | Online payment through Paystack, per student per term. Off until the key and price are set, and then nothing is limited; see `DEPLOYMENT.md`. |
 | `FREE_STUDENTS`, `GRACE_DAYS` | 40, 14 | Students the free plan covers, and days a paid plan lasts after its term ends. |
+| `ARCHIVE_PURGE_DAYS` | `14` | Days a deleted student, class or school is kept (so it can be undone) before it is removed for good. |
+| `AUDIT_KEEP_DAYS` | `365` | Days the audit log of who viewed or changed student data is kept. |
 | `TRUST_FORWARDED_FOR` | `false` | Use `X-Forwarded-For` for sign-in rate limits behind nginx; see `DEPLOYMENT.md`. |
 | `TRUST_CF_CONNECTING_IP` | `false` | Use Cloudflare's `CF-Connecting-IP` for sign-in limits. Only when every request comes through Cloudflare (a Cloudflare Tunnel). |
 | `RECOMMENDATIONS_ENABLED` | `false` | Turns content suggestions on. |

@@ -242,3 +242,11 @@ export const TIER_LABELS: Record<string, { label: string; color: string; badgeCl
 
 export const SUBJECTS = ["MATH", "SCIENCE", "ENGLISH", "HISTORY"] as const;
 export type Subject = typeof SUBJECTS[number];
+
+/** One line of a school's audit log: who viewed or changed student data. */
+export interface AuditEntry {
+  at: string;
+  action: string;
+  target: string;
+  who: string;
+}

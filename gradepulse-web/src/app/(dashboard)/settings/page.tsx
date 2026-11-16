@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
-import type { BrainSummary, Invite, Member, SchoolClass } from "@/lib/types";
+import type { AuditEntry, BrainSummary, Invite, Member, SchoolClass } from "@/lib/types";
 import { rememberSubjects, useSubjects } from "@/lib/subjects";
 
 // Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
@@ -35,6 +35,8 @@ export default function SettingsPage() {
   const [newSubject, setNewSubject] = useState("");
   const [savingSubjects, setSavingSubjects] = useState(false);
   const isAdmin = user?.role === "admin";
+  const [exporting, setExporting] = useState(false);
+  const [activity, setActivity] = useState<AuditEntry[] | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (type: string, message: string) => {
@@ -178,6 +180,31 @@ export default function SettingsPage() {
       showToast("success", `${member.email} was removed`);
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Could not remove this teacher");
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const blob = await api.exportSchoolData();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `gradepulse-school-data-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not download the data");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleShowActivity = async () => {
+    try {
+      setActivity(await api.getAuditLog(50));
+    } catch (err) {
+      showToast("error", err instanceof Error ? err.message : "Could not load the activity");
     }
   };
 
@@ -554,6 +581,52 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* The school's own data (admin only) */}
+      {isAdmin && (
+        <div className="card">
+          <div className="card-body space-y-4">
+            <div>
+              <h2 className="heading-2 text-navy">Your school&apos;s data</h2>
+              <p className="caption text-text-muted">
+                Download every class, student and score as spreadsheet files (.csv in a .zip). Deleted students,
+                classes and schools are removed for good after 14 days.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={handleExport} disabled={exporting} className="btn btn-primary btn-sm">
+                {exporting ? "Preparing..." : "Download School Data"}
+              </button>
+              {activity === null && (
+                <button type="button" onClick={handleShowActivity} className="btn btn-secondary btn-sm">
+                  Show Recent Activity
+                </button>
+              )}
+            </div>
+            {activity !== null && (
+              <div>
+                <h3 className="body font-medium text-navy mb-1">Recent activity</h3>
+                <p className="caption text-text-muted mb-2">Who viewed or changed student data, newest first.</p>
+                {activity.length === 0 ? (
+                  <p className="caption text-text-muted">Nothing recorded yet.</p>
+                ) : (
+                  <ul className="divide-y divide-border max-h-80 overflow-y-auto">
+                    {activity.map((entry, i) => (
+                      <li key={i} className="py-2 flex flex-wrap justify-between gap-x-3 caption">
+                        <span className="text-navy">
+                          {entry.who}: {activityLabel(entry.action)}
+                          {entry.target ? ` (${entry.target})` : ""}
+                        </span>
+                        <span className="text-text-muted">{new Date(entry.at).toLocaleString()}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* System */}
       <div className="card">
         <div className="card-body">
@@ -640,4 +713,24 @@ export default function SettingsPage() {
       </div>
     </div>
   );
+}
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  view_students: "viewed students",
+  view_scores: "viewed scores",
+  view_student_scores: "viewed a student's scores",
+  add_student: "added a student",
+  edit_student: "changed a student",
+  delete_student: "deleted a student",
+  enter_scores: "entered scores",
+  import_class_list: "imported a class list",
+  delete_class: "deleted a class",
+  delete_school: "deleted the school",
+  export_school_data: "downloaded the school's data",
+  remove_teacher: "removed a teacher",
+  password_reset_link: "created a password reset link",
+};
+
+function activityLabel(action: string): string {
+  return ACTIVITY_LABELS[action] ?? action.replace(/_/g, " ");
 }

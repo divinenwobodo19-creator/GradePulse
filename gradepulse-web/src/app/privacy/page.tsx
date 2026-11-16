@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "How GradePulse, a product of N-Library, handles school, teacher and student data.",
 };
 
-const UPDATED = "17 October 2026";
+const UPDATED = "16 November 2026";
 
 const SECTIONS: { heading: string; body: React.ReactNode }[] = [
   {
@@ -48,7 +48,8 @@ const SECTIONS: { heading: string; body: React.ReactNode }[] = [
         </li>
         <li>
           <strong>Technical logs:</strong> the time and address of requests, kept to keep the service running and
-          secure.
+          secure, and an activity record of which staff account viewed or changed student data, kept for 12
+          months so a school can check who saw what.
         </li>
       </ul>
     ),
@@ -85,6 +86,10 @@ const SECTIONS: { heading: string; body: React.ReactNode }[] = [
         <li>
           <strong>Paystack</strong> processes payments.
         </li>
+        <li>
+          <strong>Google Drive</strong> holds our off-site backups. Each backup is encrypted (AES-256) before it
+          leaves our server, and Google cannot read it. Google may store it outside Nigeria.
+        </li>
       </ul>
     ),
   },
@@ -103,9 +108,11 @@ const SECTIONS: { heading: string; body: React.ReactNode }[] = [
     heading: "How long we keep it",
     body: (
       <p>
-        We keep a school&apos;s data while it uses GradePulse, so its history of scores is there term after term. A
-        school can ask us to delete its data, or a single student&apos;s, at any time; we do so within 30 days, and
-        it also leaves our rolling backups within that time.
+        We keep a school&apos;s data while it uses GradePulse, so its history of scores is there term after term. When
+        a school deletes a student, a class or the whole school, or asks us to, the records are kept for 14 days so a
+        mistake can be undone, then deleted for good. Our encrypted backups are replaced on a rolling basis, so
+        deleted data has left every backup within a further 30 days. A school admin can download all of the
+        school&apos;s data at any time from Settings.
       </p>
     ),
   },

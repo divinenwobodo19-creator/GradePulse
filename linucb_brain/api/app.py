@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from typing import List, Dict, Optional
 from datetime import date
 import hmac
@@ -16,6 +16,10 @@ import glob
 import sqlite3
 import uuid
 import tempfile
+import threading
+import csv
+import io
+import zipfile
 import numpy as np
 
 from .. import __version__
@@ -81,6 +85,13 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024  # roster / content files
 RECOMMENDATIONS_ENABLED = os.getenv("RECOMMENDATIONS_ENABLED", "false").lower() == "true"
 
 SEED_DEMO_DATA = os.getenv("SEED_DEMO_DATA", "false").lower() == "true"
+
+# Data protection: deleted (archived) records are removed for good after
+# ARCHIVE_PURGE_DAYS, and audit entries after AUDIT_KEEP_DAYS. The privacy
+# page promises deletion, backups included, within 30 days.
+ARCHIVE_PURGE_DAYS = int(os.getenv("ARCHIVE_PURGE_DAYS", "14"))
+AUDIT_KEEP_DAYS = int(os.getenv("AUDIT_KEEP_DAYS", "365"))
+MAINTENANCE_INTERVAL = float(os.getenv("MAINTENANCE_INTERVAL", "86400"))  # daily
 
 brain_instance: Optional[Brain] = None
 synchronizer: Optional[BrainSynchronizer] = None
@@ -174,6 +185,39 @@ def _seed_demo_data(brain: Brain):
 # ── Students live in the store; the Brain only borrows them ─────────────────
 # Features the engine reads that the roster import can supply.
 ENGINE_FEATURES = ("education_level", "age_band", "credits_studied", "imd_band", "region_code")
+
+
+def _audit(user: dict, action: str, target: str = "") -> None:
+    """Record who viewed or changed student data. Never fails the request."""
+    try:
+        store.audit(user.get("id", ""), user.get("school_id", ""), action, target)
+    except Exception:
+        logger.exception("Could not write audit entry %s", action)
+
+
+def run_maintenance() -> dict:
+    """Delete archived records past ARCHIVE_PURGE_DAYS and old audit entries."""
+    purged = store.purge_archived(ARCHIVE_PURGE_DAYS)
+    if brain_instance is not None and purged["engine_keys"]:
+        with brain_instance._lock:
+            for key in purged["engine_keys"]:
+                brain_instance.students.pop(key, None)
+    purged["audit_entries"] = store.purge_audit(AUDIT_KEEP_DAYS)
+    if any(purged[k] for k in ("students", "classes", "schools", "audit_entries")):
+        logger.info("Maintenance deleted %s students (%s scores), %s classes, %s schools, %s audit entries",
+                    purged["students"], purged["scores"], purged["classes"], purged["schools"],
+                    purged["audit_entries"])
+    return purged
+
+
+def _maintenance_loop(stop: "threading.Event") -> None:
+    while True:
+        try:
+            run_maintenance()
+        except Exception:
+            logger.exception("Maintenance run failed")
+        if stop.wait(MAINTENANCE_INTERVAL):
+            return
 
 
 def _student_schema(rec: store.StudentRecord) -> StudentSchema:
@@ -439,8 +483,13 @@ async def lifespan(app: FastAPI):
         backup_manager.start()
         logger.info("Worker %s: backups every %ss, keeping %s", os.getpid(), BACKUP_INTERVAL, BACKUP_MAX_COUNT)
     
+    maintenance_stop = threading.Event()
+    threading.Thread(target=_maintenance_loop, args=(maintenance_stop,), daemon=True,
+                     name="gradepulse-maintenance").start()
+
     yield
-    
+
+    maintenance_stop.set()
     # Shutdown: save brain state, stop auto-save, stop backups
     if backup_manager is not None:
         backup_manager.stop()
@@ -729,6 +778,7 @@ def member_password_reset(user_id: str, user: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="Use Change Password for your own account")
     if not any(member["id"] == user_id for member in list_school_members(school_id)):
         raise HTTPException(status_code=404, detail="No such member in your school")
+    _audit(user, "password_reset_link", user_id)
     return create_password_reset(user_id, created_by=user["id"])
 
 
@@ -743,6 +793,7 @@ def remove_school_member(user_id: str, user: dict = Depends(require_admin)):
     if member["role"] != ROLE_TEACHER:
         raise HTTPException(status_code=400, detail="Only teachers can be removed. An admin account stays with the school.")
     remove_member(user_id)
+    _audit(user, "remove_teacher", member["email"])
     logger.info("Admin %s removed teacher %s from school %s", user["id"], user_id, school_id)
     return {"status": "removed"}
 
@@ -815,6 +866,7 @@ def delete_school(school_id: str, user: dict = Depends(require_admin)):
     if not store.get_school(school_id):
         raise HTTPException(status_code=404, detail="School not found")
     store.archive_school(school_id)
+    _audit(user, "delete_school", school_id)
     return {"status": "deleted"}
 
 
@@ -874,6 +926,7 @@ def delete_class(school_id: str, class_id: str, user: dict = Depends(require_adm
     if not store.get_class(school_id, class_id):
         raise HTTPException(status_code=404, detail="Class not found")
     store.archive_class(school_id, class_id)
+    _audit(user, "delete_class", class_id)
     return {"status": "deleted"}
 
 
@@ -895,6 +948,7 @@ def list_students(
     if class_id:
         _require_class_in_scope(user, class_id)
     students = store.list_students(user_school, class_id or "", class_ids=_class_scope(user))
+    _audit(user, "view_students", f"class {class_id}" if class_id else "all")
     return [_student_schema(rec) for rec in students]
 
 
@@ -926,6 +980,7 @@ def add_student(student: StudentSchema, user: dict = Depends(get_current_user)):
         baseline_score=student.performance_score, metadata=student.metadata,
         grade_history=student.grade_history,
     )
+    _audit(user, "add_student", student.student_id)
     return _student_schema(rec)
 
 
@@ -949,6 +1004,7 @@ def update_student(student_id: str, request: UpdateStudentRequest, user: dict = 
         # convention treat metadata as the class key too.
         changes["metadata"] = {**rec.metadata, "class_id": request.class_id}
     store.update_student(rec.pk, **changes)
+    _audit(user, "edit_student", f"{student_id}: {', '.join(sorted(changes))}")
     return _student_schema(_own_student(user, student_id))
 
 
@@ -957,6 +1013,7 @@ def delete_student(student_id: str, user: dict = Depends(require_admin)):
     rec = _own_student(user, student_id)
     store.archive_student(rec.pk)
     brain_instance.students.pop(rec.engine_key, None)
+    _audit(user, "delete_student", student_id)
     return {"status": "deleted"}
 
 
@@ -967,13 +1024,53 @@ def list_school_scores(class_id: Optional[str] = Query(None), user: dict = Depen
     billing.check_reports(user)
     if class_id:
         _require_class_in_scope(user, class_id)
+    _audit(user, "view_scores", f"class {class_id}" if class_id else "all")
     return store.list_school_scores(user.get("school_id", ""), class_id or "", class_ids=_class_scope(user))
 
 
 @app.get("/students/{student_id}/scores", response_model=List[ScoreRecord])
 def list_student_scores(student_id: str, user: dict = Depends(get_current_user)):
     """Every recorded score for one student, oldest first."""
-    return store.list_scores(_own_student(user, student_id).pk)
+    rec = _own_student(user, student_id)
+    _audit(user, "view_student_scores", student_id)
+    return store.list_scores(rec.pk)
+
+
+# ── The school's own data: export and audit log (admin) ────────────────────
+
+def _csv_text(rows: List[dict], columns: List[str]) -> str:
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        # A cell starting with = + - @ would run as a formula in Excel.
+        writer.writerow({k: ("'" + v if isinstance(v, str) and v[:1] in "=+-@" else v) for k, v in row.items()})
+    return out.getvalue()
+
+
+@app.get("/export")
+def export_school_data(user: dict = Depends(require_admin)):
+    """Everything the school has entered, as CSV files in one .zip: its
+    classes, students and every score. Free on every plan."""
+    school_id = _admin_school(user)
+    school = store.get_school(school_id)
+    data = store.export_rows(school_id)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("classes.csv", _csv_text(data["classes"], ["class_id", "label"]))
+        archive.writestr("students.csv", _csv_text(data["students"], ["student_id", "name", "class", "created_at"]))
+        archive.writestr("scores.csv", _csv_text(
+            data["scores"], ["student_id", "name", "subject", "score_percent", "assessed_on", "test", "source"]))
+    _audit(user, "export_school_data", f"{len(data['students'])} students, {len(data['scores'])} scores")
+    name = "".join(ch if ch.isalnum() else "-" for ch in (school["name"] if school else "school")).strip("-").lower()
+    return Response(content=buffer.getvalue(), media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="gradepulse-{name or "school"}-{date.today().isoformat()}.zip"'})
+
+
+@app.get("/audit")
+def school_audit_log(limit: int = Query(200, ge=1, le=1000), user: dict = Depends(require_admin)):
+    """Who in the school viewed or changed student data, newest first."""
+    return store.list_audit(_admin_school(user), limit)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1050,6 +1147,7 @@ def bulk_update(request: BulkUpdateRequest, user: dict = Depends(get_current_use
         [(records[e.student_id].pk, e.subject, e.score) for e in request.entries],
         assessed_on=request.assessed_on, label=request.label.strip(), entered_by=user["id"],
     )
+    _audit(user, "enter_scores", f"{len(request.entries)} scores, {len(records)} students")
     # ...and the engine learns from them. Its state is saved by the periodic
     # auto-save, not on every score sheet.
     keys = {student_id: _engine_student(rec) for student_id, rec in records.items()}
@@ -1295,6 +1393,8 @@ def ingest_data(
             )
         
         # Save if not dry run
+        if not dry_run and type == "students":
+            _audit(user, "import_class_list", filename[:100])
         if not dry_run:
             # Content lives in the engine state; rosters are already saved.
             synchronizer.save_brain(brain_instance.save)

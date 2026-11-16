@@ -1,6 +1,7 @@
 import type { ScoreRow } from "./reports";
 import type { StudentScore } from "@/components/ScoreHistory";
 import type {
+  AuditEntry,
   AuthResponse,
   BillingPrice,
   BillingStatus,
@@ -94,7 +95,8 @@ class ApiClient {
     method: string,
     path: string,
     body?: unknown,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    as: "json" | "blob" = "json"
   ): Promise<T> {
     const headers: Record<string, string> = {};
     const token = this.getToken();
@@ -133,7 +135,7 @@ class ApiClient {
         throw new ApiError(res.status, errorDetail(body?.detail) || res.statusText);
       }
 
-      return res.json();
+      return as === "blob" ? ((await res.blob()) as T) : res.json();
     } catch (error) {
       if (timedOut) throw new Error("The request timed out. Please try again.");
       throw error;
@@ -198,6 +200,15 @@ class ApiClient {
   }
 
   // A single-use reset code for one teacher. It is only returned here, once.
+  // ─── The school's own data (admin only) ───
+  async exportSchoolData() {
+    return this.request<Blob>("GET", "/export", undefined, undefined, "blob");
+  }
+
+  async getAuditLog(limit = 50, signal?: AbortSignal) {
+    return this.request<AuditEntry[]>("GET", `/audit?limit=${limit}`, undefined, signal);
+  }
+
   async removeMember(userId: string) {
     return this.request<{ status: string }>("DELETE", `/members/${encodeURIComponent(userId)}`);
   }
