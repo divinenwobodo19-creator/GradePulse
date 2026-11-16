@@ -144,12 +144,27 @@ def _apply_charge(data: dict) -> None:
     # A payment made during a paid term is a top-up and ends with that term.
     # A pilot term does not count: paying during a pilot starts a full term.
     _, term_end = _current_term(_paid_only(store.list_paid_payments(payment["school_id"])), now)
+    if term_end is None and payment["students"] < store.count_students(payment["school_id"]):
+        # Whether this is a top-up or a new term is decided when the money
+        # arrives, not at checkout: a top-up started during a term but paid
+        # after it ended would otherwise buy a full term for the whole school
+        # (₦500 unlocking reports). It grants nothing; the operator refunds it
+        # or counts it towards the new term.
+        logger.error("Payment %s for school %s arrived after the term ended and covers %s of %s students: "
+                     "recorded as late_top_up, refund or credit it",
+                     reference, payment["school_id"], payment["students"], store.count_students(payment["school_id"]))
+        store.fail_payment(reference, LATE_TOP_UP)
+        return
     period_end = term_end or now + timedelta(days=_term_days())
     if store.complete_payment(reference, now.isoformat(), now.isoformat(), period_end.isoformat()):
         logger.info("Payment %s recorded for school %s (%s students)", reference, payment["school_id"], payment["students"])
 
 
 # ── Plans ────────────────────────────────────────────────────────────────────
+
+# A payment Paystack took but which bought nothing: see _apply_charge.
+LATE_TOP_UP = "late_top_up"
+
 
 def _is_pilot(payment: dict) -> bool:
     return payment["reference"].startswith(PILOT_PREFIX)

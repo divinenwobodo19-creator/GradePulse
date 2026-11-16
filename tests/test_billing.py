@@ -245,6 +245,27 @@ def test_a_top_up_adds_students_and_ends_with_the_term(client, school, fake):
     assert _add(client, school["h"], "B99").status_code == 200
 
 
+def test_a_top_up_paid_after_the_term_ended_does_not_start_a_term(client, school, fake):
+    # Security assessment M3: a ₦500 top-up used to buy a full term.
+    _pay(client, school, fake, 3)
+    reference = client.post("/billing/checkout", headers=school["h"], json={"students": 1}).json()["reference"]
+    _end_terms(school, days_ago=20)  # the term (and grace) is over before Paystack confirms
+    fake.charges[reference] = {"reference": reference, "status": "success", "amount": 500 * 100, "currency": "NGN"}
+    result = client.post("/billing/verify", headers=school["h"], json={"reference": reference}).json()
+    assert result["payment_status"] == "late_top_up"
+    assert (result["state"], result["reports"]) == ("expired", False)
+    assert client.get("/scores", headers=school["h"]).status_code == 402
+
+
+def test_a_late_payment_that_covers_the_school_still_starts_a_term(client, school, fake):
+    _pay(client, school, fake, 3)
+    reference = client.post("/billing/checkout", headers=school["h"], json={"students": 3}).json()["reference"]
+    _end_terms(school, days_ago=20)
+    fake.charges[reference] = {"reference": reference, "status": "success", "amount": 3 * 500 * 100, "currency": "NGN"}
+    result = client.post("/billing/verify", headers=school["h"], json={"reference": reference}).json()
+    assert (result["payment_status"], result["state"]) == ("success", "active")
+
+
 def test_more_students_than_paid_for_is_over_limit_and_blocks_only_new_students(client, school, fake):
     _pay(client, school, fake, 3)
     # Students added before the plan existed, straight into the store.
