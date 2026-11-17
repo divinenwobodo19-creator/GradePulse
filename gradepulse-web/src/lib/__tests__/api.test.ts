@@ -56,12 +56,12 @@ describe("api client", () => {
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer old-token");
   });
 
-  it("reads the signed-in marker cookie", () => {
-    document.cookie = "gp_signed_in=; max-age=0; path=/";
+  it("reads the signed-in marker cookie only when it is set to 1", () => {
+    document.cookie = "gp_signed_in=0; path=/";
     expect(hasSessionCookie()).toBe(false);
     document.cookie = "gp_signed_in=1; path=/";
     expect(hasSessionCookie()).toBe(true);
-    document.cookie = "gp_signed_in=; max-age=0; path=/";
+    document.cookie = "gp_signed_in=0; path=/";
   });
 
   it("serializes request bodies as JSON", async () => {
