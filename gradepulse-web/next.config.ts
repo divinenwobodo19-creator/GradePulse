@@ -4,34 +4,8 @@ const apiProxyTarget = (process.env.API_URL || "http://localhost:8000").replace(
   /\/+$/,
   ""
 );
-const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-// Cloudflare Web Analytics: Cloudflare adds its beacon script to every page it
-// serves and the beacon reports page views back. Only these two hosts are allowed.
-const CLOUDFLARE_ANALYTICS_SCRIPT = "https://static.cloudflareinsights.com";
-const CLOUDFLARE_ANALYTICS_REPORT = "https://cloudflareinsights.com";
-const connectSources = [
-  "'self'",
-  CLOUDFLARE_ANALYTICS_REPORT,
-  ...(configuredApiUrl ? [configuredApiUrl] : []),
-];
-const scriptSources = [
-  "'self'",
-  "'unsafe-inline'",
-  CLOUDFLARE_ANALYTICS_SCRIPT,
-  ...(process.env.NODE_ENV === "development" ? ["'unsafe-eval'"] : []),
-];
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  `connect-src ${connectSources.join(" ")}`,
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `style-src 'self' 'unsafe-inline'`,
-  `script-src ${scriptSources.join(" ")}`,
-].join("; ");
+// The Content-Security-Policy is set per request, with a nonce, in
+// src/proxy.ts (src/lib/csp.ts).
 
 // Dev-only: warns if API_URL resolves to the demo mock, which also serves /health.
 if (process.env.NODE_ENV === "development" && !process.env.SKIP_API_ENGINE_CHECK) {
@@ -93,7 +67,6 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=31536000; includeSubDomains",
           },
-          { key: "Content-Security-Policy", value: contentSecurityPolicy },
         ],
       },
     ];

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security: script policy with a nonce (16 November 2026)
+
+From the security assessment of 4 November (L1, CSP).
+
+- **Inline scripts need this request's nonce.** `src/proxy.ts` sets the Content-Security-Policy on every page with a fresh nonce, and Next.js puts it on its own scripts; `'unsafe-inline'` is gone from `script-src`, so an injected script would be refused. Scripts still load from the site itself and from Cloudflare's analytics beacon.
+- Pages now render per request (the nonce cannot be baked in at build time). Checked in Chrome: the home, pricing, sign-in, sign-up, reset, privacy, guide and grade-calculator pages load with no policy errors.
+
 ### Security: the session is an httpOnly cookie (16 November 2026)
 
 From the security assessment of 4 November (L1, token storage).

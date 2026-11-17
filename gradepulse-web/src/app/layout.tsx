@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { IBM_Plex_Mono, Public_Sans, Source_Serif_4 } from "next/font/google";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
@@ -27,11 +28,14 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Reading the request makes every page render per request, which the CSP
+  // nonce needs (src/proxy.ts): a page built ahead of time has no nonce.
+  await headers();
   return (
     <html
       lang="en"
