@@ -97,7 +97,8 @@ export function forgetLegacyToken(): void {
 /** True when the server's signed-in marker cookie is present. */
 export function hasSessionCookie(): boolean {
   if (typeof document === "undefined") return false;
-  return document.cookie.split(";").some((part) => part.trim().startsWith(`${SIGNED_IN_COOKIE}=`));
+  // Only the value the server sets counts; an emptied or expired cookie does not.
+  return document.cookie.split(";").some((part) => part.trim() === `${SIGNED_IN_COOKIE}=1`);
 }
 
 class ApiClient {
