@@ -69,38 +69,51 @@ export interface Recommendation {
   avg_reward?: number;
 }
 
-class ApiClient {
-  private token: string | null = null;
+// The session is an httpOnly cookie the server sets at sign-in; scripts on
+// the page cannot read it. Earlier versions kept the token in localStorage
+// under this key: it is sent once to move the session to the cookie, then
+// removed (see AuthProvider).
+const LEGACY_TOKEN_KEY = "gradepulse_token";
+// Readable marker the server sets next to the session cookie.
+const SIGNED_IN_COOKIE = "gp_signed_in";
 
-  setToken(token: string | null) {
-    this.token = token;
-    if (typeof window !== "undefined") {
-      if (token) {
-        localStorage.setItem("gradepulse_token", token);
-      } else {
-        localStorage.removeItem("gradepulse_token");
-      }
-    }
-  }
-
-  getToken(): string | null {
-    if (this.token) return this.token;
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("gradepulse_token");
-    }
+export function legacyStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(LEGACY_TOKEN_KEY);
+  } catch {
     return null;
   }
+}
+
+export function forgetLegacyToken(): void {
+  try {
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } catch {
+    /* storage unavailable: nothing to remove */
+  }
+}
+
+/** True when the server's signed-in marker cookie is present. */
+export function hasSessionCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie.split(";").some((part) => part.trim().startsWith(`${SIGNED_IN_COOKIE}=`));
+}
+
+class ApiClient {
 
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
     signal?: AbortSignal,
-    as: "json" | "blob" = "json"
+    as: "json" | "blob" = "json",
+    bearer?: string
   ): Promise<T> {
-    const headers: Record<string, string> = {};
-    const token = this.getToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    // The server refuses changes made with the session cookie unless this
+    // header is present; a page on another site cannot add it.
+    const headers: Record<string, string> = { "X-Requested-With": "GradePulse" };
+    if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
     // A FormData body (file upload) sets its own multipart Content-Type.
     const isForm = typeof FormData !== "undefined" && body instanceof FormData;
     if (body && !isForm) headers["Content-Type"] = "application/json";
@@ -124,6 +137,8 @@ class ApiClient {
         headers,
         body: isForm ? (body as FormData) : body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        // Same origin through the /api proxy; a separate API host needs "include".
+        credentials: API_URL ? "include" : "same-origin",
       });
 
       if (res.status === 401 && typeof window !== "undefined") {
@@ -155,29 +170,25 @@ class ApiClient {
       school_name: schoolName,
       ...(inviteCode ? { invite_code: inviteCode } : {}),
     });
-    this.setToken(data.token);
     return data;
   }
 
   async login(email: string, password: string) {
-    const data = await this.request<AuthResponse>("POST", "/auth/login", { email, password });
-    this.setToken(data.token);
-    return data;
+    return this.request<AuthResponse>("POST", "/auth/login", { email, password });
   }
 
-  async me() {
-    return this.request<Omit<AuthResponse, "token">>("GET", "/auth/me");
+  // With a token from older storage, the answer also moves the session into the cookie.
+  async me(legacyToken?: string) {
+    return this.request<Omit<AuthResponse, "token">>("GET", "/auth/me", undefined, undefined, "json", legacyToken);
   }
 
   // ─── Passwords ───
   // Signs every other session out; this one continues on the new token.
   async changePassword(currentPassword: string, newPassword: string) {
-    const data = await this.request<AuthResponse>("POST", "/auth/change-password", {
+    return this.request<AuthResponse>("POST", "/auth/change-password", {
       current_password: currentPassword,
       new_password: newPassword,
     });
-    this.setToken(data.token);
-    return data;
   }
 
   async resetPassword(code: string, newPassword: string) {
@@ -258,8 +269,9 @@ class ApiClient {
     return this.request<{ status: string }>("DELETE", `/invites/${encodeURIComponent(inviteId)}`);
   }
 
-  logout() {
-    this.setToken(null);
+  async logout() {
+    forgetLegacyToken();
+    await this.request<{ status: string }>("POST", "/auth/logout").catch(() => undefined);
   }
 
   // ─── Schools ───

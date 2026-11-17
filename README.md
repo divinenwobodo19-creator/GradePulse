@@ -72,6 +72,7 @@ API (environment variables; `.env.example` has them all with comments):
 | `FREE_STUDENTS`, `GRACE_DAYS` | 40, 14 | Students the free plan covers, and days a paid plan lasts after its term ends. |
 | `ARCHIVE_PURGE_DAYS` | `14` | Days a deleted student, class or school is kept (so it can be undone) before it is removed for good. |
 | `AUDIT_KEEP_DAYS` | `365` | Days the audit log of who viewed or changed student data is kept. |
+| `COOKIE_SECURE` | on in production | Mark the session cookie Secure (HTTPS only). Turn off only for plain-HTTP local testing of a production build. |
 | `TRUST_FORWARDED_FOR` | `false` | Use `X-Forwarded-For` for sign-in rate limits behind nginx; see `DEPLOYMENT.md`. |
 | `TRUST_CF_CONNECTING_IP` | `false` | Use Cloudflare's `CF-Connecting-IP` for sign-in limits. Only when every request comes through Cloudflare (a Cloudflare Tunnel). |
 | `RECOMMENDATIONS_ENABLED` | `false` | Turns content suggestions on. |

@@ -10,7 +10,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { api, UNAUTHORIZED_EVENT } from "./api";
+import { api, forgetLegacyToken, hasSessionCookie, legacyStoredToken, UNAUTHORIZED_EVENT } from "./api";
 import type { User } from "./types";
 
 interface AuthContextType {
@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleUnauthorized = () => {
       cachedUser = null;
-      api.setToken(null);
+      forgetLegacyToken();
       setUser(null);
       setLoading(false);
     };
@@ -49,14 +49,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initRef.current = true;
 
     const initialize = async () => {
-      const token = api.getToken();
-      if (!token || cachedUser) {
+      const legacy = legacyStoredToken();
+      if (cachedUser || (!legacy && !hasSessionCookie())) {
         setLoading(false);
         return;
       }
 
       try {
-        const data = await api.me();
+        const data = await api.me(legacy ?? undefined);
+        forgetLegacyToken();
         const u: User = {
           id: data.id,
           email: data.email,
@@ -68,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(u);
       } catch {
         cachedUser = null;
-        api.setToken(null);
+        forgetLegacyToken();
       } finally {
         setLoading(false);
       }
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     cachedUser = null;
     setUser(null);
-    api.logout();
+    void api.logout();
     router.replace("/login");
   }, [router]);
 

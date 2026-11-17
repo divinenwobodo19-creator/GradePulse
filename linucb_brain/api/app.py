@@ -38,8 +38,9 @@ from .auth import (
     verify_password, set_password, get_user_by_email, list_school_members,
     create_password_reset, redeem_password_reset, remove_member,
     login_wait_seconds, record_login_failure, clear_login_failures,
-    ENV as AUTH_ENV,
+    ENV as AUTH_ENV, set_session_cookie, clear_session_cookie, security as bearer_scheme,
 )
+from fastapi.security import HTTPAuthorizationCredentials
 from .ratelimit import SlidingWindowLimiter
 from . import store
 from .billing import router as billing_router
@@ -614,7 +615,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/auth/signup", response_model=UserResponse)
-def signup(request: Request, signup_request: SignupRequest):
+def signup(request: Request, response: Response, signup_request: SignupRequest):
     if not SIGNUP_LIMITER.allow(_client_host(request)):
         raise HTTPException(status_code=429, detail="Too many signups from this address — try again later")
     invite_code = (signup_request.invite_code or "").strip()
@@ -644,6 +645,7 @@ def signup(request: Request, signup_request: SignupRequest):
         role = ROLE_ADMIN
     update_user_school(user["id"], school["school_id"], role=role)
     token = create_access_token({"sub": user["id"]})
+    set_session_cookie(response, token)
     return {"id": user["id"], "email": user["email"], "school_id": school["school_id"],
             "school_name": school["name"], "role": role, "token": token}
 
@@ -656,7 +658,7 @@ def _wait_words(seconds: int) -> str:
 
 
 @app.post("/auth/login", response_model=UserResponse)
-def login(request: Request, login_request: LoginRequest):
+def login(request: Request, response: Response, login_request: LoginRequest):
     if not LOGIN_HOST_LIMITER.allow(_client_host(request)):
         raise HTTPException(status_code=429, detail="Too many login attempts — try again later")
     if not LOGIN_LIMITER.allow(f"{_client_host(request)}|{login_request.email.lower()}"):
@@ -677,6 +679,7 @@ def login(request: Request, login_request: LoginRequest):
     if user.get("school_id"):
         school = store.get_school(user["school_id"])
     token = create_access_token({"sub": user["id"]})
+    set_session_cookie(response, token)
     return {"id": user["id"], "email": user["email"],
             "school_id": user.get("school_id", ""),
             "school_name": school["name"] if school else "",
@@ -685,7 +688,12 @@ def login(request: Request, login_request: LoginRequest):
 
 
 @app.get("/auth/me", response_model=UserResponse)
-def me(user: dict = Depends(get_current_user)):
+def me(response: Response, user: dict = Depends(get_current_user),
+       credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    if credentials:
+        # A session from before the cookie (token kept in the browser's
+        # storage) moves to the cookie, so nobody is signed out by the change.
+        set_session_cookie(response, credentials.credentials)
     school = None
     if user.get("school_id"):
         school = store.get_school(user["school_id"])
@@ -701,7 +709,8 @@ def me(user: dict = Depends(get_current_user)):
 # for the teachers in their school, the deployment's operator for anyone.
 
 @app.post("/auth/change-password", response_model=UserResponse)
-def change_password(http_request: Request, request: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+def change_password(http_request: Request, response: Response, request: ChangePasswordRequest,
+                    user: dict = Depends(get_current_user)):
     address = _client_host(http_request)
     wait = login_wait_seconds(user["email"], address)
     if wait:
@@ -716,9 +725,18 @@ def change_password(http_request: Request, request: ChangePasswordRequest, user:
     clear_login_failures(user["email"], address)
     school = store.get_school(user.get("school_id", ""))
     # Every earlier session is now signed out; this one continues on a new token.
+    token = create_access_token({"sub": user["id"]})
+    set_session_cookie(response, token)
     return {"id": user["id"], "email": user["email"], "school_id": user.get("school_id", ""),
             "school_name": school["name"] if school else "", "role": user.get("role", ROLE_ADMIN),
-            "token": create_access_token({"sub": user["id"]})}
+            "token": token}
+
+
+@app.post("/auth/logout")
+def logout(response: Response):
+    """Ends the browser session: both session cookies are removed."""
+    clear_session_cookie(response)
+    return {"status": "signed_out"}
 
 
 @app.post("/auth/reset-password")
