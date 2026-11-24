@@ -10,8 +10,13 @@ import type {
   Invite,
   Member,
   PasswordResetLink,
+  ReportCardsResponse,
+  ReportCommentInput,
+  ReportSettings,
   SchoolClass,
   Student,
+  Term,
+  TermInput,
   TriageResult,
 } from "./types";
 
@@ -444,6 +449,61 @@ class ApiClient {
     return this.request<{ reward: number }>("POST", "/calculate-reward", data);
   }
 
+
+  // ─── Term report cards ───
+  async getReportSettings(signal?: AbortSignal) {
+    return this.request<ReportSettings>("GET", "/report-settings", undefined, signal);
+  }
+
+  // Admin only.
+  async saveReportSettings(settings: ReportSettings) {
+    return this.request<ReportSettings>("PUT", "/report-settings", settings);
+  }
+
+  async getTerms(signal?: AbortSignal) {
+    return this.request<Term[]>("GET", "/terms", undefined, signal);
+  }
+
+  // Admin only.
+  async createTerm(term: TermInput) {
+    return this.request<Term>("POST", "/terms", term);
+  }
+
+  // Admin only. Only the fields sent change; next_term_begins: null clears it.
+  async updateTerm(termId: string, changes: Partial<TermInput>) {
+    return this.request<Term>("PUT", `/terms/${termId}`, changes);
+  }
+
+  // Admin only.
+  async deleteTerm(termId: string) {
+    return this.request<{ status: string }>("DELETE", `/terms/${termId}`);
+  }
+
+  // One subject's exam scores as a 0-1 share of the exam; null clears one.
+  async saveExamScores(termId: string, subject: string, entries: { student_id: string; score: number | null }[]) {
+    return this.request<{ saved: number }>("PUT", `/terms/${termId}/exam-scores`, { subject, entries });
+  }
+
+  // Subject teachers' remarks; an empty remark clears it.
+  async saveSubjectRemarks(termId: string, entries: { student_id: string; subject: string; remark: string }[]) {
+    return this.request<{ saved: number }>("PUT", `/terms/${termId}/remarks`, { entries });
+  }
+
+  // Attendance and comments. Only the fields sent change. The principal's
+  // comment is for admins only (403 for a teacher).
+  async saveReportComments(termId: string, entries: ReportCommentInput[]) {
+    return this.request<{ saved: number }>("PUT", `/terms/${termId}/comments`, { entries });
+  }
+
+  // Every card for one class in one term. Comes with a paid term (402 otherwise).
+  async getReportCards(termId: string, classId: string, signal?: AbortSignal) {
+    return this.request<ReportCardsResponse>(
+      "GET",
+      `/terms/${termId}/report-cards?class_id=${encodeURIComponent(classId)}`,
+      undefined,
+      signal
+    );
+  }
 
   async health(signal?: AbortSignal) {
     return this.request<{

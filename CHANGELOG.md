@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Term report cards — backend (24 November 2026)
+
+- **Terms.** An admin sets up each term (session, name, dates, next-term date, days school opened). The weekly tests dated inside a term make up its continuous assessment.
+- **Report settings.** CA weight (40 by default; the exam is the rest), grading scale (WAEC A1–F9 by default, editable), class positions on or off, school address and principal's name.
+- **Exam scores, remarks, comments, attendance.** Teachers enter their classes' exam scores, subject remarks, form-teacher comments and attendance; the principal's comment is for admins.
+- **Report cards.** `GET /terms/{id}/report-cards?class_id=` returns every card for a class: CA, exam, total, grade, subject position, class average, highest and lowest, overall total, average and position. A subject without all its parts is listed as missing instead of being counted as zero; overall positions only rank complete cards. Comes with a paid term.
+- Archived students, terms and schools take their report data with them when purged.
+
 ### Security: script policy with a nonce (16 November 2026)
 
 From the security assessment of 4 November (L1, CSP).
