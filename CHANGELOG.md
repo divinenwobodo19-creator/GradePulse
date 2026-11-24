@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Term report cards — screens (24 November 2026)
+
+- **Report cards page** (`/report-cards`, in the menu): choose the term and class, then work in three steps. **1. Exam scores & remarks**: one subject at a time, each student's weekly tests, CA, an exam box (marked out of the exam's share, e.g. 60) and an optional remark; totals and grades update on save. **2. Attendance & comments**: days present, the form teacher's comment and (admins) the principal's comment. **3. Preview & print**: one A4 card per student, with a warning listing any card that is not complete yet.
+- **The card**: school name and address, term and session, student details, attendance, position in class, a row per subject (CA, exam, total, grade, position, class average, highest, lowest, remark), total and average (marked "3 of 4 subjects" when a card is incomplete), the grade key, both comments with signature lines, and the next term date.
+- **Admins** set up and edit terms from the page, and choose the CA share, grading scale (with Reset to WAEC), positions on or off, address and principal's name in **Settings → Report cards**.
+
 ### Term report cards — backend (24 November 2026)
 
 - **Terms.** An admin sets up each term (session, name, dates, next-term date, days school opened). The weekly tests dated inside a term make up its continuous assessment.

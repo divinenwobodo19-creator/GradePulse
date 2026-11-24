@@ -685,6 +685,42 @@ body {
 
 .print-only { display: none; }
 
+/* ─── Term report cards ─── */
+.report-card-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+.report-card-facts dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-secondary); }
+.report-card-facts dd { margin: 0; }
+.report-card-table { font-size: 12px; }
+.report-card-table th, .report-card-table td { padding: 5px 7px; }
+.report-card-key { line-height: 1.6; }
+.report-card-comments {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+.report-card-sign {
+  border-top: 1px solid var(--color-border-strong);
+  margin-top: 18px;
+  padding-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+@media (max-width: 640px) {
+  .report-card-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-card-comments { grid-template-columns: 1fr; }
+}
+@media print {
+  .report-card .card-body { padding: 0; }
+  .report-card-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .report-card-comments { grid-template-columns: 1fr 1fr; }
+}
+
 /* ─── Accessibility ─── */
 :focus-visible {
   outline: 2px solid var(--color-navy);

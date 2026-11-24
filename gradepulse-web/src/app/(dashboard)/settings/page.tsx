@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import type { AuditEntry, BrainSummary, Invite, Member, SchoolClass } from "@/lib/types";
 import { rememberSubjects, useSubjects } from "@/lib/subjects";
+import ReportSettingsCard from "@/components/ReportSettingsCard";
 
 // Mirrors PASSWORD_MIN_LENGTH in linucb_brain/api/schemas.py.
 const PASSWORD_MIN_LENGTH = 10;
@@ -408,6 +409,9 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Report cards (admin only) */}
+      {isAdmin && <ReportSettingsCard />}
 
       {/* Teachers (admin only) */}
       {isAdmin && (
