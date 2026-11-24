@@ -255,3 +255,81 @@ export interface AuditEntry {
   target: string;
   who: string;
 }
+
+// ─── Term report cards ───
+export interface GradeBand {
+  grade: string;
+  min: number;
+  remark: string;
+}
+
+export interface ReportSettings {
+  ca_weight: number; // CA share of 100; the exam is the rest
+  grade_scale: GradeBand[];
+  show_positions: boolean;
+  address: string;
+  principal_name: string;
+}
+
+export interface Term {
+  term_id: string;
+  session: string;
+  name: string;
+  starts_on: string;
+  ends_on: string;
+  next_term_begins: string; // "" when not set
+  days_opened: number;
+}
+
+export interface TermInput {
+  session: string;
+  name: string;
+  starts_on: string;
+  ends_on: string;
+  next_term_begins?: string | null;
+  days_opened?: number;
+}
+
+export interface ReportSubjectRow {
+  subject: string;
+  tests: number; // weekly tests in the term behind the CA
+  ca: number | null; // out of ca_weight
+  exam: number | null; // out of exam_weight
+  total: number | null; // out of 100; null until every part is in
+  grade: string;
+  grade_remark: string;
+  teacher_remark: string;
+  position: number | null;
+  class_average: number | null;
+  highest: number | null;
+  lowest: number | null;
+}
+
+export interface ReportCard {
+  student_id: string;
+  name: string;
+  subjects: ReportSubjectRow[];
+  missing: string[]; // subjects without a total yet
+  total: number | null;
+  average: number | null;
+  position: number | null; // null when positions are off or the card is incomplete
+  days_present: number | null;
+  form_teacher_comment: string;
+  principal_comment: string;
+}
+
+export interface ReportCardsResponse {
+  term: Term;
+  class: { class_id: string; label: string };
+  school: { name: string; address: string; principal_name: string };
+  settings: { ca_weight: number; exam_weight: number; show_positions: boolean; grade_scale: GradeBand[] };
+  class_size: number;
+  cards: ReportCard[];
+}
+
+export interface ReportCommentInput {
+  student_id: string;
+  days_present?: number | null;
+  form_teacher_comment?: string | null;
+  principal_comment?: string | null;
+}

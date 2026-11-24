@@ -263,3 +263,75 @@ class UpdateStudentRequest(BaseModel):
 class IngestResponse(BaseModel):
     status: str
     report: Dict[str, Any]
+
+
+# ── Term report cards ──────────────────────────────────────────────────────
+
+class GradeBand(BaseModel):
+    grade: str = Field(..., min_length=1, max_length=4)
+    min: float = Field(..., ge=0, le=100)
+    remark: str = Field("", max_length=30)
+
+class ReportSettings(BaseModel):
+    ca_weight: int = Field(40, ge=0, le=100)   # CA share of 100; the exam is the rest
+    grade_scale: List[GradeBand] = Field(..., min_length=2, max_length=15)
+    show_positions: bool = True
+    address: str = Field("", max_length=300)
+    principal_name: str = Field("", max_length=NAME_MAX)
+
+class TermRequest(BaseModel):
+    session: str = Field(..., min_length=1, max_length=20)   # e.g. "2026/2027"
+    name: str = Field(..., min_length=1, max_length=40)      # e.g. "First Term"
+    starts_on: date
+    ends_on: date
+    next_term_begins: Optional[date] = None
+    days_opened: int = Field(0, ge=0, le=366)
+
+    @model_validator(mode="after")
+    def _check_dates(self):
+        if self.ends_on < self.starts_on:
+            raise ValueError("The term must end after it starts")
+        return self
+
+class TermUpdate(BaseModel):
+    session: Optional[str] = Field(None, min_length=1, max_length=20)
+    name: Optional[str] = Field(None, min_length=1, max_length=40)
+    starts_on: Optional[date] = None
+    ends_on: Optional[date] = None
+    next_term_begins: Optional[date] = None
+    days_opened: Optional[int] = Field(None, ge=0, le=366)
+
+class TermResponse(BaseModel):
+    term_id: str
+    session: str
+    name: str
+    starts_on: str
+    ends_on: str
+    next_term_begins: str
+    days_opened: int
+
+class ExamEntry(BaseModel):
+    student_id: str = Field(..., max_length=ID_MAX)
+    score: Optional[float] = Field(None, ge=0.0, le=1.0)   # share of the exam; null clears it
+
+class ExamSheetRequest(BaseModel):
+    subject: str = Field(..., max_length=SUBJECT_MAX)
+    entries: List[ExamEntry] = Field(..., max_length=BULK_MAX_ENTRIES)
+
+class RemarkEntry(BaseModel):
+    student_id: str = Field(..., max_length=ID_MAX)
+    subject: str = Field(..., max_length=SUBJECT_MAX)
+    remark: str = Field("", max_length=120)                 # empty clears it
+
+class RemarksRequest(BaseModel):
+    entries: List[RemarkEntry] = Field(..., max_length=BULK_MAX_ENTRIES)
+
+class CommentEntry(BaseModel):
+    # Only the fields sent are changed; send null to clear one.
+    student_id: str = Field(..., max_length=ID_MAX)
+    days_present: Optional[int] = Field(None, ge=0, le=366)
+    form_teacher_comment: Optional[str] = Field(None, max_length=300)
+    principal_comment: Optional[str] = Field(None, max_length=300)
+
+class CommentsRequest(BaseModel):
+    entries: List[CommentEntry] = Field(..., max_length=500)

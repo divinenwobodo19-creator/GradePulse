@@ -159,6 +159,24 @@ All routes require the token **except**: `/health`, `/`, and the three `/auth/*`
 
 `grade_history` is `{topic_name: [scores 0–1]}`. `performance_score` is 0–1.
 
+### Term report cards
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/report-settings` | — | `{ca_weight, grade_scale: [{grade, min, remark}], show_positions, address, principal_name}` (defaults: 40, WAEC A1–F9, true) |
+| PUT | `/report-settings` | same shape (admin) | saved settings; 400 if the scale has no grade starting at 0, or repeats a grade or cut-off |
+| GET | `/terms` | — | `[{term_id, session, name, starts_on, ends_on, next_term_begins, days_opened}]`, newest first |
+| POST | `/terms` | `{session, name, starts_on, ends_on, next_term_begins?, days_opened?}` (admin) | term; 422 if it ends before it starts |
+| PUT | `/terms/{term_id}` | any of the above (admin); `next_term_begins: null` clears it | term |
+| DELETE | `/terms/{term_id}` | — (admin) | `{status: "deleted"}` (archived) |
+| PUT | `/terms/{term_id}/exam-scores` | `{subject, entries: [{student_id, score: 0–1 \| null}]}` | `{saved}`; score is the share of the exam, null clears it |
+| PUT | `/terms/{term_id}/remarks` | `{entries: [{student_id, subject, remark}]}` | `{saved}`; empty remark clears it |
+| PUT | `/terms/{term_id}/comments` | `{entries: [{student_id, days_present?, form_teacher_comment?, principal_comment?}]}` | `{saved}`; only fields sent change; `principal_comment` is admin-only (403) |
+| GET | `/terms/{term_id}/report-cards?class_id=` | — | `{term, class, school, settings: {ca_weight, exam_weight, show_positions, grade_scale}, class_size, cards: [...]}`; 402 without a paid term |
+
+Each card: `{student_id, name, subjects: [{subject, tests, ca, exam, total, grade, grade_remark, teacher_remark, position, class_average, highest, lowest}], missing, total, average, position, days_present, form_teacher_comment, principal_comment}`.
+CA = mean of the weekly tests dated inside the term × `ca_weight`; exam = exam share × `exam_weight`. `total` is null (and the subject is listed in `missing`) until every weighted part is in. Positions use competition ranking (1, 2, 2, 4); overall positions only rank complete cards; all positions are null when `show_positions` is false. Teachers write for their own classes; terms and settings are admin-only.
+
 ### Learning engine
 
 | Method | Path | Request | Response |

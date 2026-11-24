@@ -160,7 +160,55 @@ def init_store():
             address TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS audit_log_school ON audit_log (school_id, at);
+
+        -- Term report cards. A term is the window whose weekly tests make up
+        -- the continuous assessment (CA); the exam, remarks, comments and
+        -- attendance are entered once per term.
+        CREATE TABLE IF NOT EXISTS terms (
+            term_id TEXT PRIMARY KEY,
+            school_id TEXT NOT NULL,
+            session TEXT NOT NULL,
+            name TEXT NOT NULL,
+            starts_on TEXT NOT NULL,
+            ends_on TEXT NOT NULL,
+            next_term_begins TEXT NOT NULL DEFAULT '',
+            days_opened INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            archived_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS terms_school ON terms (school_id, starts_on);
+        CREATE TABLE IF NOT EXISTS exam_scores (
+            term_id TEXT NOT NULL,
+            student_pk INTEGER NOT NULL REFERENCES students (id),
+            subject TEXT NOT NULL,
+            score REAL NOT NULL,
+            entered_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (term_id, student_pk, subject)
+        );
+        CREATE TABLE IF NOT EXISTS subject_remarks (
+            term_id TEXT NOT NULL,
+            student_pk INTEGER NOT NULL REFERENCES students (id),
+            subject TEXT NOT NULL,
+            remark TEXT NOT NULL,
+            entered_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (term_id, student_pk, subject)
+        );
+        CREATE TABLE IF NOT EXISTS report_comments (
+            term_id TEXT NOT NULL,
+            student_pk INTEGER NOT NULL REFERENCES students (id),
+            days_present INTEGER,
+            form_teacher_comment TEXT NOT NULL DEFAULT '',
+            principal_comment TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (term_id, student_pk)
+        );
     """)
+    school_columns = {row["name"] for row in conn.execute("PRAGMA table_info(schools)")}
+    if "report_settings" not in school_columns:
+        conn.execute("ALTER TABLE schools ADD COLUMN report_settings TEXT NOT NULL DEFAULT '{}'")
     conn.commit()
     conn.close()
 
@@ -705,12 +753,23 @@ def purge_archived(older_than_days: int) -> dict:
     old_students = "SELECT id FROM students WHERE archived_at IS NOT NULL AND archived_at < ?"
     keys = [f"s{row[0]}" for row in conn.execute(old_students, (cutoff,)).fetchall()]
     scores = conn.execute(f"DELETE FROM scores WHERE student_pk IN ({old_students})", (cutoff,)).rowcount
+    for table in ("exam_scores", "subject_remarks", "report_comments"):
+        conn.execute(f"DELETE FROM {table} WHERE student_pk IN ({old_students})", (cutoff,))
+    old_terms = "SELECT term_id FROM terms WHERE archived_at IS NOT NULL AND archived_at < ?"
+    for table in ("exam_scores", "subject_remarks", "report_comments"):
+        conn.execute(f"DELETE FROM {table} WHERE term_id IN ({old_terms})", (cutoff,))
+    conn.execute("DELETE FROM terms WHERE archived_at IS NOT NULL AND archived_at < ?", (cutoff,))
     students = conn.execute("DELETE FROM students WHERE archived_at IS NOT NULL AND archived_at < ?",
                             (cutoff,)).rowcount
     old_classes = "SELECT class_id FROM classes WHERE archived_at IS NOT NULL AND archived_at < ?"
     conn.execute(f"DELETE FROM teacher_classes WHERE class_id IN ({old_classes})", (cutoff,))
     classes = conn.execute("DELETE FROM classes WHERE archived_at IS NOT NULL AND archived_at < ?",
                            (cutoff,)).rowcount
+    school_terms = ("SELECT term_id FROM terms WHERE school_id IN "
+                    "(SELECT school_id FROM schools WHERE archived_at IS NOT NULL AND archived_at < ?)")
+    for table in ("exam_scores", "subject_remarks", "report_comments"):
+        conn.execute(f"DELETE FROM {table} WHERE term_id IN ({school_terms})", (cutoff,))
+    conn.execute(f"DELETE FROM terms WHERE term_id IN ({school_terms})", (cutoff,))
     schools = conn.execute("DELETE FROM schools WHERE archived_at IS NOT NULL AND archived_at < ?",
                            (cutoff,)).rowcount
     conn.commit()
@@ -767,3 +826,195 @@ def export_rows(school_id: str) -> Dict[str, List[dict]]:
     conn.close()
     return {"classes": [dict(r) for r in classes], "students": [dict(r) for r in students],
             "scores": [dict(r) for r in scores]}
+
+
+# ── Term report cards ──────────────────────────────────────────────────────
+
+def get_report_settings(school_id: str) -> dict:
+    """The school's saved report-card settings (raw; defaults are filled in
+    by report_cards.settings_with_defaults)."""
+    conn = _get_db()
+    row = conn.execute("SELECT report_settings FROM schools WHERE school_id = ?", (school_id,)).fetchone()
+    conn.close()
+    return json.loads(row["report_settings"] or "{}") if row else {}
+
+
+def set_report_settings(school_id: str, settings: dict) -> None:
+    conn = _get_db()
+    conn.execute("UPDATE schools SET report_settings = ? WHERE school_id = ?", (json.dumps(settings), school_id))
+    conn.commit()
+    conn.close()
+
+
+def _term_dict(row) -> dict:
+    return {"term_id": row["term_id"], "session": row["session"], "name": row["name"],
+            "starts_on": row["starts_on"], "ends_on": row["ends_on"],
+            "next_term_begins": row["next_term_begins"], "days_opened": row["days_opened"]}
+
+
+def list_terms(school_id: str) -> List[dict]:
+    """A school's terms, newest first."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT * FROM terms WHERE school_id = ? AND archived_at IS NULL ORDER BY starts_on DESC, created_at DESC",
+        (school_id,),
+    ).fetchall()
+    conn.close()
+    return [_term_dict(r) for r in rows]
+
+
+def get_term(school_id: str, term_id: str) -> Optional[dict]:
+    if not school_id:
+        return None
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM terms WHERE school_id = ? AND term_id = ? AND archived_at IS NULL", (school_id, term_id)
+    ).fetchone()
+    conn.close()
+    return _term_dict(row) if row else None
+
+
+def add_term(school_id: str, fields: dict) -> dict:
+    conn = _get_db()
+    while True:
+        term_id = _new_id()
+        try:
+            conn.execute(
+                "INSERT INTO terms (term_id, school_id, session, name, starts_on, ends_on, next_term_begins, "
+                "days_opened, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (term_id, school_id, fields["session"], fields["name"], fields["starts_on"], fields["ends_on"],
+                 fields.get("next_term_begins", ""), fields.get("days_opened", 0), _now()),
+            )
+            break
+        except sqlite3.IntegrityError:
+            continue
+    conn.commit()
+    conn.close()
+    return get_term(school_id, term_id)
+
+
+def update_term(school_id: str, term_id: str, fields: dict) -> Optional[dict]:
+    allowed = ("session", "name", "starts_on", "ends_on", "next_term_begins", "days_opened")
+    changes = {k: v for k, v in fields.items() if k in allowed}
+    if changes:
+        conn = _get_db()
+        conn.execute(
+            f"UPDATE terms SET {', '.join(f'{k} = ?' for k in changes)} "
+            "WHERE school_id = ? AND term_id = ? AND archived_at IS NULL",
+            (*changes.values(), school_id, term_id),
+        )
+        conn.commit()
+        conn.close()
+    return get_term(school_id, term_id)
+
+
+def archive_term(school_id: str, term_id: str) -> bool:
+    conn = _get_db()
+    cur = conn.execute(
+        "UPDATE terms SET archived_at = ? WHERE school_id = ? AND term_id = ? AND archived_at IS NULL",
+        (_now(), school_id, term_id),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def term_weekly_scores(student_pks: Iterable[int], starts_on: str, ends_on: str) -> List[dict]:
+    """Weekly test scores taken inside a term, for these students."""
+    pks = list(student_pks)
+    if not pks:
+        return []
+    conn = _get_db()
+    rows = conn.execute(
+        f"SELECT student_pk, subject, score FROM scores WHERE student_pk IN ({','.join('?' * len(pks))}) "
+        "AND assessed_on >= ? AND assessed_on <= ? ORDER BY assessed_on, id",
+        (*pks, starts_on, ends_on),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _term_rows(table: str, term_id: str, student_pks: Iterable[int]) -> List[dict]:
+    pks = list(student_pks)
+    if not pks:
+        return []
+    conn = _get_db()
+    rows = conn.execute(
+        f"SELECT * FROM {table} WHERE term_id = ? AND student_pk IN ({','.join('?' * len(pks))})",
+        (term_id, *pks),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def term_exam_scores(term_id: str, student_pks: Iterable[int]) -> List[dict]:
+    return _term_rows("exam_scores", term_id, student_pks)
+
+
+def term_subject_remarks(term_id: str, student_pks: Iterable[int]) -> List[dict]:
+    return _term_rows("subject_remarks", term_id, student_pks)
+
+
+def term_report_comments(term_id: str, student_pks: Iterable[int]) -> List[dict]:
+    return _term_rows("report_comments", term_id, student_pks)
+
+
+def save_exam_scores(term_id: str, entries: Iterable[Tuple[int, str, Optional[float]]], entered_by: str) -> None:
+    """(student_pk, subject, score) rows; a score of None removes the entry."""
+    conn = _get_db()
+    now = _now()
+    for pk, subject, score in entries:
+        if score is None:
+            conn.execute("DELETE FROM exam_scores WHERE term_id = ? AND student_pk = ? AND subject = ?",
+                         (term_id, pk, subject))
+        else:
+            conn.execute(
+                "INSERT INTO exam_scores (term_id, student_pk, subject, score, entered_by, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (term_id, student_pk, subject) "
+                "DO UPDATE SET score = excluded.score, entered_by = excluded.entered_by, updated_at = excluded.updated_at",
+                (term_id, pk, subject, score, entered_by, now),
+            )
+    conn.commit()
+    conn.close()
+
+
+def save_subject_remarks(term_id: str, entries: Iterable[Tuple[int, str, str]], entered_by: str) -> None:
+    """(student_pk, subject, remark) rows; an empty remark removes the entry."""
+    conn = _get_db()
+    now = _now()
+    for pk, subject, remark in entries:
+        if not remark:
+            conn.execute("DELETE FROM subject_remarks WHERE term_id = ? AND student_pk = ? AND subject = ?",
+                         (term_id, pk, subject))
+        else:
+            conn.execute(
+                "INSERT INTO subject_remarks (term_id, student_pk, subject, remark, entered_by, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (term_id, student_pk, subject) "
+                "DO UPDATE SET remark = excluded.remark, entered_by = excluded.entered_by, updated_at = excluded.updated_at",
+                (term_id, pk, subject, remark, entered_by, now),
+            )
+    conn.commit()
+    conn.close()
+
+
+def save_report_comment(term_id: str, student_pk: int, changes: dict, updated_by: str) -> None:
+    """Set some of days_present / form_teacher_comment / principal_comment,
+    leaving the others as they were."""
+    allowed = ("days_present", "form_teacher_comment", "principal_comment")
+    changes = {k: v for k, v in changes.items() if k in allowed}
+    if not changes:
+        return
+    conn = _get_db()
+    now = _now()
+    conn.execute(
+        "INSERT INTO report_comments (term_id, student_pk, updated_by, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT (term_id, student_pk) DO NOTHING",
+        (term_id, student_pk, updated_by, now),
+    )
+    conn.execute(
+        f"UPDATE report_comments SET {', '.join(f'{k} = ?' for k in changes)}, updated_by = ?, updated_at = ? "
+        "WHERE term_id = ? AND student_pk = ?",
+        (*changes.values(), updated_by, now, term_id, student_pk),
+    )
+    conn.commit()
+    conn.close()

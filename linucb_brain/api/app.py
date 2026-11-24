@@ -55,7 +55,9 @@ from .schemas import (
     SubjectsPayload, SchoolScoreRecord, ChangePasswordRequest, ResetPasswordRequest, ClassAssignment,
     InviteRequest,
     OperatorResetRequest, PasswordResetLink, MemberResponse,
+    ReportSettings, TermRequest, TermUpdate, TermResponse, ExamSheetRequest, RemarksRequest, CommentsRequest,
 )
+from . import report_cards
 
 # Application log lines go to stderr next to uvicorn's own, at LOG_LEVEL.
 logging.basicConfig(
@@ -1058,6 +1060,183 @@ def list_student_scores(student_id: str, user: dict = Depends(get_current_user))
     rec = _own_student(user, student_id)
     _audit(user, "view_student_scores", student_id)
     return store.list_scores(rec.pk)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TERM REPORT CARDS
+# CA from the term's weekly tests + an exam, graded, with positions, remarks,
+# comments and attendance. Admins set up terms and settings; teachers enter
+# exams, remarks and form-teacher comments for their own classes.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/report-settings", response_model=ReportSettings)
+def get_report_settings(user: dict = Depends(get_current_user)):
+    return report_cards.settings_with_defaults(store.get_report_settings(user.get("school_id", "")))
+
+
+@app.put("/report-settings", response_model=ReportSettings)
+def put_report_settings(request: ReportSettings, user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    try:
+        scale = report_cards.clean_grade_scale([b.model_dump() for b in request.grade_scale])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    settings = {**request.model_dump(), "grade_scale": scale,
+                "address": request.address.strip(), "principal_name": request.principal_name.strip()}
+    store.set_report_settings(school_id, settings)
+    _audit(user, "update_report_settings")
+    return settings
+
+
+@app.get("/terms", response_model=List[TermResponse])
+def list_terms(user: dict = Depends(get_current_user)):
+    return store.list_terms(user.get("school_id", ""))
+
+
+def _term_fields(data: dict) -> dict:
+    fields = {k: v for k, v in data.items() if v is not None}
+    for key in ("starts_on", "ends_on", "next_term_begins"):
+        if key in fields:
+            fields[key] = fields[key].isoformat()
+    for key in ("session", "name"):
+        if key in fields:
+            fields[key] = " ".join(fields[key].split())
+    return fields
+
+
+@app.post("/terms", response_model=TermResponse)
+def create_term(request: TermRequest, user: dict = Depends(require_admin)):
+    term = store.add_term(_admin_school(user), _term_fields(request.model_dump()))
+    _audit(user, "create_term", term["term_id"])
+    return term
+
+
+@app.put("/terms/{term_id}", response_model=TermResponse)
+def update_term(term_id: str, request: TermUpdate, user: dict = Depends(require_admin)):
+    school_id = _admin_school(user)
+    current = _term(user, term_id)
+    sent = request.model_dump(exclude_unset=True)
+    fields = _term_fields(sent)
+    if "next_term_begins" in sent and sent["next_term_begins"] is None:
+        fields["next_term_begins"] = ""   # cleared
+    starts, ends = fields.get("starts_on", current["starts_on"]), fields.get("ends_on", current["ends_on"])
+    if ends < starts:
+        raise HTTPException(status_code=400, detail="The term must end after it starts")
+    _audit(user, "update_term", term_id)
+    return store.update_term(school_id, term_id, fields)
+
+
+@app.delete("/terms/{term_id}")
+def delete_term(term_id: str, user: dict = Depends(require_admin)):
+    if not store.archive_term(_admin_school(user), term_id):
+        raise HTTPException(status_code=404, detail="Term not found")
+    _audit(user, "delete_term", term_id)
+    return {"status": "deleted"}
+
+
+def _term(user: dict, term_id: str) -> dict:
+    term = store.get_term(user.get("school_id", ""), term_id)
+    if term is None:
+        raise HTTPException(status_code=404, detail="Term not found")
+    return term
+
+
+def _report_class(user: dict, class_id: str) -> dict:
+    """A class of the caller's school that the caller may see."""
+    cls = store.get_class(user.get("school_id", ""), class_id)
+    if cls is None:
+        raise HTTPException(status_code=404, detail="Class not found")
+    _require_class_in_scope(user, class_id)
+    return cls
+
+
+def _students_for_entries(user: dict, student_ids) -> dict:
+    """student_id -> record, each one checked to be the caller's."""
+    return {sid: _own_student(user, sid) for sid in dict.fromkeys(student_ids)}
+
+
+@app.put("/terms/{term_id}/exam-scores")
+def save_exam_scores(term_id: str, request: ExamSheetRequest, user: dict = Depends(get_current_user)):
+    """One subject's exam scores (0-1 share of the exam) for some students."""
+    billing.check_can_enter_scores(user)
+    _term(user, term_id)
+    subject = store.normalize_label(request.subject)
+    known = {store.normalize_label(s) for s in store.get_subjects(user.get("school_id", ""))}
+    if subject not in known:
+        raise HTTPException(status_code=400, detail="Use one of your school's subjects (Settings, Subjects)")
+    records = _students_for_entries(user, (e.student_id for e in request.entries))
+    store.save_exam_scores(term_id, [(records[e.student_id].pk, subject, e.score) for e in request.entries],
+                           entered_by=user["id"])
+    _audit(user, "enter_exam_scores", f"term {term_id}, {subject}, {len(request.entries)} students")
+    return {"status": "saved", "saved": len(request.entries)}
+
+
+@app.put("/terms/{term_id}/remarks")
+def save_subject_remarks(term_id: str, request: RemarksRequest, user: dict = Depends(get_current_user)):
+    """Subject teachers' remarks, one per student and subject."""
+    billing.check_can_enter_scores(user)
+    _term(user, term_id)
+    records = _students_for_entries(user, (e.student_id for e in request.entries))
+    store.save_subject_remarks(
+        term_id,
+        [(records[e.student_id].pk, store.normalize_label(e.subject), " ".join(e.remark.split()))
+         for e in request.entries],
+        entered_by=user["id"],
+    )
+    _audit(user, "enter_remarks", f"term {term_id}, {len(request.entries)} remarks")
+    return {"status": "saved", "saved": len(request.entries)}
+
+
+@app.put("/terms/{term_id}/comments")
+def save_report_comments(term_id: str, request: CommentsRequest, user: dict = Depends(get_current_user)):
+    """Attendance and the form teacher's comment (any teacher of the class);
+    the principal's comment (admins only)."""
+    billing.check_can_enter_scores(user)
+    _term(user, term_id)
+    is_admin = user.get("role", ROLE_ADMIN) == ROLE_ADMIN
+    if not is_admin and any("principal_comment" in e.model_fields_set for e in request.entries):
+        raise HTTPException(status_code=403, detail="Only a school admin can write the principal's comment")
+    records = _students_for_entries(user, (e.student_id for e in request.entries))
+    for entry in request.entries:
+        changes = entry.model_dump(include=entry.model_fields_set - {"student_id"})
+        for key in ("form_teacher_comment", "principal_comment"):
+            if key in changes:
+                changes[key] = " ".join((changes[key] or "").split())
+        store.save_report_comment(term_id, records[entry.student_id].pk, changes, updated_by=user["id"])
+    _audit(user, "enter_report_comments", f"term {term_id}, {len(request.entries)} students")
+    return {"status": "saved", "saved": len(request.entries)}
+
+
+@app.get("/terms/{term_id}/report-cards")
+def get_report_cards(term_id: str, class_id: str = Query(..., max_length=64), user: dict = Depends(get_current_user)):
+    """Every report card for one class in one term, with what is still missing."""
+    billing.check_reports(user)
+    term = _term(user, term_id)
+    cls = _report_class(user, class_id)
+    school_id = user.get("school_id", "")
+    settings = report_cards.settings_with_defaults(store.get_report_settings(school_id))
+    records = store.list_students(school_id, class_id)
+    pks = [r.pk for r in records]
+    cards = report_cards.build_cards(
+        [{"pk": r.pk, "student_id": r.student_id, "name": r.name} for r in records],
+        store.get_subjects(school_id),
+        store.term_weekly_scores(pks, term["starts_on"], term["ends_on"]),
+        store.term_exam_scores(term_id, pks),
+        store.term_subject_remarks(term_id, pks),
+        store.term_report_comments(term_id, pks),
+        settings,
+    )
+    school = store.get_school(school_id) or {}
+    _audit(user, "view_report_cards", f"term {term_id}, class {class_id}")
+    return {
+        "term": term, "class": {"class_id": cls["class_id"], "label": cls["label"]},
+        "school": {"name": school.get("name", ""), "address": settings["address"],
+                   "principal_name": settings["principal_name"]},
+        "settings": {"ca_weight": settings["ca_weight"], "exam_weight": 100 - settings["ca_weight"],
+                     "show_positions": settings["show_positions"], "grade_scale": settings["grade_scale"]},
+        "class_size": len(records),
+        "cards": cards,
+    }
 
 
 # ── The school's own data: export and audit log (admin) ────────────────────
