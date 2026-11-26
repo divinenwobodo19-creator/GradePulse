@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Term report cards: review fixes (26 November 2026)
+
+- **School data download** now includes the report-card entries: `terms.csv`, `exam_scores.csv`, `subject_remarks.csv` and `report_comments.csv`.
+- **Subject remarks** are only accepted for the school's own subjects (400 otherwise), like exam scores.
+- **Exam entry** keeps the chosen subject after a save instead of jumping back to the first one.
+- **Days present** is checked against 366 on the page when the term has no "days school opened".
+- **Demo school script** `deploy/demo_report_cards.py`: makes a demo school with one class, eight subjects, six weekly tests, exams, remarks, attendance and comments, and gives it a pilot term, so a principal can see complete cards.
+
 ### Term report cards — screens (24 November 2026)
 
 - **Report cards page** (`/report-cards`, in the menu): choose the term and class, then work in three steps. **1. Exam scores & remarks**: one subject at a time, each student's weekly tests, CA, an exam box (marked out of the exam's share, e.g. 60) and an optional remark; totals and grades update on save. **2. Attendance & comments**: days present, the form teacher's comment and (admins) the principal's comment. **3. Preview & print**: one A4 card per student, with a warning listing any card that is not complete yet.

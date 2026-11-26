@@ -823,9 +823,28 @@ def export_rows(school_id: str) -> Dict[str, List[dict]]:
         "sc.label AS test, sc.source FROM scores sc JOIN students st ON st.id = sc.student_pk "
         "WHERE st.school_id = ? AND st.archived_at IS NULL ORDER BY sc.assessed_on, st.student_id, sc.id",
         (school_id,)).fetchall()
+    # Term report cards: the terms, exam marks, remarks, comments and attendance.
+    terms = conn.execute(
+        "SELECT term_id, session, name, starts_on, ends_on, next_term_begins, days_opened FROM terms "
+        "WHERE school_id = ? AND archived_at IS NULL ORDER BY starts_on", (school_id,)).fetchall()
+    term_rows = ("JOIN terms t ON t.term_id = x.term_id JOIN students st ON st.id = x.student_pk "
+                 "WHERE t.school_id = ? AND t.archived_at IS NULL AND st.archived_at IS NULL")
+    exams = conn.execute(
+        "SELECT t.session, t.name AS term, st.student_id, st.name, x.subject, "
+        f"ROUND(x.score * 100, 1) AS exam_percent FROM exam_scores x {term_rows} "
+        "ORDER BY t.starts_on, st.student_id, x.subject", (school_id,)).fetchall()
+    remarks = conn.execute(
+        "SELECT t.session, t.name AS term, st.student_id, st.name, x.subject, x.remark "
+        f"FROM subject_remarks x {term_rows} ORDER BY t.starts_on, st.student_id, x.subject", (school_id,)).fetchall()
+    comments = conn.execute(
+        "SELECT t.session, t.name AS term, st.student_id, st.name, x.days_present, x.form_teacher_comment, "
+        f"x.principal_comment FROM report_comments x {term_rows} ORDER BY t.starts_on, st.student_id",
+        (school_id,)).fetchall()
     conn.close()
     return {"classes": [dict(r) for r in classes], "students": [dict(r) for r in students],
-            "scores": [dict(r) for r in scores]}
+            "scores": [dict(r) for r in scores], "terms": [dict(r) for r in terms],
+            "exam_scores": [dict(r) for r in exams], "subject_remarks": [dict(r) for r in remarks],
+            "report_comments": [dict(r) for r in comments]}
 
 
 # ── Term report cards ──────────────────────────────────────────────────────

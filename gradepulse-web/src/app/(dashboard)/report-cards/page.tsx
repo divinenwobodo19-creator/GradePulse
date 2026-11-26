@@ -101,16 +101,20 @@ function TermForm({ initial, onSaved, onCancel, termId }: {
 
 // ── Exam scores and subject remarks ─────────────────────────────────────────
 
-function ExamSheet({ data, termId, subjects, onSaved }: {
+function ExamSheet({ data, termId, subjects, subject, onSubject, onSaved, version }: {
   data: ReportCardsResponse;
   termId: string;
   subjects: string[];
+  subject: string;
+  onSubject: (subject: string) => void;
   onSaved: () => void;
+  version: number;
 }) {
-  const [subject, setSubject] = useState(subjects[0] ?? "");
   // A fresh table (and draft) for each subject and each reload of the cards.
-  return <ExamRows key={subject} data={data} termId={termId} subjects={subjects} subject={subject}
-    onSubject={setSubject} onSaved={onSaved} />;
+  // The subject itself lives in the page, so it stays put after a save.
+  const current = subjects.includes(subject) ? subject : subjects[0] ?? "";
+  return <ExamRows key={`${current}-${version}`} data={data} termId={termId} subjects={subjects} subject={current}
+    onSubject={onSubject} onSaved={onSaved} />;
 }
 
 function ExamRows({ data, termId, subjects, subject, onSubject, onSaved }: {
@@ -269,7 +273,7 @@ function CommentsSheet({ data, termId, isAdmin, onSaved }: {
       const before = card.days_present === null ? "" : String(card.days_present);
       if (d.days.trim() !== before) {
         const days = d.days.trim() === "" ? null : Number(d.days);
-        if (days !== null && (!Number.isInteger(days) || days < 0 || (daysOpened > 0 && days > daysOpened))) {
+        if (days !== null && (!Number.isInteger(days) || days < 0 || days > (daysOpened || 366))) {
           return setMessage({ kind: "error", text: `${card.name}: days present must be a whole number from 0 to ${daysOpened || 366}.` });
         }
         entry.days_present = days;
@@ -363,6 +367,7 @@ export default function ReportCardsPage() {
   const [data, setData] = useState<ReportCardsResponse | null>(null);
   const [version, setVersion] = useState(0); // bumps on every load, so edit tables start from the saved values
   const [tab, setTab] = useState<Tab>("exams");
+  const [examSubject, setExamSubject] = useState("");
   const [termFormOpen, setTermFormOpen] = useState<"new" | "edit" | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -555,7 +560,8 @@ export default function ReportCardsPage() {
                 </div></div>
               ) : tab === "exams" ? (
                 <div className="card no-print"><div className="card-body">
-                  <ExamSheet key={`exam-${version}`} data={data} termId={termId} subjects={subjects} onSaved={reload} />
+                  <ExamSheet data={data} termId={termId} subjects={subjects} subject={examSubject}
+                    onSubject={setExamSubject} onSaved={reload} version={version} />
                 </div></div>
               ) : tab === "comments" ? (
                 <div className="card no-print"><div className="card-body">
@@ -565,7 +571,7 @@ export default function ReportCardsPage() {
                 <>
                   {incomplete.length > 0 && (
                     <div role="status" className="no-print bg-warning-light border border-warning/30 px-4 py-3 rounded-lg body-sm">
-                      <strong>{incomplete.length} card{incomplete.length === 1 ? " is" : "s are"} not complete yet</strong> — a
+                      <strong>{incomplete.length} card{incomplete.length === 1 ? " is" : "s are"} not complete yet.</strong> A
                       subject without both its CA and exam shows no total, and the student is left out of the class position.
                       <ul className="mt-1 list-disc pl-5">
                         {incomplete.slice(0, 8).map((c) => <li key={c.name}>{c.name}: {c.missing.join(", ")}</li>)}

@@ -96,7 +96,8 @@ def test_admin_exports_the_school_data_as_csv(client, school):
     assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
     assert "attachment" in r.headers["content-disposition"]
     archive = zipfile.ZipFile(io.BytesIO(r.content))
-    assert sorted(archive.namelist()) == ["classes.csv", "scores.csv", "students.csv"]
+    assert sorted(archive.namelist()) == ["classes.csv", "exam_scores.csv", "report_comments.csv", "scores.csv",
+                                          "students.csv", "subject_remarks.csv", "terms.csv"]
     students = list(csv.DictReader(io.StringIO(archive.read("students.csv").decode())))
     assert {s["student_id"] for s in students} == {"D1", "D2"}
     # A name that looks like a formula is defused for Excel.

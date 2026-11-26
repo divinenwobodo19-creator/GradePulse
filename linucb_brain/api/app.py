@@ -1176,6 +1176,9 @@ def save_subject_remarks(term_id: str, request: RemarksRequest, user: dict = Dep
     """Subject teachers' remarks, one per student and subject."""
     billing.check_can_enter_scores(user)
     _term(user, term_id)
+    known = {store.normalize_label(s) for s in store.get_subjects(user.get("school_id", ""))}
+    if any(store.normalize_label(e.subject) not in known for e in request.entries):
+        raise HTTPException(status_code=400, detail="Use one of your school's subjects (Settings, Subjects)")
     records = _students_for_entries(user, (e.student_id for e in request.entries))
     store.save_subject_remarks(
         term_id,
@@ -1254,7 +1257,8 @@ def _csv_text(rows: List[dict], columns: List[str]) -> str:
 @app.get("/export")
 def export_school_data(user: dict = Depends(require_admin)):
     """Everything the school has entered, as CSV files in one .zip: its
-    classes, students and every score. Free on every plan."""
+    classes, students, every score and the term report-card entries.
+    Free on every plan."""
     school_id = _admin_school(user)
     school = store.get_school(school_id)
     data = store.export_rows(school_id)
@@ -1264,6 +1268,14 @@ def export_school_data(user: dict = Depends(require_admin)):
         archive.writestr("students.csv", _csv_text(data["students"], ["student_id", "name", "class", "created_at"]))
         archive.writestr("scores.csv", _csv_text(
             data["scores"], ["student_id", "name", "subject", "score_percent", "assessed_on", "test", "source"]))
+        archive.writestr("terms.csv", _csv_text(data["terms"], [
+            "term_id", "session", "name", "starts_on", "ends_on", "next_term_begins", "days_opened"]))
+        archive.writestr("exam_scores.csv", _csv_text(
+            data["exam_scores"], ["session", "term", "student_id", "name", "subject", "exam_percent"]))
+        archive.writestr("subject_remarks.csv", _csv_text(
+            data["subject_remarks"], ["session", "term", "student_id", "name", "subject", "remark"]))
+        archive.writestr("report_comments.csv", _csv_text(data["report_comments"], [
+            "session", "term", "student_id", "name", "days_present", "form_teacher_comment", "principal_comment"]))
     _audit(user, "export_school_data", f"{len(data['students'])} students, {len(data['scores'])} scores")
     name = "".join(ch if ch.isalnum() else "-" for ch in (school["name"] if school else "school")).strip("-").lower()
     return Response(content=buffer.getvalue(), media_type="application/zip", headers={
