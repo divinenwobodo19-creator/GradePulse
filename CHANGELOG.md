@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Report cards are a paid-plan feature (26 November 2026)
+
+- Founder's decision: free-plan schools do not get end-of-term report cards. They are the heart of the paid plan.
+- The refusal now says "End-of-term report cards come with a paid term."
+- The home page, Pricing, Billing and the dashboard reminders now name report cards as part of the paid plan.
+- New test: a free-plan school's admin and teachers both get 402 with the right next step.
+
 ### Term report cards: review fixes (26 November 2026)
 
 - **School data download** now includes the report-card entries: `terms.csv`, `exam_scores.csv`, `subject_remarks.csv` and `report_comments.csv`.

@@ -249,3 +249,14 @@ def test_school_data_export_includes_report_card_entries(client, school):
     assert rows("subject_remarks.csv")[0]["remark"] == "Strong term"
     comment = rows("report_comments.csv")[0]
     assert (comment["days_present"], comment["principal_comment"]) == ("58", "Well done.")
+
+
+def test_free_plan_schools_do_not_get_report_cards(client, school, monkeypatch):
+    """Report cards are the heart of the paid plan (founder, 26 Nov 2026)."""
+    monkeypatch.setenv("PAYSTACK_SECRET_KEY", "sk_test_free_plan")
+    monkeypatch.setenv("PRICE_PER_STUDENT_NAIRA", "500")
+    monkeypatch.setenv("FREE_STUDENTS", "40")
+    for headers, action in ((school["admin"], "Billing page"), (school["teacher"], "Ask your school admin")):
+        r = client.get(f"/terms/{school['term']}/report-cards", headers=headers, params={"class_id": school["a"]})
+        assert r.status_code == 402
+        assert "report cards come with a paid term" in r.json()["detail"] and action in r.json()["detail"]

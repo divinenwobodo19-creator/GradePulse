@@ -37,11 +37,11 @@ function planText(status: BillingStatus): string {
     case "over_limit":
       return `Paid for ${status.paid_students} students until ${formatDate(status.paid_until)}, but the school now has ${status.students}. Pay for the extra students before adding more.`;
     case "grace":
-      return `The paid term ended on ${formatDate(status.paid_until)}. Everything keeps working until ${formatDate(status.grace_until)}; pay for the new term before then to keep reports and parent progress sheets.`;
+      return `The paid term ended on ${formatDate(status.paid_until)}. Everything keeps working until ${formatDate(status.grace_until)}; pay for the new term before then to keep report cards, reports and parent progress sheets.`;
     case "expired":
-      return `The paid term has ended, so the school is on the free plan: up to ${free} students, without printable reports. Every score is still here. Pay for the new term to switch everything back on.`;
+      return `The paid term has ended, so the school is on the free plan: up to ${free} students, without report cards or printable reports. Every score is still here. Pay for the new term to switch everything back on.`;
     case "unpaid":
-      return `Your school is on the free plan: up to ${free} students, with score sheets, triage and progress. Pay for the term to cover the whole school and print class reports and parent progress sheets.`;
+      return `Your school is on the free plan: up to ${free} students, with score sheets, triage and progress. Pay for the term to cover the whole school and print end-of-term report cards, class reports and parent progress sheets.`;
     default:
       return "Online payment has not been set up on this server. Contact GradePulse to pay.";
   }
