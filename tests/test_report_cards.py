@@ -219,3 +219,33 @@ def test_bad_grade_scale_is_refused(client, school):
     assert r.status_code == 400 and "0" in r.json()["detail"]
     # Defaults come back for a school that never saved settings.
     assert client.get("/report-settings", headers=school["teacher"]).json()["ca_weight"] == 40
+
+
+def test_remarks_only_for_the_school_subjects(client, school):
+    r = client.put(f"/terms/{school['term']}/remarks", headers=school["admin"], json={"entries": [
+        {"student_id": "ADA", "subject": "ASTROLOGY", "remark": "Stars aligned"}]})
+    assert r.status_code == 400
+
+
+def test_school_data_export_includes_report_card_entries(client, school):
+    import csv
+    import io
+    import zipfile
+    a, term = school["admin"], school["term"]
+    client.put(f"/terms/{term}/exam-scores", headers=a, json={"subject": "MATH", "entries": [
+        {"student_id": "ADA", "score": 0.75}]})
+    client.put(f"/terms/{term}/remarks", headers=a, json={"entries": [
+        {"student_id": "ADA", "subject": "MATH", "remark": "Strong term"}]})
+    client.put(f"/terms/{term}/comments", headers=a, json={"entries": [
+        {"student_id": "ADA", "days_present": 58, "principal_comment": "Well done."}]})
+    archive = zipfile.ZipFile(io.BytesIO(client.get("/export", headers=a).content))
+
+    def rows(name):
+        return list(csv.DictReader(io.StringIO(archive.read(name).decode())))
+
+    assert rows("terms.csv")[0]["name"] == "First Term"
+    assert rows("exam_scores.csv") == [{"session": "2026/2027", "term": "First Term", "student_id": "ADA",
+                                        "name": "Ada", "subject": "MATH", "exam_percent": "75.0"}]
+    assert rows("subject_remarks.csv")[0]["remark"] == "Strong term"
+    comment = rows("report_comments.csv")[0]
+    assert (comment["days_present"], comment["principal_comment"]) == ("58", "Well done.")
