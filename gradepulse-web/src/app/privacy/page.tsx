@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "How GradePulse, a product of N-Library, handles school, teacher and student data.",
 };
 
-const UPDATED = "16 November 2026";
+const UPDATED = "27 November 2026";
 
 const SECTIONS: { heading: string; body: React.ReactNode }[] = [
   {
@@ -40,7 +40,8 @@ const SECTIONS: { heading: string; body: React.ReactNode }[] = [
         </li>
         <li>
           <strong>Student records the school enters:</strong> names, the school&apos;s own student IDs, classes, and
-          test scores with their dates.
+          test scores with their dates; for term report cards, exam scores, attendance, subject remarks and the
+          form teacher&apos;s and principal&apos;s comments.
         </li>
         <li>
           <strong>Payments:</strong> the number of students paid for, the amount, the date and the receipt email.
@@ -70,7 +71,8 @@ const SECTIONS: { heading: string; body: React.ReactNode }[] = [
       <p>
         Most students in GradePulse are children. Schools enter their data as part of the education they already
         provide, and remain responsible for telling parents and guardians how student information is used, as the
-        NDPA requires. Parents who want to see, correct or remove their child&apos;s data should ask the school; we
+        NDPA requires, including asking for a parent or guardian&apos;s consent. We give schools ready-made wording
+        for this. Parents who want to see, correct or remove their child&apos;s data should ask the school; we
         will help the school do it.
       </p>
     ),
