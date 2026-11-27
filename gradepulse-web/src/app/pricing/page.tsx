@@ -16,6 +16,7 @@ const FREE_FEATURES = [
 
 const PAID_FEATURES = [
   "Every student in the school",
+  "End-of-term report cards: CA and exam, WAEC grades, positions and comments, ready to print",
   "Printable class reports",
   "A progress sheet for every student to send home to parents",
   "Everything in the free plan",

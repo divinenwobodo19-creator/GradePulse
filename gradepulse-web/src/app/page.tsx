@@ -50,7 +50,7 @@ const BENEFITS = [
 const FAQS = [
   {
     q: "What does GradePulse cost?",
-    a: "It is free for up to 40 students, about one class. For the whole school it is ₦500 per student per term, which adds printable class reports and a progress sheet for every parent. Many schools include it in fees as a results fee.",
+    a: "It is free for up to 40 students, about one class. For the whole school it is ₦500 per student per term, which adds the end-of-term report card for every student, printable class reports and a progress sheet for every parent. Many schools include it in fees as a results fee.",
   },
   {
     q: "Do we need to install anything?",
@@ -238,7 +238,7 @@ export default function Home() {
               <p className="text-4xl font-semibold text-ink mt-3 num">
                 ₦500 <span className="text-base font-normal text-ink-soft">per student, per term</span>
               </p>
-              <p className="text-ink-soft mt-3">Every student, plus printable class reports and a progress sheet for every parent.</p>
+              <p className="text-ink-soft mt-3">Every student, plus the end-of-term report card, printable class reports and a progress sheet for every parent.</p>
             </div>
           </div>
           <p className="mt-6">

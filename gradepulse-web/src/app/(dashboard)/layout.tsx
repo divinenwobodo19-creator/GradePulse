@@ -128,15 +128,15 @@ const NAV_ITEMS = [
 function reminderText(state: string, graceUntil?: string | null): string | null {
   switch (state) {
     case "unpaid":
-      return "This school has reached the free plan's student limit. Pay for the term to add more students and print reports.";
+      return "This school has reached the free plan's student limit. Pay for the term to add more students and print report cards and reports.";
     case "grace": {
       const until = graceUntil
         ? new Date(graceUntil).toLocaleDateString(undefined, { day: "numeric", month: "long" })
         : "soon";
-      return `This school's paid term has ended. Everything keeps working until ${until}; renew before then to keep reports.`;
+      return `This school's paid term has ended. Everything keeps working until ${until}; renew before then to keep report cards and reports.`;
     }
     case "expired":
-      return "This school's paid term has ended, so it is on the free plan: reports are paused until the next payment.";
+      return "This school's paid term has ended, so it is on the free plan: report cards and reports are paused until the next payment.";
     case "over_limit":
       return "This school has more students than it has paid for this term. Pay for the extra students to add more.";
     default:

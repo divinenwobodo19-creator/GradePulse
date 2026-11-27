@@ -1213,7 +1213,7 @@ def save_report_comments(term_id: str, request: CommentsRequest, user: dict = De
 @app.get("/terms/{term_id}/report-cards")
 def get_report_cards(term_id: str, class_id: str = Query(..., max_length=64), user: dict = Depends(get_current_user)):
     """Every report card for one class in one term, with what is still missing."""
-    billing.check_reports(user)
+    billing.check_report_cards(user)
     term = _term(user, term_id)
     cls = _report_class(user, class_id)
     school_id = user.get("school_id", "")

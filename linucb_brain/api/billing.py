@@ -271,6 +271,13 @@ def check_can_enter_scores(user: dict) -> None:
                   "so new scores need a paid term. Everything already entered stays visible.")
 
 
+def check_report_cards(user: dict) -> None:
+    """End-of-term report cards are the heart of the paid plan: free-plan
+    schools do not get them (founder's decision, 26 November 2026)."""
+    if not school_plan(user.get("school_id", ""))["reports"]:
+        raise _payment_required(user, "End-of-term report cards come with a paid term.")
+
+
 def check_reports(user: dict) -> None:
     """Printable class reports and parent progress sheets come with a paid term."""
     if not school_plan(user.get("school_id", ""))["reports"]:
